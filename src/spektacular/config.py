@@ -44,12 +44,29 @@ class OutputConfig(BaseModel):
     include_metadata: bool = Field(default=True, description="Include metadata in output")
 
 
+class AgentConfig(BaseModel):
+    """Agent configuration for the coding tool."""
+    command: str = Field(default="claude", description="The coding agent CLI command to execute")
+    args: list[str] = Field(
+        default_factory=lambda: ["--output-format", "stream-json", "--verbose"],
+        description="Default arguments passed to the agent",
+    )
+    allowed_tools: list[str] = Field(
+        default_factory=lambda: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"],
+        description="Tools the agent is allowed to use",
+    )
+    dangerously_skip_permissions: bool = Field(
+        default=False, description="Skip permission prompts (use with caution)"
+    )
+
+
 class SpektacularConfig(BaseModel):
     """Main Spektacular configuration."""
     api: ApiConfig = Field(default_factory=ApiConfig, description="API settings")
     models: ModelsConfig = Field(default_factory=ModelsConfig, description="Model configuration")
     complexity: ComplexityConfig = Field(default_factory=ComplexityConfig, description="Complexity analysis")
     output: OutputConfig = Field(default_factory=OutputConfig, description="Output settings")
+    agent: AgentConfig = Field(default_factory=AgentConfig, description="Agent settings")
     
     @classmethod
     def from_yaml_file(cls, config_path: Path) -> "SpektacularConfig":
@@ -82,7 +99,7 @@ class SpektacularConfig(BaseModel):
         
         with open(config_path, 'w') as f:
             yaml.dump(
-                self.dict(), 
+                self.model_dump(),
                 f, 
                 default_flow_style=False, 
                 indent=2,

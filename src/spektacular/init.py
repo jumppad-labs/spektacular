@@ -50,6 +50,7 @@ def init_project(project_path: Path, force: bool = False) -> None:
     directories = [
         spektacular_dir,
         spektacular_dir / "plans",
+        spektacular_dir / "specs",
         spektacular_dir / "knowledge",
         spektacular_dir / "knowledge" / "learnings",
         spektacular_dir / "knowledge" / "architecture",

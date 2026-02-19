@@ -1,54 +1,76 @@
 # Feature: Spektacular CLI v0.1 - Bootstrap MVP
 
 ## Overview
-Build the minimal viable Spektacular CLI that can parse specs, assess complexity, generate plans, and output Spec Kit compatible artifacts. The goal is to create just enough functionality to use Spektacular to build Spektacular v0.2.
+Build the minimal viable Spektacular CLI focused on project initialization and basic spec processing. The primary goal is to create `spektacular init` and demonstrate the core workflow by using Spektacular to build Spektacular v0.2.
 
 ## Requirements
+- [ ] `spektacular init` command creates project structure
 - [ ] CLI accepts markdown spec files as input (`spektacular run spec.md`)
 - [ ] Parse spec sections: Overview, Requirements, Constraints, Acceptance Criteria
 - [ ] Basic complexity scoring (0.0-1.0) based on heuristic rules
-- [ ] Model selection based on complexity score (Haiku/Sonnet/Opus)
-- [ ] Generate Spec Kit compatible outputs: plan.md, tasks.md, context.md
-- [ ] Support for multiple coding agent backends (Claude API to start)
-- [ ] Basic validation: check if acceptance criteria are mentioned in plan
+- [ ] Generate plan artifacts: plan.md, tasks.md, context.md, validation.md
+- [ ] Support for Claude API integration with model selection
+- [ ] Basic validation: check acceptance criteria coverage in generated plan
 
 ## Constraints
-- Must be compatible with existing Spec Kit markdown format
 - Python for rapid development and ecosystem compatibility
-- CLI should work without any external dependencies beyond python and pip packages
+- CLI should work without external dependencies beyond pip packages
+- Must be compatible with existing Spec Kit markdown format
 - Output files must be human-readable and git-friendly
 - No complex ML models - use simple heuristic complexity scoring
 - Single model tier initially (can expand to multi-tier in v0.2)
 
 ## Acceptance Criteria
-- [ ] `spektacular run spektacular-v0.2-spec.md` successfully generates plan.md
-- [ ] Generated plan.md includes realistic task breakdown for a CLI tool
-- [ ] tasks.md contains actionable development tasks with clear dependencies
+- [ ] `spektacular init` creates proper `.spektacular/` directory structure
+- [ ] Generated config.yaml contains sensible defaults
+- [ ] `.gitignore` properly excludes sensitive config and temp files
+- [ ] `spektacular run spektacular-v0.2-spec.md` successfully generates artifacts
+- [ ] Generated plan.md includes realistic task breakdown for CLI enhancement
+- [ ] tasks.md contains actionable development tasks with clear dependencies  
 - [ ] context.md captures relevant technical decisions and constraints
-- [ ] Complexity scorer correctly identifies this spec as medium complexity (0.4-0.6)
-- [ ] All output files are valid markdown and can be read by other tools
+- [ ] validation.md provides structured checklist against original spec
+- [ ] All output files are valid markdown and git-friendly
 - [ ] CLI handles invalid input gracefully with helpful error messages
-- [ ] Tool can be installed globally via npm for easy use
+- [ ] Tool can be installed via pip for easy distribution
 
 ## Technical Approach
-- Use mdast/remark for markdown parsing (proven, reliable)
-- Simple scoring algorithm: word count + complexity keywords + acceptance criteria count
-- Claude API integration with configurable model selection
-- File system operations for reading specs and writing outputs
-- Commander.js for CLI interface
-- TypeScript for type safety and better development experience
+- Python with Click or Typer for CLI interface
+- PyYAML for config file handling
+- python-markdown for spec parsing
+- Simple scoring: word count + complexity keywords + acceptance criteria count
+- Anthropic SDK for Claude API integration
+- File system operations for directory structure and artifact generation
+- Template-based plan generation using Jinja2 or similar
+
+## .spektacular/ Directory Structure
+```
+.spektacular/
+├── config.yaml          # Model routing, API keys, preferences
+├── plans/               # All generated plans
+│   └── <spec-name>/
+│       ├── plan.md      # Implementation plan
+│       ├── tasks.md     # Task breakdown
+│       ├── context.md   # Technical context
+│       └── validation.md # Spec compliance checklist
+├── knowledge/           # Project knowledge base  
+│   ├── learnings/      # Auto-captured corrections
+│   ├── architecture/   # System design docs
+│   ├── gotchas/        # Known issues and workarounds
+│   └── conventions.md  # Code style and patterns
+└── .gitignore          # Protect sensitive config
+```
 
 ## Success Metrics
-- Successfully generates a plan to build Spektacular v0.2
-- Plan is detailed enough that a coding agent can implement it
-- Output is compatible with existing Spec Kit tooling
-- Tool completes end-to-end workflow in under 30 seconds
-- Code is clean enough to serve as foundation for future features
+- `spektacular init` creates complete project structure in <5 seconds
+- Successfully generates v0.2 development plan from this spec
+- Plan is detailed enough for coding agent implementation
+- Tool demonstrates the recursive development concept
+- Code is clean Python foundation for future features
 
 ## Non-Goals (v0.2+)
-- GitHub Issues integration
+- GitHub Issues integration  
 - OpenClaw plugin interface
 - Multi-agent orchestration
 - Parallel task execution
 - Enterprise features (cost tracking, audit trails)
-- Advanced validation beyond basic checks
+- Complex validation beyond basic coverage checks

@@ -1,0 +1,17 @@
+api:
+  anthropic_api_key: ${ANTHROPIC_API_KEY}
+  timeout: 60
+complexity:
+  thresholds:
+    complex: 0.8
+    medium: 0.6
+    simple: 0.3
+models:
+  default: anthropic/claude-3-5-sonnet-20241022
+  tiers:
+    complex: anthropic/claude-3-opus-20240229
+    medium: anthropic/claude-3-5-sonnet-20241022
+    simple: anthropic/claude-3-5-haiku-20241022
+output:
+  format: markdown
+  include_metadata: true

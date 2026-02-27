@@ -29,7 +29,7 @@ The planning agent explores your codebase, asks clarifying questions through an 
 
 ![](./images/tui.png)
 
-The plan command launches an interactive terminal UI built with [Textual](https://textual.textualize.io/). It streams agent output as markdown, shows tool usage in real time, and presents questions with numbered options you can answer by pressing a key.
+The plan command launches an interactive terminal UI built with [Bubble Tea](https://github.com/charmbracelet/bubbletea). It streams agent output as markdown, shows tool usage in real time, and presents questions with numbered options you can answer by pressing a key.
 
 Press `t` to cycle through 5 built-in color themes (GitHub Dark, Dracula, Nord, Solarized, Monokai).
 
@@ -37,26 +37,22 @@ Press `t` to cycle through 5 built-in color themes (GitHub Dark, Dracula, Nord, 
 
 ### Prerequisites
 
-- Python 3.12+
+- Go 1.21+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured with an API key
 
 ### Install
 
 ```bash
-# with uv (recommended)
-uv pip install spektacular
-
-# or with pip
-pip install spektacular
-```
-
-For development:
-
-```bash
+# build from source
 git clone https://github.com/nicholasjackson/spektacular.git
 cd spektacular
-uv pip install -e ".[dev]"
+go build -o spektacular .
+
+# copy to PATH
+cp spektacular /usr/local/bin/
 ```
+
+Or download a pre-built binary from the [releases page](https://github.com/nicholasjackson/spektacular/releases).
 
 ### Usage
 
@@ -156,12 +152,35 @@ complexity:
 
 See the [architecture document](.spektacular/knowledge/architecture/initial-idea.md) for the full vision.
 
+## Building from Source
+
+```bash
+# build binary
+make build
+
+# run tests
+make test
+
+# cross-compile for all platforms
+make cross
+```
+
+The `Makefile` targets:
+
+| Target | Description |
+|---|---|
+| `make build` | Build `./spektacular` binary |
+| `make test` | Run `go test ./...` |
+| `make lint` | Run `go vet ./...` |
+| `make install` | Build and copy to `$GOPATH/bin` |
+| `make cross` | Build for darwin/linux/windows (amd64 + arm64) |
+
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b my-feature`)
 3. Make your changes
-4. Run tests (`pytest tests/`)
+4. Run tests (`make test`)
 5. Submit a pull request
 
 ## License

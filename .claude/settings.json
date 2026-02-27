@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 /home/nicj/.claude/skills/iw-git-workflow/scripts/check_clean.py)"
+      "Bash(python3 *)",
+      "Bash(go *)",
+      "Bash(go build ./...)",
+      "Bash(make *)",
+      "Bash(./spektacular *)",
+      "Bash(claude -p \"say hello\" --output-format stream-json --verbose)"
+    ],
+    "additionalDirectories": [
+      "/home/nicj/code/github.com/nicholasjackson/spektacular"
     ]
   }
 }

@@ -3,223 +3,234 @@
 ## Specification Analysis
 
 ### Original Requirements
-1. Add `spektacular adhoc --output <cli|json>` output mode selection
-2. Support optional persisted default output mode via config
-3. In JSON mode, use JSONL over stdin/stdout for bidirectional messaging
-4. Define common message envelope with versioning and correlation IDs
-5. Define inbound message types: `run.start`, `run.input`, `run.cancel`
-6. Define outbound message types: `run.started`, `run.progress`, `run.question`, `run.artifact`, `run.completed`, `run.failed`, `run.cancelled`
-7. Define tool-agnostic question schema for interactive prompts
-8. Ensure exactly one terminal event per run
-9. Define compatibility behavior for unknown fields/types and version mismatch
-10. Define safe handling for secrets and diagnostics
+- Add `spektacular adhoc --output <cli|json>` output mode selection
+- Support optional persisted default output mode via config
+- In JSON mode, use JSONL over stdin/stdout for bidirectional messaging
+- Define common message envelope with versioning and correlation IDs
+- Define standardized inbound types: `run.start`, `run.input`, `run.cancel`
+- Define standardized outbound types: `run.started`, `run.progress`, `run.question`, `run.artifact`, `run.completed`, `run.failed`, `run.cancelled`
+- Define tool-agnostic question schema for interactive prompts
+- Ensure exactly one terminal event per run
+- Define compatibility behavior for unknown fields/types and version mismatch
+- Define safe handling for secrets and diagnostics
 
 ### Implicit Requirements
-- The `run` command needs to load specs, build prompts, and run Claude — reusing existing infrastructure
-- CLI mode should feel like a simpler version of existing `plan` command output
-- JSON mode must be machine-parseable with no human-formatted text on stdout
-- The protocol must bridge between Claude's `<!--QUESTION:...-->` format and the normalized question schema
+- The JSON mode must handle concurrent stdin reading (for `run.input` and `run.cancel`) while the agent is executing
+- Session management must be bridged (Claude's session IDs are internal to the protocol, not exposed)
+- The protocol must normalize Claude's `<!--QUESTION:-->` marker format into the generic question schema
+- CLI mode must still function when `--output` is omitted (backward compatibility)
 
 ### Constraints Identified
-- stdout is exclusively for JSONL frames in JSON mode (no mixing with human text)
-- stderr is for diagnostics only (not protocol)
-- Must not break existing commands when `--output` is omitted
-- Protocol must work regardless of which agent backend is used (Claude, OpenAI, etc.)
-- Single run lifecycle per process invocation
+- stdout is exclusively for protocol frames (no diagnostic output in JSON mode)
+- stderr for diagnostics only
+- JSONL format: one JSON object per line, UTF-8
+- No multi-run multiplexing (single run lifecycle per process)
+- Provider-agnostic protocol surface (no Claude-specific fields in the protocol)
 
 ## Research Process
 
 ### Sub-agents Spawned
-1. **Codebase Explorer** — Full project structure inventory, all source files
-2. **CLI Command Analyst** — How Click commands are registered, existing patterns
-3. **Test Infrastructure Analyst** — Testing frameworks, mocking patterns, fixtures
+1. **Codebase Explorer** — Full project structure inventory
+2. **CLI Pattern Analyzer** — Cobra command patterns, flag handling, TTY detection
+3. **Internal Package Researcher** — Deep dive into all internal packages, types, interfaces
 
 ### Files Examined
 
-| File | Lines | Key Findings |
-|------|-------|-------------|
-| `src/spektacular/cli.py` | 1-88 | Click-based CLI with 4 commands. `run` is placeholder (TODO at line 43). Pattern: load config, call handler function. |
-| `src/spektacular/config.py` | 1-133 | Pydantic BaseModel hierarchy. `OutputConfig` at line 41-44 has `format` and `include_metadata`. YAML round-trip via `from_yaml_file()`/`to_yaml_file()`. |
-| `src/spektacular/runner.py` | 1-179 | `run_claude()` generator at line 116. Spawns subprocess, yields `ClaudeEvent`. `detect_questions()` at line 71 parses `<!--QUESTION:...-->`. `Question` dataclass at line 60. |
-| `src/spektacular/plan.py` | 1-117 | `run_plan()` at line 64 shows the complete question-answer loop pattern. `load_knowledge()`, `load_agent_prompt()`, `build_prompt()` utilities. |
-| `src/spektacular/tui.py` | 1-546 | Textual TUI with message-passing. `AgentOutput`, `AgentQuestion`, `AgentComplete`, `AgentError` messages. Shows how events flow from runner to UI. |
-| `tests/test_runner.py` | 1-210 | Subprocess mocking pattern with `MagicMock` for `Popen`. Tests event parsing, question detection, debug logging. |
-| `tests/test_config.py` | 1-67 | Config model tests with YAML round-trip. Uses `tmp_path` fixture. |
-| `pyproject.toml` | 1-31 | Python 3.12+, Click 8.3.1+, Pydantic 2.0+, pytest with asyncio support. |
+| File | Purpose | Key Findings |
+|------|---------|--------------|
+| `main.go` | Entry point | Delegates to `cmd.Execute()` |
+| `cmd/root.go` | Command registration | Cobra-based, 4 commands registered in `init()` |
+| `cmd/init.go` | Init command | Flag pattern: `BoolVar` in `init()`, working dir via `os.Getwd()` |
+| `cmd/new.go` | New command | Flag pattern: `StringVar`, positional args via `cobra.ExactArgs(1)` |
+| `cmd/plan.go` | Plan command | **Critical pattern**: TTY detection at line 40, config loading at 28-37, dual mode (TUI vs streaming) |
+| `cmd/run.go` | Run command | Stub only, not implemented |
+| `internal/config/config.go` | Configuration | `OutputConfig` at line 44 has `Format` and `IncludeMetadata`. `AgentConfig` at line 56 has command/args/tools |
+| `internal/runner/runner.go` | Claude subprocess | `ClaudeEvent` type at line 22, `RunClaude()` at line 148, `DetectQuestions()` at line 123, `BuildPrompt()` at line 126 |
+| `internal/plan/plan.go` | Plan orchestration | `RunPlan()` at line 74 — event loop with question/answer cycling. Key reference for adhoc execution pattern |
+| `internal/tui/tui.go` | Bubble Tea UI | `agentEventMsg` at line 26, model state at line 39, `handleAgentEvent()` at line 261 |
+| `internal/defaults/defaults.go` | Embedded files | `ReadFile()` and `MustReadFile()` for bundled assets |
+| `internal/project/init.go` | Project init | Creates `.spektacular/` directory tree |
+| `internal/spec/spec.go` | Spec creation | Template-based spec file generation |
+| `Makefile` | Build system | `go build`, `go test ./...`, cross-compilation targets |
 
 ### Patterns Discovered
 
-#### CLI Command Pattern (`cli.py`)
-```python
-@cli.command()
-@click.argument("spec_file", type=click.Path(exists=True, path_type=Path))
-def command(spec_file):
-    project_path = Path.cwd()
-    config_path = project_path / ".spektacular" / "config.yaml"
-    if config_path.exists():
-        config = SpektacularConfig.from_yaml_file(config_path)
-    else:
-        config = SpektacularConfig()
-    # ... call handler
-```
+#### 1. Command Registration Pattern (`cmd/root.go:25-30`)
+All commands are registered in `root.go`'s `init()` function. New commands follow the same pattern.
 
-#### Runner Event Loop Pattern (`plan.py:88-109`)
-```python
-current_prompt = prompt
-while True:
-    questions_found = []
-    for event in run_claude(current_prompt, config, session_id, project_path, command="plan"):
-        if event.session_id:
-            session_id = event.session_id
-        if text := event.text_content:
-            # process text
-            questions_found.extend(detect_questions(text))
-        if event.is_result:
-            if event.is_error:
-                raise RuntimeError(...)
-            final_result = event.result_text
-    if questions_found:
-        answer = get_answer(questions_found)
-        current_prompt = answer
-        continue
-    break
+#### 2. Config Loading Pattern (`cmd/plan.go:28-37`)
+```go
+configPath := filepath.Join(cwd, ".spektacular", "config.yaml")
+var cfg config.Config
+if _, err := os.Stat(configPath); err == nil {
+    cfg, err = config.FromYAMLFile(configPath)
+} else {
+    cfg = config.NewDefault()
+}
 ```
+This exact pattern should be reused in `cmd/adhoc.go`.
 
-#### Subprocess Mocking Pattern (`test_runner.py:121-130`)
-```python
-mock_process = MagicMock()
-mock_process.stdout = iter(events)
-mock_process.stderr.read.return_value = ""
-mock_process.returncode = 0
-with patch("spektacular.runner.subprocess.Popen", return_value=mock_process):
-    result = list(run_claude("prompt", config))
-```
+#### 3. Event Processing Pattern (`internal/plan/plan.go:101-148`)
+The plan generation loop is the closest existing pattern to what the adhoc engine needs:
+- Spawn `runner.RunClaude()` → get event channel
+- Iterate events, accumulate text and questions
+- If questions found, get answer and re-spawn with `--resume` session ID
+- On result event, write output and return
 
-#### Question Detection Pattern (`runner.py:68-85`)
-```python
-QUESTION_PATTERN = re.compile(r"<!--QUESTION:(.*?)-->", re.DOTALL)
-# Parses JSON from HTML comment markers
-# Returns list[Question] with question, header, options fields
+#### 4. Question Detection (`internal/runner/runner.go:97-123`)
+Questions are embedded in Claude's text output as HTML comments:
 ```
+<!--QUESTION:{"questions":[{"question":"...","header":"...","options":[...]}]}-->
+```
+The `runner.Question` struct has `Question`, `Header`, and `Options []map[string]any` fields.
+
+#### 5. Session Resumption (`internal/runner/runner.go:174-176`)
+When a session ID is provided, the runner adds `--resume <sessionID>` to the claude CLI command. This enables question/answer cycling.
+
+#### 6. TTY Detection (`cmd/plan.go:40`)
+```go
+if term.IsTerminal(int(os.Stdout.Fd())) { ... }
+```
+Used to decide between interactive TUI and streaming output. The adhoc command uses `--output` flag instead.
 
 ## Key Findings
 
 ### Architecture Insights
-1. The existing `run_claude()` generator is the core execution engine — all commands use it
-2. Question detection happens by scanning text content for HTML comment markers
-3. The question-answer loop is a `while True` pattern: run agent -> detect questions -> get answers -> resume
-4. Session IDs enable Claude process resumption across question rounds
-5. All output currently goes through Click's `echo()` or Textual's message system
+- The codebase follows a clean layered architecture: `cmd/` → `internal/` (packages don't cross-depend)
+- The runner package is the only component that interacts with the Claude CLI subprocess
+- Event processing is channel-based: `RunClaude()` returns `<-chan ClaudeEvent` and `<-chan error`
+- There are no interfaces for provider abstraction — the runner directly spawns the `claude` command
 
 ### Existing Implementations
-- `plan.py:run_plan()` (line 64-116): Non-TUI plan generation with CLI Q&A — closest model for the CLI output mode
-- `tui.py:PlanTUI._run_agent()` (line 416-450): TUI plan generation with message-passing — shows event-to-UI bridging
-- `tui.py:AgentOutput/AgentQuestion/AgentComplete/AgentError` messages: Internal event protocol for TUI — analogous to JSONL protocol events
+- `plan.RunPlan()` is the closest analog to what `adhoc.Engine.Run()` needs to do
+- The TUI's `handleAgentEvent()` shows how to process different event types (text, tool_use, result)
+- Debug logging pattern: conditional `openDebugLog()` based on `cfg.Debug.Enabled`
 
 ### Reusable Components
-- `run_claude()` — Core subprocess runner (no changes needed)
-- `detect_questions()` — Question extraction from text
-- `build_prompt()` — Prompt construction from spec + agent + knowledge
-- `load_knowledge()`, `load_agent_prompt()` — Resource loading utilities
-- `SpektacularConfig.from_yaml_file()` — Config loading with env var expansion
-- `Question` dataclass — Internal question model (needs mapping to protocol model)
+- `runner.RunClaude()` — direct reuse for spawning the Claude subprocess
+- `runner.DetectQuestions()` — direct reuse for question detection in text
+- `runner.ClaudeEvent` methods — `TextContent()`, `ToolUses()`, `IsResult()`, `IsError()`, `ResultText()`, `SessionID()`
+- `config.FromYAMLFile()` / `config.NewDefault()` — config loading
 
 ### Testing Infrastructure
-- pytest with `tmp_path` fixture for filesystem operations
-- `unittest.mock.patch` for subprocess mocking
-- `MagicMock` for process simulation
-- `pytest.raises` for error case testing
-- `capsys` available for stdout/stderr capture in non-TUI tests
-
-## Questions & Answers
-
-### Q: Should the run command be separate (`adhoc`) or replace the existing `run` placeholder?
-**A (user decision)**: Replace `run`. The placeholder at `cli.py:38-44` is a TODO that was always meant to be implemented. Adding `--output` to it is cleaner than creating a parallel command.
-
-### Q: Should we wire to `run_claude()` immediately or stub the executor?
-**A (user decision)**: Full integration. Wire directly to `run_claude()` from day one. No stub executor — the existing subprocess runner is mature enough.
-
-### Q: Should `spektacular config set/get` be implemented in this phase?
-**A (user decision)**: Defer. Only support `--output` CLI flag and manual config.yaml editing. The `config` command group can be added later.
-
-### Q: Where should the protocol models live?
-**Decision**: New file `src/spektacular/protocol.py`. The models are substantial enough to warrant their own module rather than being crammed into `runner.py` or the handler module. This also makes them importable by external tools that want to construct/parse protocol messages.
-
-### Q: How to handle the bridge between Claude's question format and the protocol format?
-**Decision**: A `_question_from_runner()` conversion function in `adhoc.py` that maps `Question(question, header, options)` to `QuestionPayload(question_id, kind, text, header, options, ...)`. This keeps the conversion logic close to where it's used and doesn't pollute the protocol models with runner-specific knowledge.
-
-### Q: Should JSON mode require `run.start` on stdin or auto-start?
-**Decision**: Require `run.start`. The spec mandates a lifecycle: receive `run.start` -> emit `run.started` -> work -> terminal event. This enables orchestrators to control timing and pass config overrides.
-
-### Q: How to ensure exactly one terminal event?
-**Decision**: A `terminal_sent` boolean flag in `run_adhoc_json()`. Set to `True` after emitting any terminal event. The `finally` block checks this flag and emits `run.failed` if no terminal event was sent. This handles all edge cases including exceptions.
+- All tests use `testing` + `github.com/stretchr/testify` (require package)
+- `t.TempDir()` for filesystem tests
+- `t.Setenv()` for environment variable mocking
+- No mock framework used — tests create real config/files
+- Test files are co-located with source: `*_test.go`
 
 ## Design Decisions
 
-### Decision: Pydantic for Protocol Models
-**Options Considered**: Plain dataclasses, TypedDict, Pydantic BaseModel
-**Rationale**: Pydantic provides JSON serialization (`.model_dump_json()`), validation, and schema generation. Already a project dependency. TypedDict would require manual serialization. Dataclasses would need custom JSON handling.
-**Trade-offs**: Slightly heavier than dataclasses, but the validation and serialization benefits outweigh the cost.
+### Decision: Concrete protocol types vs interface-based
+**Choice**: Concrete structs with JSON tags
+**Rationale**: The protocol is well-specified with fixed event types. Interfaces would add unnecessary abstraction. `Envelope.Payload` uses `any` for marshal flexibility, but all code paths use typed payloads.
 
-### Decision: Separate `protocol.py` Module
-**Options Considered**: Protocol models in `runner.py`, in `adhoc.py`, or in separate module
-**Rationale**: Protocol models are a standalone concern that may be imported by external tools, test utilities, and future modules (e.g., MCP server). Keeping them separate maintains single-responsibility.
-**Trade-offs**: One more file to maintain, but cleaner architecture.
+### Decision: Separate `internal/protocol/` package
+**Choice**: New package rather than extending `runner`
+**Rationale**: The protocol is tool-agnostic by design. Keeping it separate from the Claude-specific runner enforces this boundary. Other providers can reuse the protocol package without importing Claude internals.
 
-### Decision: Replace `run` Instead of New `adhoc` Command
-**Options Considered**: New `adhoc` command, replace `run`, subcommand `run --adhoc`
-**Rationale**: User decision. The existing `run` command is a TODO placeholder — replacing it is the cleanest path. No need for a separate command that duplicates the concept.
-**Trade-offs**: Changes the `run` command signature (adds `--output` flag), but since `run` was unimplemented, there's no backwards compatibility concern.
+### Decision: Mutex-protected terminal events
+**Choice**: `sync.Mutex` + `done` flag on terminal event helpers
+**Rationale**: The spec requires exactly one terminal event per run. With concurrent stdin listening (for `run.cancel`) and agent execution, a race between `emitFailed()` and `emitCancelled()` is possible. The mutex ensures only the first terminal event wins.
 
-### Decision: `_emit()` and `_read_event()` as Module-Level Functions
-**Options Considered**: Class-based protocol handler, standalone functions, context manager
-**Rationale**: Simple functions are easier to test (patch `sys.stdout`/`sys.stdin`), understand, and compose. A class would add unnecessary ceremony for what is essentially "write JSON line" and "read JSON line".
-**Trade-offs**: Less encapsulation than a class, but more Pythonic for this scope.
+### Decision: Generic `ReadPayload[T]` function
+**Choice**: Go generics for payload deserialization
+**Rationale**: Avoids repetitive unmarshal boilerplate for each payload type. The caller specifies the expected type, and the function handles the `any` → typed conversion via JSON round-trip.
 
-### Decision: CLI Flag Overrides Config (No `config` command)
-**Resolution order**: `--output` flag > `config.output.adhoc_mode` > default `"cli"`
-**Rationale**: User chose to defer `config set/get`. Users can manually set `adhoc_mode` in config.yaml. Standard CLI convention: flags override persistent config.
+### Decision: Engine owns the run ID
+**Choice**: Run ID generated in `adhoc.New()`, not from `run.start` envelope
+**Rationale**: The engine creates the run context. The inbound `run.start` may carry a run_id for correlation, but the engine's own run_id is used for all outbound events, ensuring consistency.
+
+### Decision: CLI mode uses runner directly
+**Choice**: CLI mode bypasses the protocol engine entirely
+**Rationale**: In CLI mode, there's no JSONL protocol — just text streaming. Wrapping it in the engine would add unnecessary complexity. The `runAdhocCLI()` helper calls `runner.RunClaude()` directly, matching the existing plan command's non-TTY path.
+
+## Open Questions (Resolved)
+
+All questions resolved through specification analysis and codebase research. No outstanding blockers.
 
 ## Code Examples & Patterns
 
-### JSONL Emission Pattern
-```python
-# File: src/spektacular/adhoc.py
-def _emit(envelope: Envelope) -> None:
-    sys.stdout.write(envelope.to_jsonl() + "\n")
-    sys.stdout.flush()
+### Existing Event Loop Pattern (reference for adhoc engine)
+```go
+// File: internal/plan/plan.go:101-148
+for {
+    var questionsFound []runner.Question
+    var finalResult string
+
+    events, errc := runner.RunClaude(runner.RunOptions{
+        Prompt:    currentPrompt,
+        Config:    cfg,
+        SessionID: sessionID,
+        CWD:       projectPath,
+        Command:   "plan",
+    })
+
+    for event := range events {
+        if id := event.SessionID(); id != "" {
+            sessionID = id
+        }
+        if text := event.TextContent(); text != "" {
+            if onText != nil {
+                onText(text)
+            }
+            questionsFound = append(questionsFound, runner.DetectQuestions(text)...)
+        }
+        if event.IsResult() {
+            if event.IsError() {
+                return "", fmt.Errorf("agent error: %s", event.ResultText())
+            }
+            finalResult = event.ResultText()
+        }
+    }
+
+    if err := <-errc; err != nil {
+        return "", fmt.Errorf("runner error: %w", err)
+    }
+
+    if len(questionsFound) > 0 && onQuestion != nil {
+        answer := onQuestion(questionsFound)
+        currentPrompt = answer
+        continue
+    }
+
+    // ... write result
+}
 ```
 
-### Terminal Event Safety Pattern
-```python
-terminal_sent = False
-try:
-    # ... work ...
-    _emit(make_envelope(EventType.RUN_COMPLETED, run_id, payload))
-    terminal_sent = True
-except Exception as e:
-    if not terminal_sent:
-        _emit(make_envelope(EventType.RUN_FAILED, run_id, {"error": str(e)}))
-        terminal_sent = True
-finally:
-    if not terminal_sent:
-        _emit(make_envelope(EventType.RUN_FAILED, run_id, {"error": "Unexpected"}))
+### Existing Config Loading Pattern
+```go
+// File: cmd/plan.go:28-37
+configPath := filepath.Join(cwd, ".spektacular", "config.yaml")
+var cfg config.Config
+if _, err := os.Stat(configPath); err == nil {
+    cfg, err = config.FromYAMLFile(configPath)
+    if err != nil {
+        return fmt.Errorf("loading config: %w", err)
+    }
+} else {
+    cfg = config.NewDefault()
+}
 ```
 
-### Question Bridge Pattern
-```python
-# Internal: Question(question="Which?", header="H", options=[{"label": "A"}])
-# Protocol: QuestionPayload(question_id="q_0", kind="select", text="Which?", ...)
-def _question_from_runner(q: Question, idx: int) -> QuestionPayload:
-    return QuestionPayload(
-        question_id=f"q_{idx}",
-        kind=QuestionKind.SELECT if q.options else QuestionKind.TEXT,
-        text=q.question,
-        header=q.header,
-        options=[QuestionOption(label=o["label"], description=o.get("description")) for o in q.options],
-    )
+### Existing Question Structure
+```go
+// File: internal/runner/runner.go:91-95
+type Question struct {
+    Question string
+    Header   string
+    Options  []map[string]any
+}
 ```
 
-## Open Questions (All Resolved)
-
-All questions have been resolved during the research phase and through user input. No blockers remain.
+Normalized to protocol format:
+```go
+// Protocol question with explicit kinds and structured options
+RunQuestionPayload{
+    QuestionID: "q_1",
+    Kind:       "select",
+    Text:       q.Question,
+    Options:    []QuestionOption{{Label: "...", Description: "..."}},
+    Required:   true,
+}
+```

@@ -286,18 +286,9 @@ This agent is designed to work within Spektacular's orchestration framework:
 The generated plans should be detailed enough that implementation agents (or human developers) can execute them without needing additional architectural decisions.
 
 
-
 ---
 
 # Knowledge Base
-
-
-## architecture/README.md
-# Architecture
-
-This directory contains architecture documentation.
-
-
 
 ## architecture/claude-output-spec.md
 # Claude Code Output Specification
@@ -581,7 +572,6 @@ def route_question_to_surface(question, surface):
 
 *Generated from analysis of claude-schedule project*  
 *Last updated: 2026-02-19*
-
 
 
 ## architecture/initial-idea.md
@@ -1348,7 +1338,6 @@ The ideal: take IW's proven workflow structure and layer on:
 - [awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code) — Skills, hooks, orchestrators index
 
 
-
 ## conventions.md
 ## Coding Standards
 - Follow PEP 8 for Python code
@@ -1370,19 +1359,16 @@ The ideal: take IW's proven workflow structure and layer on:
 - Include inline comments for complex logic
 - Document API changes in CHANGELOG.md
 
-
 ## gotchas/README.md
 # Gotchas
 
 This directory contains gotchas documentation.
 
 
-
 ## learnings/README.md
 # Learnings
 
 This directory contains learnings documentation.
-
 
 
 ## learnings/running-claud-cli.md
@@ -1398,6 +1384,11 @@ Outputs json which contains a session id: c102b04d-1a16-473e-ae3f-e8a5b5b8d87e
 ```bash
 claude -p "Now use the planner agent workflow to process .spektacular/specs/1_plan_mode.md and create implementation plans" --resume <session-id> --output-format stream-json --verbose --allowedTools "Bash,Read,Write,Edit" --dangerously-skip-permissions
 ```
+
+## architecture/README.md
+# Architecture
+
+This directory contains architecture documentation.
 
 
 ---

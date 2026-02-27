@@ -5,6 +5,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	// Register the Claude runner so it's available via runner.NewRunner().
+	_ "github.com/jumppad-labs/spektacular/internal/runner/claude"
 )
 
 const version = "0.1.0"

@@ -113,7 +113,7 @@ func TestWithLine_IsSafeToCopy(t *testing.T) {
 }
 
 func TestReadNext_ClosedChannel_ReturnsDoneMsg(t *testing.T) {
-	events := make(chan runner.ClaudeEvent)
+	events := make(chan runner.Event)
 	errc := make(chan error, 1)
 	close(events)
 	msg := readNext(events, errc)
@@ -122,7 +122,7 @@ func TestReadNext_ClosedChannel_ReturnsDoneMsg(t *testing.T) {
 }
 
 func TestReadNext_ClosedChannelWithError_ReturnsErrMsg(t *testing.T) {
-	events := make(chan runner.ClaudeEvent)
+	events := make(chan runner.Event)
 	errc := make(chan error, 1)
 	errc <- fmt.Errorf("runner failed")
 	close(events)
@@ -133,9 +133,9 @@ func TestReadNext_ClosedChannelWithError_ReturnsErrMsg(t *testing.T) {
 }
 
 func TestReadNext_OpenChannel_ReturnsEventMsg(t *testing.T) {
-	events := make(chan runner.ClaudeEvent, 1)
+	events := make(chan runner.Event, 1)
 	errc := make(chan error, 1)
-	events <- runner.ClaudeEvent{Type: "assistant"}
+	events <- runner.Event{Type: "assistant"}
 	msg := readNext(events, errc)
 	evMsg, ok := msg.(agentEventMsg)
 	require.True(t, ok)

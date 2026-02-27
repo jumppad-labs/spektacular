@@ -25,8 +25,8 @@ import (
 // next waitForEvent call can continue reading without storing channels in the
 // model (which breaks Bubble Tea's copy-on-update semantics).
 type agentEventMsg struct {
-	event  runner.ClaudeEvent
-	events <-chan runner.ClaudeEvent
+	event  runner.Event
+	events <-chan runner.Event
 	errc   <-chan error
 }
 
@@ -126,16 +126,23 @@ func startAgentCmd(specPath, projectPath string, cfg config.Config, sessionID st
 		}
 
 		if cfg.Debug.Enabled {
-			_ = os.WriteFile(filepath.Join(planDir, "prompt.md"), []byte(prompt), 0644)
+			debugDir := filepath.Join(projectPath, ".spektacular", "debug")
+			_ = os.MkdirAll(debugDir, 0755)
+			_ = os.WriteFile(filepath.Join(debugDir, "plan-prompt.md"), []byte(prompt), 0644)
 		}
 
-		events, errc := runner.RunClaude(runner.RunOptions{
+		r, err := runner.NewRunner(cfg)
+		if err != nil {
+			return agentErrMsg{err: fmt.Errorf("creating runner: %w", err)}
+		}
+
+		events, errc := r.Run(runner.RunOptions{
 			Prompt:       prompt,
 			SystemPrompt: agentPrompt,
-			Config:    cfg,
-			SessionID: sessionID,
-			CWD:       projectPath,
-			Command:   "plan",
+			Config:       cfg,
+			SessionID:    sessionID,
+			CWD:          projectPath,
+			Command:      "plan",
 		})
 		return readNext(events, errc)
 	}
@@ -144,7 +151,12 @@ func startAgentCmd(specPath, projectPath string, cfg config.Config, sessionID st
 // resumeAgentCmd starts a new runner turn with the user's answer.
 func resumeAgentCmd(cfg config.Config, sessionID, projectPath, answer string) tea.Cmd {
 	return func() tea.Msg {
-		events, errc := runner.RunClaude(runner.RunOptions{
+		r, err := runner.NewRunner(cfg)
+		if err != nil {
+			return agentErrMsg{err: fmt.Errorf("creating runner: %w", err)}
+		}
+
+		events, errc := r.Run(runner.RunOptions{
 			Prompt:    answer,
 			Config:    cfg,
 			SessionID: sessionID,
@@ -156,13 +168,13 @@ func resumeAgentCmd(cfg config.Config, sessionID, projectPath, answer string) te
 }
 
 // waitForEvent returns a Cmd that reads the NEXT event from already-open channels.
-func waitForEvent(events <-chan runner.ClaudeEvent, errc <-chan error) tea.Cmd {
+func waitForEvent(events <-chan runner.Event, errc <-chan error) tea.Cmd {
 	return func() tea.Msg { return readNext(events, errc) }
 }
 
 // readNext reads one event from the channel and returns the appropriate message.
 // Channels are embedded in agentEventMsg so they propagate without model storage.
-func readNext(events <-chan runner.ClaudeEvent, errc <-chan error) tea.Msg {
+func readNext(events <-chan runner.Event, errc <-chan error) tea.Msg {
 	event, ok := <-events
 	if !ok {
 		select {
@@ -681,10 +693,17 @@ func implementStartCmd(planDir, projectPath string, cfg config.Config, sessionID
 		prompt := runner.BuildPromptWithHeader(planContent, "Implementation Plan")
 
 		if cfg.Debug.Enabled {
-			_ = os.WriteFile(filepath.Join(planDir, "implement-prompt.md"), []byte(prompt), 0644)
+			debugDir := filepath.Join(projectPath, ".spektacular", "debug")
+			_ = os.MkdirAll(debugDir, 0755)
+			_ = os.WriteFile(filepath.Join(debugDir, "implement-prompt.md"), []byte(prompt), 0644)
 		}
 
-		events, errc := runner.RunClaude(runner.RunOptions{
+		r, err := runner.NewRunner(cfg)
+		if err != nil {
+			return agentErrMsg{err: fmt.Errorf("creating runner: %w", err)}
+		}
+
+		events, errc := r.Run(runner.RunOptions{
 			Prompt:       prompt,
 			SystemPrompt: agentPrompt,
 			Config:       cfg,

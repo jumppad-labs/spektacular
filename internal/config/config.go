@@ -105,7 +105,7 @@ func NewDefault() Config {
 		},
 		Debug: DebugConfig{
 			Enabled: false,
-			LogDir:  ".spektacular/logs",
+			LogDir:  ".spektacular/debug/logs",
 		},
 	}
 }

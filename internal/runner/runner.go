@@ -1,40 +1,42 @@
-// Package runner spawns the claude CLI subprocess and streams parsed events.
+// Package runner defines the Runner interface and shared types for agent backends.
 package runner
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 )
 
 var questionPattern = regexp.MustCompile(`<!--QUESTION:([\s\S]*?)-->`)
 
-// ClaudeEvent is a single parsed event from the claude stream-JSON output.
-type ClaudeEvent struct {
+// Runner is the interface that all agent backends must implement.
+type Runner interface {
+	// Run starts the agent with the given options and returns a channel of
+	// events and an error channel. The caller must drain both channels;
+	// the event channel is closed when the agent finishes.
+	Run(opts RunOptions) (<-chan Event, <-chan error)
+}
+
+// Event is a single parsed event from an agent's output stream.
+type Event struct {
 	Type string
 	Data map[string]any
 }
 
 // SessionID returns the session_id field if present.
-func (e ClaudeEvent) SessionID() string {
+func (e Event) SessionID() string {
 	v, _ := e.Data["session_id"].(string)
 	return v
 }
 
 // IsResult reports whether this is a terminal result event.
-func (e ClaudeEvent) IsResult() bool { return e.Type == "result" }
+func (e Event) IsResult() bool { return e.Type == "result" }
 
 // IsError reports whether this is an error result.
-func (e ClaudeEvent) IsError() bool {
+func (e Event) IsError() bool {
 	if !e.IsResult() {
 		return false
 	}
@@ -43,7 +45,7 @@ func (e ClaudeEvent) IsError() bool {
 }
 
 // ResultText returns the result text from a result event, or empty string.
-func (e ClaudeEvent) ResultText() string {
+func (e Event) ResultText() string {
 	if !e.IsResult() {
 		return ""
 	}
@@ -52,7 +54,7 @@ func (e ClaudeEvent) ResultText() string {
 }
 
 // TextContent extracts concatenated text blocks from an assistant event.
-func (e ClaudeEvent) TextContent() string {
+func (e Event) TextContent() string {
 	if e.Type != "assistant" {
 		return ""
 	}
@@ -71,7 +73,7 @@ func (e ClaudeEvent) TextContent() string {
 }
 
 // ToolUses extracts tool_use blocks from an assistant event.
-func (e ClaudeEvent) ToolUses() []map[string]any {
+func (e Event) ToolUses() []map[string]any {
 	if e.Type != "assistant" {
 		return nil
 	}
@@ -87,7 +89,7 @@ func (e ClaudeEvent) ToolUses() []map[string]any {
 	return tools
 }
 
-// Question is a structured question detected in Claude output.
+// Question is a structured question detected in agent output.
 type Question struct {
 	Question string
 	Header   string
@@ -123,7 +125,6 @@ func detectQuestions(text string) []Question {
 func DetectQuestions(text string) []Question { return detectQuestions(text) }
 
 // BuildPrompt assembles the user prompt: knowledge hint + spec content.
-// Agent specialization belongs in RunOptions.SystemPrompt, not here.
 func BuildPrompt(specContent string) string {
 	return BuildPromptWithHeader(specContent, "Specification to Plan")
 }
@@ -136,7 +137,7 @@ func BuildPromptWithHeader(content string, header string) string {
 	return b.String()
 }
 
-// RunOptions holds parameters for RunClaude.
+// RunOptions holds parameters for running an agent.
 type RunOptions struct {
 	Prompt       string
 	SystemPrompt string // passed as --system-prompt; use for agent specialization
@@ -146,104 +147,3 @@ type RunOptions struct {
 	Command      string // used only for debug log filename
 }
 
-// RunClaude spawns the claude subprocess and returns a channel of events and an error channel.
-// The caller must drain both channels; the event channel is closed when the process exits.
-func RunClaude(opts RunOptions) (<-chan ClaudeEvent, <-chan error) {
-	events := make(chan ClaudeEvent, 64)
-	errc := make(chan error, 1)
-
-	go func() {
-		defer close(events)
-		if err := runClaude(opts, events); err != nil {
-			errc <- err
-		}
-		close(errc)
-	}()
-
-	return events, errc
-}
-
-func runClaude(opts RunOptions, events chan<- ClaudeEvent) error {
-	cfg := opts.Config
-	cmd := []string{cfg.Agent.Command, "-p", opts.Prompt}
-	if opts.SystemPrompt != "" {
-		cmd = append(cmd, "--system-prompt", opts.SystemPrompt)
-	}
-	cmd = append(cmd, cfg.Agent.Args...)
-
-	if len(cfg.Agent.AllowedTools) > 0 {
-		cmd = append(cmd, "--allowedTools", strings.Join(cfg.Agent.AllowedTools, ","))
-	}
-	if cfg.Agent.DangerouslySkipPermissions {
-		cmd = append(cmd, "--dangerously-skip-permissions")
-	}
-	if opts.SessionID != "" {
-		cmd = append(cmd, "--resume", opts.SessionID)
-	}
-
-	cwd := opts.CWD
-	if cwd == "" {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			return fmt.Errorf("getting working directory: %w", err)
-		}
-	}
-
-	proc := exec.Command(cmd[0], cmd[1:]...) //nolint:gosec
-	proc.Dir = cwd
-	proc.Stderr = io.Discard
-
-	stdout, err := proc.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating stdout pipe: %w", err)
-	}
-	if err := proc.Start(); err != nil {
-		return fmt.Errorf("starting claude process: %w", err)
-	}
-
-	var debugLog *os.File
-	if cfg.Debug.Enabled {
-		debugLog = openDebugLog(cfg, opts.Command, cwd)
-		if debugLog != nil {
-			defer debugLog.Close()
-		}
-	}
-
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1 MiB lines
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		if debugLog != nil {
-			fmt.Fprintln(debugLog, line)
-		}
-		var data map[string]any
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			continue
-		}
-		eventType, _ := data["type"].(string)
-		events <- ClaudeEvent{Type: eventType, Data: data}
-	}
-
-	if err := proc.Wait(); err != nil {
-		return fmt.Errorf("claude process exited with error: %w", err)
-	}
-	return nil
-}
-
-func openDebugLog(cfg config.Config, command, cwd string) *os.File {
-	logDir := filepath.Join(cwd, cfg.Debug.LogDir)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return nil
-	}
-	ts := time.Now().Format("2006-01-02_150405")
-	filename := fmt.Sprintf("%s_%s_%s.log", ts, cfg.Agent.Command, command)
-	f, err := os.Create(filepath.Join(logDir, filename))
-	if err != nil {
-		return nil
-	}
-	return f
-}

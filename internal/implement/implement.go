@@ -82,7 +82,14 @@ func RunImplement(
 	prompt := runner.BuildPromptWithHeader(planContent, "Implementation Plan")
 
 	if cfg.Debug.Enabled {
-		_ = os.WriteFile(filepath.Join(planDir, "implement-prompt.md"), []byte(prompt), 0644)
+		debugDir := filepath.Join(projectPath, ".spektacular", "debug")
+		_ = os.MkdirAll(debugDir, 0755)
+		_ = os.WriteFile(filepath.Join(debugDir, "implement-prompt.md"), []byte(prompt), 0644)
+	}
+
+	r, err := runner.NewRunner(cfg)
+	if err != nil {
+		return "", fmt.Errorf("creating runner: %w", err)
 	}
 
 	sessionID := ""
@@ -92,7 +99,7 @@ func RunImplement(
 		var questionsFound []runner.Question
 		var finalResult string
 
-		events, errc := runner.RunClaude(runner.RunOptions{
+		events, errc := r.Run(runner.RunOptions{
 			Prompt:       currentPrompt,
 			SystemPrompt: agentPrompt,
 			Config:       cfg,

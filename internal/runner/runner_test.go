@@ -3,55 +3,56 @@ package runner
 import (
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
-// ClaudeEvent property tests
+// Event property tests
 // ---------------------------------------------------------------------------
 
-func TestClaudeEvent_SessionID(t *testing.T) {
-	e := ClaudeEvent{Type: "system", Data: map[string]any{"session_id": "sess-123"}}
+func TestEvent_SessionID(t *testing.T) {
+	e := Event{Type: "system", Data: map[string]any{"session_id": "sess-123"}}
 	require.Equal(t, "sess-123", e.SessionID())
 }
 
-func TestClaudeEvent_SessionID_Missing(t *testing.T) {
-	e := ClaudeEvent{Type: "system", Data: map[string]any{}}
+func TestEvent_SessionID_Missing(t *testing.T) {
+	e := Event{Type: "system", Data: map[string]any{}}
 	require.Equal(t, "", e.SessionID())
 }
 
-func TestClaudeEvent_IsResult_True(t *testing.T) {
-	e := ClaudeEvent{Type: "result"}
+func TestEvent_IsResult_True(t *testing.T) {
+	e := Event{Type: "result"}
 	require.True(t, e.IsResult())
 }
 
-func TestClaudeEvent_IsResult_False(t *testing.T) {
-	e := ClaudeEvent{Type: "assistant"}
+func TestEvent_IsResult_False(t *testing.T) {
+	e := Event{Type: "assistant"}
 	require.False(t, e.IsResult())
 }
 
-func TestClaudeEvent_IsError_True(t *testing.T) {
-	e := ClaudeEvent{Type: "result", Data: map[string]any{"is_error": true}}
+func TestEvent_IsError_True(t *testing.T) {
+	e := Event{Type: "result", Data: map[string]any{"is_error": true}}
 	require.True(t, e.IsError())
 }
 
-func TestClaudeEvent_IsError_False_WhenNotResult(t *testing.T) {
-	e := ClaudeEvent{Type: "assistant", Data: map[string]any{"is_error": true}}
+func TestEvent_IsError_False_WhenNotResult(t *testing.T) {
+	e := Event{Type: "assistant", Data: map[string]any{"is_error": true}}
 	require.False(t, e.IsError())
 }
 
-func TestClaudeEvent_ResultText(t *testing.T) {
-	e := ClaudeEvent{Type: "result", Data: map[string]any{"result": "plan text"}}
+func TestEvent_ResultText(t *testing.T) {
+	e := Event{Type: "result", Data: map[string]any{"result": "plan text"}}
 	require.Equal(t, "plan text", e.ResultText())
 }
 
-func TestClaudeEvent_ResultText_EmptyWhenNotResult(t *testing.T) {
-	e := ClaudeEvent{Type: "assistant", Data: map[string]any{"result": "plan text"}}
+func TestEvent_ResultText_EmptyWhenNotResult(t *testing.T) {
+	e := Event{Type: "assistant", Data: map[string]any{"result": "plan text"}}
 	require.Equal(t, "", e.ResultText())
 }
 
-func TestClaudeEvent_TextContent_ExtractsTextBlocks(t *testing.T) {
-	e := ClaudeEvent{
+func TestEvent_TextContent_ExtractsTextBlocks(t *testing.T) {
+	e := Event{
 		Type: "assistant",
 		Data: map[string]any{
 			"message": map[string]any{
@@ -66,13 +67,13 @@ func TestClaudeEvent_TextContent_ExtractsTextBlocks(t *testing.T) {
 	require.Equal(t, "hello\n world", e.TextContent())
 }
 
-func TestClaudeEvent_TextContent_EmptyWhenNotAssistant(t *testing.T) {
-	e := ClaudeEvent{Type: "result"}
+func TestEvent_TextContent_EmptyWhenNotAssistant(t *testing.T) {
+	e := Event{Type: "result"}
 	require.Equal(t, "", e.TextContent())
 }
 
-func TestClaudeEvent_ToolUses(t *testing.T) {
-	e := ClaudeEvent{
+func TestEvent_ToolUses(t *testing.T) {
+	e := Event{
 		Type: "assistant",
 		Data: map[string]any{
 			"message": map[string]any{
@@ -133,4 +134,43 @@ func TestBuildPromptWithHeader_UsesCustomHeader(t *testing.T) {
 	require.Contains(t, prompt, "# Implementation Plan")
 	require.Contains(t, prompt, "plan content")
 	require.NotContains(t, prompt, "Specification to Plan")
+}
+
+// ---------------------------------------------------------------------------
+// NewRunner factory tests
+// ---------------------------------------------------------------------------
+
+func TestNewRunner_ReturnsErrorForUnknownCommand(t *testing.T) {
+	cfg := config.Config{Agent: config.AgentConfig{Command: "unknown-agent"}}
+	r, err := NewRunner(cfg)
+	require.Error(t, err)
+	require.Nil(t, r)
+	require.Contains(t, err.Error(), "unsupported runner")
+	require.Contains(t, err.Error(), "unknown-agent")
+}
+
+func TestNewRunner_ReturnsRunnerForRegisteredCommand(t *testing.T) {
+	// Register a test runner.
+	Register("test-runner", func() Runner {
+		return &stubRunner{}
+	})
+	defer func() {
+		delete(registry, "test-runner")
+	}()
+
+	cfg := config.Config{Agent: config.AgentConfig{Command: "test-runner"}}
+	r, err := NewRunner(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+}
+
+// stubRunner is a minimal runner for testing the registry.
+type stubRunner struct{}
+
+func (s *stubRunner) Run(_ RunOptions) (<-chan Event, <-chan error) {
+	events := make(chan Event)
+	errc := make(chan error)
+	close(events)
+	close(errc)
+	return events, errc
 }

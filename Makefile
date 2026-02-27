@@ -1,10 +1,10 @@
 BINARY := spektacular
 VERSION := 0.1.0
 
-.PHONY: build test lint clean install cross
+.PHONY: build test lint clean install install-local cross
 
 build:
-	go build -ldflags "-X github.com/nicholasjackson/spektacular/cmd.version=$(VERSION)" -o $(BINARY) .
+	go build -ldflags "-X github.com/jumppad-labs/spektacular/cmd.version=$(VERSION)" -o $(BINARY) .
 
 test:
 	go test ./...
@@ -17,6 +17,9 @@ clean:
 
 install: build
 	cp $(BINARY) $(GOPATH)/bin/$(BINARY)
+
+install-local: build
+	sudo cp $(BINARY) /usr/local/bin/$(BINARY)
 
 cross:
 	GOOS=darwin  GOARCH=arm64 go build -o $(BINARY)-darwin-arm64  .

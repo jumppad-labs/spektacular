@@ -2,17 +2,177 @@
 
 ## Overview
 
-Claude Code with `--output-format stream-json` produces structured JSONL (JSON Lines) output that can be parsed for orchestration and UI routing. This document specifies the output format based on analysis of the `claude-schedule` project.
+Claude Code is Anthropic's official AI coding agent CLI (v2.1.63). It provides interactive and non-interactive modes for code generation, planning, and general-purpose AI assistance. With `--output-format stream-json` it produces structured JSONL (JSON Lines) output that can be parsed for orchestration and UI routing. This document specifies the CLI and output format based on analysis of the `claude-schedule` project.
 
-## Command Structure
+## CLI Reference
+
+### Installation
 
 ```bash
-claude -p "prompt text" \\
-  --output-format stream-json \\
-  --verbose \\
-  --dangerously-skip-permissions \\
-  --resume SESSION_ID \\
-  --allowedTools "Bash,Read,Write,Edit,WebFetch,WebSearch" \\
+npm install -g @anthropic-ai/claude-code
+```
+
+### Usage
+
+```bash
+claude [options] [command] [prompt]
+```
+
+- **Default mode**: Interactive session
+- **Non-interactive**: Use `-p`/`--print` for one-shot execution (prints response and exits)
+- **Continue**: Use `-c`/`--continue` to resume the most recent conversation in the current directory
+
+### Core Options
+
+| Flag | Description |
+|------|-------------|
+| `-p, --print` | Print response and exit (non-interactive, for pipes) |
+| `-c, --continue` | Continue the most recent conversation in the current directory |
+| `-r, --resume [value]` | Resume a conversation by session ID, or open interactive picker |
+| `--session-id <uuid>` | Use a specific session ID (must be valid UUID) |
+| `--fork-session` | Create a new session ID when resuming (use with `--resume` or `--continue`) |
+| `--model <model>` | Model alias (`sonnet`, `opus`) or full name (`claude-sonnet-4-6`) |
+| `--fallback-model <model>` | Auto-fallback when default model is overloaded (only with `--print`) |
+| `--effort <level>` | Effort level: `low`, `medium`, `high` |
+| `-o, --output-format <fmt>` | Output format: `text`, `json`, `stream-json` (only with `--print`) |
+| `--input-format <fmt>` | Input format: `text` (default), `stream-json` (only with `--print`) |
+| `--verbose` | Override verbose mode setting from config |
+| `-d, --debug [filter]` | Enable debug mode with optional category filtering (e.g., `"api,hooks"`) |
+| `--debug-file <path>` | Write debug logs to a specific file path |
+| `-v, --version` | Show version |
+| `-h, --help` | Show help |
+
+### Permission Modes
+
+| Flag | Description |
+|------|-------------|
+| `--permission-mode <mode>` | Permission mode: `default`, `acceptEdits`, `bypassPermissions`, `dontAsk`, `plan` |
+| `--dangerously-skip-permissions` | Bypass all permission checks (sandbox-only recommended) |
+| `--allow-dangerously-skip-permissions` | Enable bypass as an option without enabling by default |
+
+### Tool Control
+
+| Flag | Description |
+|------|-------------|
+| `--allowedTools, --allowed-tools <tools...>` | Tools allowed without confirmation (e.g., `"Bash(git:*) Edit"`) |
+| `--disallowedTools, --disallowed-tools <tools...>` | Tools to deny (e.g., `"Bash(git:*) Edit"`) |
+| `--tools <tools...>` | Available tool set: `""` (none), `"default"` (all), or specific names |
+
+### Prompt Customization
+
+| Flag | Description |
+|------|-------------|
+| `--system-prompt <prompt>` | System prompt for the session |
+| `--append-system-prompt <prompt>` | Append to the default system prompt |
+| `--json-schema <schema>` | JSON Schema for structured output validation |
+
+### Budget Control
+
+| Flag | Description |
+|------|-------------|
+| `--max-budget-usd <amount>` | Maximum dollar amount for API calls (only with `--print`) |
+
+### Agent Configuration
+
+| Flag | Description |
+|------|-------------|
+| `--agent <agent>` | Agent for the current session (overrides `agent` setting) |
+| `--agents <json>` | JSON object defining custom agents |
+
+### Workspace Options
+
+| Flag | Description |
+|------|-------------|
+| `--add-dir <directories...>` | Additional directories to allow tool access to |
+| `-w, --worktree [name]` | Create a new git worktree for this session |
+| `--tmux` | Create a tmux session for the worktree (requires `--worktree`) |
+
+### Streaming Options
+
+| Flag | Description |
+|------|-------------|
+| `--include-partial-messages` | Include partial message chunks as they arrive (with `--print` and `stream-json`) |
+| `--replay-user-messages` | Re-emit user messages from stdin on stdout (with `stream-json` I/O) |
+| `--no-session-persistence` | Don't save sessions to disk (only with `--print`) |
+
+### MCP Server Management
+
+```bash
+claude mcp add <name> <commandOrUrl> [args...]   # Add stdio/HTTP server
+claude mcp add --transport http <name> <url>      # Add HTTP server explicitly
+claude mcp add -e API_KEY=xxx <name> -- <cmd>     # Add with env vars
+claude mcp add-json <name> <json>                 # Add from JSON config
+claude mcp add-from-claude-desktop                # Import from Claude Desktop
+claude mcp get <name>                             # Get server details
+claude mcp list                                   # List configured servers
+claude mcp remove <name>                          # Remove a server
+claude mcp serve                                  # Start Claude Code as MCP server
+claude mcp reset-project-choices                  # Reset project server approvals
+```
+
+### MCP Configuration File
+
+```bash
+claude --mcp-config config.json            # Load MCP servers from file
+claude --strict-mcp-config                 # Only use servers from --mcp-config
+```
+
+### Plugin Management
+
+```bash
+claude plugin install <plugin>             # Install from marketplace
+claude plugin uninstall <plugin>           # Uninstall a plugin
+claude plugin list                         # List installed plugins
+claude plugin update <plugin>              # Update a plugin
+claude plugin enable <plugin>              # Enable a disabled plugin
+claude plugin disable [plugin]             # Disable an enabled plugin
+claude plugin marketplace                  # Manage marketplaces
+claude plugin validate <path>              # Validate plugin/manifest
+```
+
+### Authentication
+
+```bash
+claude auth login                          # Sign in to Anthropic account
+claude auth logout                         # Log out
+claude auth status                         # Show authentication status
+claude setup-token                         # Set up long-lived auth token
+```
+
+### Other Commands
+
+```bash
+claude agents                              # List configured agents
+claude doctor                              # Check auto-updater health
+claude install [target]                    # Install native build (stable/latest/version)
+claude update                              # Check for and install updates
+```
+
+### Miscellaneous Options
+
+| Flag | Description |
+|------|-------------|
+| `--chrome` / `--no-chrome` | Enable/disable Chrome integration |
+| `--ide` | Auto-connect to IDE on startup |
+| `--disable-slash-commands` | Disable all skills |
+| `--betas <betas...>` | Beta headers for API requests (API key users) |
+| `--setting-sources <sources>` | Setting sources to load: `user`, `project`, `local` |
+| `--settings <file-or-json>` | Additional settings from file or JSON string |
+| `--plugin-dir <paths...>` | Load plugins from directories for this session |
+| `--file <specs...>` | File resources to download at startup (`file_id:path`) |
+| `--from-pr [value]` | Resume session linked to a PR by number/URL |
+
+## Non-Interactive Command Structure
+
+For Spektacular integration, use non-interactive mode with streaming JSON:
+
+```bash
+claude -p "prompt text" \
+  --output-format stream-json \
+  --verbose \
+  --dangerously-skip-permissions \
+  --resume SESSION_ID \
+  --allowedTools "Bash,Read,Write,Edit,WebFetch,WebSearch" \
   --mcp-config config.json
 ```
 

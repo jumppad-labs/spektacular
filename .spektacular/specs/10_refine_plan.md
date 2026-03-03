@@ -1,6 +1,5 @@
-# Feature: 10 Refine Plan
+# Feature: 14 Refine Plan
 
-## Overview
 <!--
   OVERVIEW
   A concise 2-3 sentence summary of the feature. Answer three questions:
@@ -9,9 +8,11 @@
     3. Who benefits and why does it matter?
   Avoid implementation details — this should be readable by any stakeholder.
 -->
-Plan mode should allow the refinement and provision of user feedback for plans. This enables the user to iteratively refine a generated plan by providing additional knowledge, guidance, or corrections. Users benefit from higher-quality plans that incorporate their domain expertise and preferences.
+## Overview
 
-## Requirements
+Plan mode should have an interactive feedback loop that allows users to refine generated plans. Currently, once a plan is generated, there is no way for the user to request targeted changes — they must regenerate the entire plan from scratch. This feature introduces a conversational flow where the LLM asks clarifying questions if needed and then updates specific parts of the plan based on user feedback. Users can also annotate or comment directly on the plan itself, which the agent reads and acts on. This benefits developers using the planning workflow by giving them iterative control over plan output without losing prior work.
+
+
 <!--
   REQUIREMENTS
   Specific, testable behaviours the feature must deliver.
@@ -22,27 +23,28 @@ Plan mode should allow the refinement and provision of user feedback for plans. 
     - Focus on WHAT, not HOW — avoid prescribing implementation
     - Keep each item atomic — one behaviour per line
 -->
-- [ ] **Prompt for feedback at end of plan mode**
-  At the end of plan generation the user is prompted to read the plan and provide feedback.
-- [ ] **Feedback text box with clarification loop**
-  The system enables a text box for user input. On receiving feedback, the agent enters a clarification loop before generating a new plan.
-- [ ] **Multiple feedback turns**
-  Multiple rounds of feedback can happen in a single session. After each round, the user is prompted for further feedback.
-- [ ] **Feedback via plan file editing**
-  The user can provide feedback by directly editing the plan file. The agent checks for changes when told by the user.
-- [ ] **New plan produced after each feedback turn**
-  A new plan is written after every round of feedback. If no feedback is provided, no new plan is written.
-- [ ] **Plan refinement from a new session**
-  A user can resume refinement of an existing plan in a new session using the existing `plan` command.
+## Requirements
 
-## Constraints
+- [ ] **Conversational feedback after plan generation** — Users can provide feedback to the agent via a text interface in the CLI after a plan has been produced.
+- [ ] **Clarification requests** — The agent must request clarification from the user when feedback is ambiguous or not well understood before making changes.
+- [ ] **Plan regeneration from feedback** — The agent must regenerate the plan incorporating the user's feedback once sufficient information has been collected.
+- [ ] **Iterative feedback cycles** — Users can provide multiple rounds of feedback until they are satisfied the plan is correct; the process is not limited to a single revision.
+- [ ] **Direct plan file editing** — Users can edit the plan files directly to provide feedback or make changes, as an alternative to the text interface.
+- [ ] **Re-read plan files before acting** — The agent must always re-read the plan files from disk before executing on feedback, as the user may have edited them without notifying the agent.
+
 <!--
   CONSTRAINTS
-  Hard boundaries the solution must operate within.
+  Hard boundaries the solution must operate within. These are non-negotiable.
+  Examples:
+    - Must integrate with the existing authentication system
+    - Cannot introduce breaking changes to the public API
+    - Must support the current minimum supported runtime versions
+  Leave blank if there are no constraints.
 -->
-None.
+## Constraints
 
-## Acceptance Criteria
+- Must integrate into the existing plan workflow.
+
 <!--
   ACCEPTANCE CRITERIA
   The specific, binary conditions that define "done".
@@ -52,36 +54,53 @@ None.
     - Traceable back to a requirement above
     - Testable by someone who didn't write the code
 -->
-- [ ] **Feedback prompt offers text input, file editing, and quit options**
-  The system allows the user to enter feedback in a text box, provide feedback by editing the plan file, or quit without providing any feedback.
-- [ ] **Clarification questions asked when feedback is ambiguous**
-  When there is ambiguity or the agent does not understand the user's response, it asks "Can you clarify what you mean by ..." or asks a specific question. When everything is clear, the agent progresses to the next step.
-- [ ] **"Anything else?" prompt after each feedback round**
-  After feedback has been collected and a new plan produced, the agent asks "Anything else?" to prompt a new round of feedback.
-- [ ] **Agent detects and acknowledges plan file edits**
-  When the user tells the agent they have edited the plan file, the agent checks for changes and says "Let me check the changes you have made to the plan file."
-- [ ] **New plan written after every feedback round**
-  After every round of feedback the agent writes a new plan. If there is no feedback, no new plan is written.
-- [ ] **Existing plan can be resumed in a new session**
-  A user can resume an existing plan session using the same `plan` command with the `--resume` flag, where the plan directory becomes the positional argument instead of a spec.
+## Acceptance Criteria
 
-## Technical Approach
+- [ ] **Feedback prompt after plan completion** — When a plan has completed, the user is presented with the message "Please read the plan and provide me any feedback".
+- [ ] **Text-based feedback entry** — The user can provide feedback via a text entry in the CLI.
+- [ ] **Clarification for unclear feedback** — When the user's feedback is ambiguous, the agent asks the user to clarify before making changes.
+- [ ] **No unnecessary clarification** — When the user's feedback is clear, the agent does not ask for clarification and proceeds directly.
+- [ ] **Plan files modified after feedback** — After collecting feedback, the agent modifies the plan files to incorporate the requested changes.
+- [ ] **No changes without feedback** — If the user provides no feedback, the agent does not modify the plan files.
+- [ ] **Post-regeneration prompt** — After modifying the plan, the agent displays "I have modified the plan based on your feedback, please take a look and let me know of any changes".
+- [ ] **Further feedback accepted** — After plan regeneration, the user can provide additional rounds of feedback without restarting the process.
+- [ ] **Direct file editing supported** — In addition to textual feedback, the user can edit plan files directly to provide feedback or make changes.
+- [ ] **Plan files always re-read from disk** — The agent always reads plan files from disk before acting on feedback; it never assumes in-memory plan content is current.
+- [ ] **No assumption of user notification** — The agent never assumes the user will tell it that plan files have been changed externally.
+
 <!--
   TECHNICAL APPROACH
-  High-level technical direction to guide the planning agent.
+  High-level technical direction to guide the planning agent. Include:
+    - Key architectural decisions already made
+    - Preferred patterns or technologies if known
+    - Integration points with existing systems
+    - Known risks or areas of uncertainty
+  Leave blank if you want the planner to propose the approach.
 -->
-For resuming a plan, the existing `plan` command should be used along with a `--resume` flag. When this flag is present, a plan directory becomes the positional argument instead of a spec.
+## Technical Approach
 
-## Success Metrics
-<!--
-  SUCCESS METRICS
-  How you will know the feature is working well after delivery.
--->
 None.
 
-## Non-Goals
+<!--
+  SUCCESS METRICS
+  How you will know the feature is working well after delivery. Be specific:
+    - Quantitative: "p99 latency < 200ms", "error rate < 0.1%"
+    - Behavioural: "users complete the flow without support intervention"
+  Leave blank if not applicable.
+-->
+## Success Metrics
+
+None.
+
 <!--
   NON-GOALS
-  Explicitly state what this spec does NOT cover.
+  Explicitly state what this spec does NOT cover. This is as important as
+  the requirements — it prevents scope creep and sets clear expectations.
+  Examples:
+    - "Mobile support is out of scope (tracked in #456)"
+    - "Internationalisation will be addressed in a follow-up spec"
+  Leave blank if there are no explicit exclusions to call out.
 -->
+## Non-Goals
+
 None.

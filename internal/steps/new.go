@@ -69,7 +69,10 @@ After the question: STOP. Do not write about the next requirement.
 
 **Step 3** — Validate before moving on:
 - Clear and binary → "Got it." Move to the next requirement.
-- Too vague ("it works") → ask: "What exactly would you observe? How do you distinguish pass from fail?" Re-ask same question. Stop.
+- Too vague ("it works") → ask ONE clarification using the SAME <!--QUESTION:{...}--> format:
+
+<!--QUESTION:{"questions":[{"question":"Requirement [N] of [total]: [Title]\n\nWhat exactly would you observe? How do you distinguish pass from fail?\n\nExample: 'When X happens, Y is visible / saved / returned.'","header":"AC: [Title] (clarification)","type":"text"}]}-->
+
 - After 2 clarification rounds, accept and move on.
 
 **Step 4** — After the last requirement: write all criteria to the Acceptance Criteria section, then output:
@@ -127,7 +130,9 @@ Write their response to the Non-Goals section. If blank, write 'None.' Then outp
 // SpecCreatorWorkflow returns the TUI workflow for interactively creating a spec file.
 // The workflow runs one step per spec section.
 func SpecCreatorWorkflow(name, projectPath string, cfg config.Config) tui.Workflow {
-	specPath := filepath.Join(projectPath, ".spektacular", "specs", name+".md")
+	specsDir := filepath.Join(projectPath, ".spektacular", "specs")
+	numberedName := spec.AutoNumberName(name, specsDir)
+	specPath := filepath.Join(specsDir, numberedName+".md")
 
 	logFile := ""
 	if cfg.Debug.Enabled && cfg.Debug.LogDir != "" {

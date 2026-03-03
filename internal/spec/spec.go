@@ -5,10 +5,55 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jumppad-labs/spektacular/internal/defaults"
 )
+
+// NextSpecNumber scans specsDir and returns one greater than the highest numeric prefix
+// found in existing spec filenames (e.g. "12_foo.md" → next is 13). Returns 1 if empty.
+func NextSpecNumber(specsDir string) int {
+	entries, err := os.ReadDir(specsDir)
+	if err != nil {
+		return 1
+	}
+	max := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if n, ok := numericPrefix(e.Name()); ok && n > max {
+			max = n
+		}
+	}
+	return max + 1
+}
+
+// AutoNumberName prepends the next spec number to name if name does not already have a
+// numeric prefix (e.g. "my-feature" → "13_my-feature"). If name already starts with a
+// number prefix it is returned unchanged.
+func AutoNumberName(name, specsDir string) string {
+	if _, ok := numericPrefix(name); ok {
+		return name
+	}
+	return fmt.Sprintf("%d_%s", NextSpecNumber(specsDir), name)
+}
+
+// numericPrefix returns the leading integer and true for filenames like "12_foo.md" or
+// names like "12_foo". Returns 0, false if no numeric prefix is present.
+func numericPrefix(name string) (int, bool) {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	idx := strings.IndexByte(base, '_')
+	if idx <= 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(base[:idx])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
 
 // Create writes a new spec file to .spektacular/specs/<name>.md inside projectPath.
 // title and description are optional; sensible defaults are derived from name if empty.
@@ -46,12 +91,13 @@ func Create(projectPath, name, title, description string) (string, error) {
 		content = strings.ReplaceAll(content, placeholder, replacement)
 	}
 
-	filename := name
+	specsDir := filepath.Join(projectPath, ".spektacular", "specs")
+	filename := AutoNumberName(name, specsDir)
 	if !strings.HasSuffix(filename, ".md") {
 		filename += ".md"
 	}
 
-	specPath := filepath.Join(projectPath, ".spektacular", "specs", filename)
+	specPath := filepath.Join(specsDir, filename)
 	if _, err := os.Stat(specPath); err == nil {
 		return "", fmt.Errorf("spec file already exists: %s", specPath)
 	}

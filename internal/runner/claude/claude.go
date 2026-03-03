@@ -47,6 +47,9 @@ func run(opts runner.RunOptions, events chan<- runner.Event) error {
 	if opts.Prompts.System != "" {
 		cmd = append(cmd, "--system-prompt", opts.Prompts.System)
 	}
+	if opts.Model != "" {
+		cmd = append(cmd, "--model", opts.Model)
+	}
 	cmd = append(cmd, cfg.Agent.Args...)
 
 	if len(cfg.Agent.AllowedTools) > 0 {

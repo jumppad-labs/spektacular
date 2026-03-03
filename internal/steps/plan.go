@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
@@ -34,7 +35,7 @@ func PlanWorkflow(specFile, projectPath string, cfg config.Config) tui.Workflow 
 			"- **Context** — architectural notes and key decisions\n" +
 			"- **Research** — relevant patterns and references\n\n" +
 			"I may ask clarifying questions if the spec is ambiguous.",
-		Steps: []tui.WorkflowStep{planStep(specFile, planDir)},
+		Steps: []tui.WorkflowStep{planStep(specFile, planDir), feedbackStep(planDir)},
 		OnDone: func() (string, error) {
 			if err := plan.WritePlanOutput(planDir, ""); err != nil {
 				return "", err
@@ -44,10 +45,47 @@ func PlanWorkflow(specFile, projectPath string, cfg config.Config) tui.Workflow 
 	}
 }
 
+func feedbackStep(planDir string) tui.WorkflowStep {
+	return tui.WorkflowStep{
+		Name:        "feedback",
+		StatusLabel: "feedback",
+		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
+			relPlanDir, err := filepath.Rel(cwd, planDir)
+			if err != nil {
+				relPlanDir = planDir
+			}
+			return runner.RunOptions{
+				Prompts: runner.Prompts{
+					User: buildFeedbackPrompt(relPlanDir),
+				},
+				Config: cfg,
+				CWD:    cwd,
+				Model:  "claude-sonnet-4-6",
+			}, nil
+		},
+	}
+}
+
+func buildFeedbackPrompt(planDir string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Re-read all plan files in `%s` (plan.md, and context.md/research.md if they exist). ", planDir)
+	b.WriteString("The user may have edited them directly.\n\n")
+	b.WriteString("Ask the user for feedback:\n\n")
+	b.WriteString("<!--QUESTION:{\"questions\":[{\"question\":\"Please review the plan above. Do you have any feedback or changes?\\n\\nLeave blank and submit to finish.\",\"header\":\"Plan Feedback\",\"type\":\"text\"}]}-->\n\n")
+	b.WriteString("If the user provides feedback:\n")
+	b.WriteString("- If unclear, ask one clarifying question using the same format before making changes\n")
+	b.WriteString("- Incorporate the feedback into the plan files\n")
+	b.WriteString("- Output: <!-- GOTO: feedback -->\n\n")
+	b.WriteString("If the user leaves the response empty or says they are done:\n")
+	b.WriteString("- Output: <!-- FINISHED -->")
+	return b.String()
+}
+
 func planStep(specFile, planDir string) tui.WorkflowStep {
 	systemPrompt := plan.LoadAgentPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "plan",
 		StatusLabel: filepath.Base(specFile),
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			specContent, err := os.ReadFile(specFile)
@@ -74,6 +112,7 @@ func planStep(specFile, planDir string) tui.WorkflowStep {
 				},
 				Config: cfg,
 				CWD:    cwd,
+				Model:  "claude-opus-4-6",
 			}, nil
 		},
 	}

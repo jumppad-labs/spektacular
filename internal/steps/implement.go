@@ -32,6 +32,7 @@ func implementStep(planDir string) tui.WorkflowStep {
 	systemPrompt := implement.LoadAgentPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "implement",
 		StatusLabel: filepath.Base(planDir),
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			planContent, err := implement.LoadPlanContent(planDir)
@@ -50,6 +51,7 @@ func implementStep(planDir string) tui.WorkflowStep {
 				},
 				Config: cfg,
 				CWD:    cwd,
+				Model:  "claude-sonnet-4-6",
 			}, nil
 		},
 	}

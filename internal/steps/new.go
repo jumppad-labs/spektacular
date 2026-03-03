@@ -162,6 +162,7 @@ func overviewStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "overview",
 		StatusLabel: "collecting overview",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			if err := spec.InitTemplate(specPath); err != nil {
@@ -171,6 +172,7 @@ func overviewStep(specPath string) tui.WorkflowStep {
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}
@@ -181,12 +183,14 @@ func requirementsStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "requirements",
 		StatusLabel: "collecting requirements",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			return runner.RunOptions{
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}
@@ -197,12 +201,14 @@ func acStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "acceptance-criteria",
 		StatusLabel: "collecting acceptance criteria",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			return runner.RunOptions{
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}
@@ -213,12 +219,14 @@ func constraintsStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "constraints",
 		StatusLabel: "collecting constraints",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			return runner.RunOptions{
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}
@@ -229,12 +237,14 @@ func technicalApproachStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "technical-approach",
 		StatusLabel: "collecting technical approach",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			return runner.RunOptions{
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}
@@ -245,12 +255,14 @@ func successMetricsStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "success-metrics",
 		StatusLabel: "collecting success metrics",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			return runner.RunOptions{
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}
@@ -261,12 +273,14 @@ func nonGoalsStep(specPath string) tui.WorkflowStep {
 	systemPrompt := spec.LoadAgentSystemPrompt()
 
 	return tui.WorkflowStep{
+		Name:        "non-goals",
 		StatusLabel: "collecting non-goals",
 		BuildRunOptions: func(cfg config.Config, cwd string) (runner.RunOptions, error) {
 			return runner.RunOptions{
 				Prompts: runner.Prompts{User: userPrompt, System: systemPrompt},
 				Config:  cfg,
 				CWD:     cwd,
+				Model:   "claude-haiku-4-5-20251001",
 			}, nil
 		},
 	}

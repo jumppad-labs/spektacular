@@ -39,6 +39,7 @@ type agentErrMsg struct{ err error } // runner returned an error
 // BuildRunOptions is called at step start to produce the runner options.
 // The TUI handles all BubbleTea machinery; callers only supply data.
 type WorkflowStep struct {
+	Name            string // unique step name; used as target for <!-- GOTO: name -->
 	StatusLabel     string
 	BuildRunOptions func(cfg config.Config, cwd string) (runner.RunOptions, error)
 }
@@ -169,6 +170,22 @@ func (m model) startCurrentStep() tea.Cmd {
 		events, errc := r.Run(opts)
 		return readNext(events, errc)
 	}
+}
+
+// gotoStep jumps to the named step, preserving the session ID so the agent resumes in
+// the same conversation. If no step with that name exists, it is a no-op.
+func (m model) gotoStep(name string) (tea.Model, tea.Cmd) {
+	for i, step := range m.workflow.Steps {
+		if step.Name == name {
+			m.currentStep = i
+			m.questions = nil
+			m.answers = nil
+			m.textareaActive = false
+			m.statusText = "* thinking  " + m.currentStepLabel()
+			return m, m.startCurrentStep()
+		}
+	}
+	return m, nil
 }
 
 // advanceStep moves to the next workflow step, or calls OnDone if all steps are complete.
@@ -579,6 +596,7 @@ func (m model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 	if text := event.TextContent(); text != "" {
 		m.toolLine = ""
 		finished := runner.DetectFinished(text)
+		gotoTarget, hasGoto := runner.DetectGoto(text)
 		displayText := runner.StripMarkers(text)
 		if displayText != "" {
 			rendered := m.renderMarkdown(displayText)
@@ -604,6 +622,9 @@ func (m model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 
 		if finished {
 			return m.advanceStep()
+		}
+		if hasGoto {
+			return m.gotoStep(gotoTarget)
 		}
 	}
 
@@ -769,6 +790,9 @@ func (m *model) syncViewport() {
 	if m.ready {
 		m.vp.Height = m.viewportHeight()
 		m.vp.SetContent(strings.Join(m.content, ""))
+		if m.followMode {
+			m.vp.GotoBottom()
+		}
 	}
 }
 

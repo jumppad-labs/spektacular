@@ -101,6 +101,25 @@ func InitTemplate(specPath string) error {
 	return nil
 }
 
+// ResolveSpecFile resolves the spec file path from the given argument.
+// It checks: (1) direct path, (2) relative to cwd, (3) spec name in .spektacular/specs/,
+// (4) spec name without .md extension in .spektacular/specs/.
+func ResolveSpecFile(arg, cwd string) (string, error) {
+	candidates := []string{
+		arg,
+		filepath.Join(cwd, arg),
+		filepath.Join(cwd, ".spektacular", "specs", arg),
+		filepath.Join(cwd, ".spektacular", "specs", arg+".md"),
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("spec file not found: tried %s, %s, and .spektacular/specs/%s",
+		arg, filepath.Join(cwd, arg), arg)
+}
+
 // LoadAgentSystemPrompt returns the shared minimal system prompt for the spec creator agent.
 // It defines the agent's role, question format rules, and completion signal only —
 // the specific task instructions for each section live in the user prompts.

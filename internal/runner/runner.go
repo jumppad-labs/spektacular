@@ -142,10 +142,21 @@ func detectQuestions(text string) []Question {
 func DetectQuestions(text string) []Question { return detectQuestions(text) }
 
 var finishedPattern = regexp.MustCompile(`<!--\s*FINISHED\s*-->`)
+var gotoPattern = regexp.MustCompile(`<!--\s*GOTO:\s*([\w][\w\s-]*?)\s*-->`)
 
 // DetectFinished reports whether the agent output contains a <!-- FINISHED --> marker.
 func DetectFinished(text string) bool {
 	return finishedPattern.MatchString(text)
+}
+
+// DetectGoto returns the target step name if the agent output contains a
+// <!-- GOTO: step name --> marker, and whether one was found.
+func DetectGoto(text string) (string, bool) {
+	m := gotoPattern.FindStringSubmatch(text)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
 }
 
 // StripFinishedTag removes the <!-- FINISHED --> marker from text before display.
@@ -153,10 +164,11 @@ func StripFinishedTag(text string) string {
 	return strings.TrimSpace(finishedPattern.ReplaceAllString(text, ""))
 }
 
-// StripMarkers removes both the <!-- FINISHED --> and <!--QUESTION:...--> markers from
-// text before display. Use this instead of StripFinishedTag when rendering agent output.
+// StripMarkers removes <!-- FINISHED -->, <!-- GOTO:... -->, and <!--QUESTION:...--> markers
+// from text before display.
 func StripMarkers(text string) string {
 	text = finishedPattern.ReplaceAllString(text, "")
+	text = gotoPattern.ReplaceAllString(text, "")
 	text = questionPattern.ReplaceAllString(text, "")
 	return strings.TrimSpace(text)
 }
@@ -281,5 +293,6 @@ type RunOptions struct {
 	SessionID string
 	CWD       string
 	LogFile   string // path to debug log file; empty disables logging
+	Model     string // model override; empty uses the agent default
 }
 

@@ -10,93 +10,23 @@ import (
 
 var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
-// ModelTiers defines model names for each complexity tier.
-type ModelTiers struct {
-	Simple  string `yaml:"simple"`
-	Medium  string `yaml:"medium"`
-	Complex string `yaml:"complex"`
-}
-
-// ModelsConfig holds model selection configuration.
-type ModelsConfig struct {
-	Default string     `yaml:"default"`
-	Tiers   ModelTiers `yaml:"tiers"`
-}
-
-// ComplexityThresholds defines score boundaries for model tier selection.
-type ComplexityThresholds struct {
-	Simple  float64 `yaml:"simple"`
-	Medium  float64 `yaml:"medium"`
-	Complex float64 `yaml:"complex"`
-}
-
-// ComplexityConfig holds complexity analysis configuration.
-type ComplexityConfig struct {
-	Thresholds ComplexityThresholds `yaml:"thresholds"`
-}
-
-// OutputConfig holds output format configuration.
-type OutputConfig struct {
-	Format          string `yaml:"format"`
-	IncludeMetadata bool   `yaml:"include_metadata"`
-}
-
 // DebugConfig holds debug logging configuration.
 type DebugConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	LogDir  string `yaml:"log_dir"`
-}
-
-// AgentConfig holds configuration for the coding agent subprocess.
-type AgentConfig struct {
-	Command                    string   `yaml:"command"`
-	Args                       []string `yaml:"args"`
-	AllowedTools    []string `yaml:"allowed_tools"`
-	DisallowedTools []string `yaml:"disallowed_tools"`
+	Enabled bool `yaml:"enabled"`
 }
 
 // Config is the top-level Spektacular configuration.
 type Config struct {
-	Command    string           `yaml:"command"`
-	Models     ModelsConfig     `yaml:"models"`
-	Complexity ComplexityConfig `yaml:"complexity"`
-	Output     OutputConfig     `yaml:"output"`
-	Agent      AgentConfig      `yaml:"agent"`
-	Debug      DebugConfig      `yaml:"debug"`
+	Command string      `yaml:"command"`
+	Debug   DebugConfig `yaml:"debug"`
 }
 
 // NewDefault returns a Config populated with default values.
 func NewDefault() Config {
 	return Config{
 		Command: "spektacular",
-		Models: ModelsConfig{
-			Default: "anthropic/claude-3-5-sonnet-20241022",
-			Tiers: ModelTiers{
-				Simple:  "anthropic/claude-3-5-haiku-20241022",
-				Medium:  "anthropic/claude-3-5-sonnet-20241022",
-				Complex: "anthropic/claude-3-opus-20240229",
-			},
-		},
-		Complexity: ComplexityConfig{
-			Thresholds: ComplexityThresholds{
-				Simple:  0.3,
-				Medium:  0.6,
-				Complex: 0.8,
-			},
-		},
-		Output: OutputConfig{
-			Format:          "markdown",
-			IncludeMetadata: true,
-		},
-		Agent: AgentConfig{
-			Command:                    "claude",
-			Args:                       []string{"--output-format", "stream-json", "--verbose"},
-			AllowedTools:    []string{"Task", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"},
-			DisallowedTools: []string{"AskUserQuestion"},
-		},
 		Debug: DebugConfig{
 			Enabled: false,
-			LogDir:  ".spektacular/debug/logs",
 		},
 	}
 }
@@ -117,7 +47,7 @@ func FromYAMLFile(path string) (Config, error) {
 	return cfg, nil
 }
 
-// ToYAMLFile writes the Config to a YAML file, creating parent directories as needed.
+// ToYAMLFile writes the Config to a YAML file.
 func (c Config) ToYAMLFile(path string) error {
 	data, err := yaml.Marshal(c)
 	if err != nil {
@@ -127,19 +57,6 @@ func (c Config) ToYAMLFile(path string) error {
 		return fmt.Errorf("writing config file %s: %w", path, err)
 	}
 	return nil
-}
-
-// GetModelForComplexity returns the appropriate model name for a given complexity score.
-func (c Config) GetModelForComplexity(score float64) string {
-	t := c.Complexity.Thresholds
-	switch {
-	case score < t.Simple:
-		return c.Models.Tiers.Simple
-	case score < t.Medium:
-		return c.Models.Tiers.Medium
-	default:
-		return c.Models.Tiers.Complex
-	}
 }
 
 // expandEnvVars replaces ${VAR} patterns in s with the current environment values.

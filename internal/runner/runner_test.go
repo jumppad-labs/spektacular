@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -142,8 +141,7 @@ func TestPromptWithHeader_UsesCustomHeader(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewRunner_ReturnsErrorForUnknownCommand(t *testing.T) {
-	cfg := config.Config{Agent: config.AgentConfig{Command: "unknown-agent"}}
-	r, err := NewRunner(cfg)
+	r, err := NewRunner("unknown-agent")
 	require.Error(t, err)
 	require.Nil(t, r)
 	require.Contains(t, err.Error(), "unsupported runner")
@@ -151,7 +149,6 @@ func TestNewRunner_ReturnsErrorForUnknownCommand(t *testing.T) {
 }
 
 func TestNewRunner_ReturnsRunnerForRegisteredCommand(t *testing.T) {
-	// Register a test runner.
 	Register("test-runner", func() Runner {
 		return &stubRunner{}
 	})
@@ -159,8 +156,7 @@ func TestNewRunner_ReturnsRunnerForRegisteredCommand(t *testing.T) {
 		delete(registry, "test-runner")
 	}()
 
-	cfg := config.Config{Agent: config.AgentConfig{Command: "test-runner"}}
-	r, err := NewRunner(cfg)
+	r, err := NewRunner("test-runner")
 	require.NoError(t, err)
 	require.NotNil(t, r)
 }

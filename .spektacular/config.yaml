@@ -1,22 +1,3 @@
-agent:
-  command: claude
-  args: ["--output-format", "stream-json", "--verbose"]
-  allowed_tools: []
-  disallowed_tools: []
-  dangerously_skip_permissions: false
-complexity:
-  thresholds:
-    complex: 0.8
-    medium: 0.6
-    simple: 0.3
-models:
-  default: sonnet 
-  tiers:
-    complex: opus 
-    medium: sonnet 
-    simple: haiku
-output:
-  format: markdown
-  include_metadata: true
+command: "go run ."
 debug:
   enabled: true

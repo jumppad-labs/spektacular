@@ -3,8 +3,6 @@ package runner
 import (
 	"fmt"
 	"sort"
-
-	"github.com/jumppad-labs/spektacular/internal/config"
 )
 
 var registry = map[string]func() Runner{}
@@ -15,11 +13,11 @@ func Register(name string, constructor func() Runner) {
 	registry[name] = constructor
 }
 
-// NewRunner returns a Runner for the agent command specified in the config.
-func NewRunner(cfg config.Config) (Runner, error) {
-	constructor, ok := registry[cfg.Agent.Command]
+// NewRunner returns a Runner for the given command name.
+func NewRunner(command string) (Runner, error) {
+	constructor, ok := registry[command]
 	if !ok {
-		return nil, fmt.Errorf("unsupported runner: %q (available: %v)", cfg.Agent.Command, registeredNames())
+		return nil, fmt.Errorf("unsupported runner: %q (available: %v)", command, registeredNames())
 	}
 	return constructor(), nil
 }

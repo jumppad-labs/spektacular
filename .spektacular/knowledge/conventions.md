@@ -13,7 +13,7 @@
 - Maintain test coverage above 80%
 - Use descriptive test names that explain the scenario
 
-## Documentation  
+## Documentation
 - Update README.md for user-facing changes
 - Include inline comments for complex logic
 - Document API changes in CHANGELOG.md

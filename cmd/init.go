@@ -42,6 +42,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Store agent type in config.
+	cfg.Agent = agent
+	cfgPath := filepath.Join(cwd, ".spektacular", "config.yaml")
+	if err := cfg.ToYAMLFile(cfgPath); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
 	rendered, err := mustache.Render(string(tmplBytes), map[string]string{"command": cfg.Command})
 	if err != nil {
 		return fmt.Errorf("rendering command template: %w", err)

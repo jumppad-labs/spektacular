@@ -18,6 +18,7 @@ type DebugConfig struct {
 // Config is the top-level Spektacular configuration.
 type Config struct {
 	Command string      `yaml:"command"`
+	Agent   string      `yaml:"agent"`
 	Debug   DebugConfig `yaml:"debug"`
 }
 

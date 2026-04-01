@@ -1,20 +1,12 @@
 {
-  "current_step": "finished",
+  "current_step": "requirements",
   "completed_steps": [
     "new",
-    "overview",
-    "requirements",
-    "acceptance_criteria",
-    "constraints",
-    "technical_approach",
-    "success_metrics",
-    "non_goals",
-    "verification"
+    "overview"
   ],
-  "created_at": "2026-03-05T12:17:23.065038701Z",
-  "updated_at": "2026-03-05T12:22:50.949732065Z",
+  "created_at": "2026-03-06T16:08:30.456784157Z",
+  "updated_at": "2026-03-06T16:09:14.931506247Z",
   "data": {
-    "name": "14_testing",
-    "spec_template": "# Feature: 14_testing\n\n## Overview\n\nDevelopers need an easy way to test that spektacular workflows (like spec and plan) function correctly without requiring manual testing. This automated testing capability enables developers to verify workflow execution, validate outputs, and catch errors early in the development process.\n\n## Requirements\n\n- **Developers can run a single command to test a specific feature** like spec or plan, supporting both entire workflows (all 8 steps a-h) and individual steps\n\n- **The system must validate the output** based on what's being tested (e.g., for spec, validate the JSON output structure)\n\n- **The system must check for specific error conditions**:\n  - Command execution failures\n  - Invalid JSON output\n  - Missing required fields in the response\n\n- **The system must report results** with:\n  - Simple pass/fail status\n  - Detailed test report with each step's result\n  - Exit code based on success/failure\n\n## Constraints\n\n- Must be able to run in non-interactive mode\n\n## Acceptance Criteria\n\n- When a developer runs the test command for a specific feature, it executes without interactive prompts\n\n- When the system validates spec output, it correctly identifies valid and invalid JSON structures\n\n- When error conditions occur, they are detected and reported (execution failures, invalid JSON, missing required fields)\n\n- When testing entire workflow or individual steps, the command supports both modes and produces the appropriate results\n\n- When test completes, output includes pass/fail status, detailed step-by-step results, and an appropriate exit code\n\n## Technical Approach\n\nNo technical direction has been decided yet. The planner should propose the approach.\n\n## Success Metrics\n\nNot applicable for this feature.\n\n## Non-Goals\n\nNone identified.\n"
+    "name": "add-health-endpoint"
   }
 }

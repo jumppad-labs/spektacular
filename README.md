@@ -57,20 +57,28 @@ Or download a pre-built binary from the [releases page](https://github.com/nicho
 ### Usage
 
 ```bash
-# 1. Initialize a new project
-spektacular init
+# 1. Initialize a new project for your agent
+spektacular init claude
 
-# 2. Create a spec from template
-spektacular new auth-feature --title "User Authentication"
+# 2. Create a spec from the workflow
+spektacular spec new --data '{"name":"auth-feature"}'
 
-# 3. Edit the spec to add your requirements
-$EDITOR .spektacular/specs/auth-feature.md
+# 3. Edit the spec_path returned by the command to add your requirements
+$EDITOR .spektacular/specs/<returned-spec-name>.md
 
-# 4. Generate an implementation plan
-spektacular plan .spektacular/specs/auth-feature.md
+# 4. Generate an implementation plan using the returned spec_name
+spektacular plan new --data '{"name":"<returned-spec-name>"}'
 ```
 
-The plan command opens the TUI, runs the planning agent, and writes output to `.spektacular/plans/auth-feature/`.
+Spec names are normalized and prefixed by the CLI. Use the returned `spec_name` and `spec_path` for follow-up workflows instead of assuming the requested `name` is the final filename.
+
+External systems can pass their own identifier as the prefix:
+
+```bash
+spektacular spec new --data '{"name":"billing-export","id":"EXT-123"}'
+```
+
+Passing `id` is accepted for timestamp and counter projects and is required when `spec.id_method` is `external`.
 
 ## Spec Format
 
@@ -105,15 +113,15 @@ Login flow completes in under 3 seconds.
 Social login with Apple or Microsoft.
 ```
 
-Create a new spec with `spektacular new <name>` to get this template.
+Create a new spec with `spektacular spec new --data '{"name":"auth-feature"}'` to get this template.
 
 ## Project Structure
 
-Running `spektacular init` creates:
+Running `spektacular init <agent>` creates:
 
 ```
 .spektacular/
-├── config.yaml              # Model routing, complexity thresholds
+├── config.yaml              # CLI command, agent, debug, and spec ID settings
 ├── specs/                   # Your specification files
 ├── plans/                   # Generated plans (plan.md, research.md, context.md)
 └── knowledge/               # Project knowledge base
@@ -127,22 +135,25 @@ The knowledge directory feeds context to the planning agent. Adding architecture
 
 ## Configuration
 
-`.spektacular/config.yaml` controls model selection and complexity thresholds:
+`.spektacular/config.yaml` controls the installed agent command and spec identifier behavior:
 
 ```yaml
-models:
-  default: anthropic/claude-3-5-sonnet-20241022
-  tiers:
-    simple: anthropic/claude-3-5-haiku-20241022    # score 0.0–0.3
-    medium: anthropic/claude-3-5-sonnet-20241022   # score 0.3–0.6
-    complex: anthropic/claude-3-opus-20240229      # score 0.6+
-
-complexity:
-  thresholds:
-    simple: 0.3
-    medium: 0.6
-    complex: 0.8
+command: spektacular
+agent: claude
+debug:
+  enabled: false
+spec:
+  id_method: timestamp
+  counter: 0
 ```
+
+`spec.id_method` controls the prefix used for new spec filenames:
+
+- `timestamp` (default): creates names like `20260509010203-billing-export`; collisions bump by one second until unused.
+- `counter`: creates names like `000001-billing-export` and persists the latest value in `spec.counter`.
+- `external`: requires an `id` in `spec new --data`; useful when another system owns the identifier.
+
+Names and ids are normalized to lowercase, with accepted separators such as `.`, `@`, `-`, and internal whitespace converted to hyphens. Leading or trailing whitespace, path separators, and control characters are rejected.
 
 ## Roadmap
 

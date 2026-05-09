@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jumppad-labs/spektacular/internal/agent"
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -159,6 +160,12 @@ func TestInit_CustomCommand(t *testing.T) {
 	// Re-init — should use the custom command when rendering templates.
 	rootCmd.SetArgs([]string{"init", "claude"})
 	require.NoError(t, rootCmd.Execute())
+
+	cfg, err := config.FromYAMLFile(configPath)
+	require.NoError(t, err)
+	require.Equal(t, "go run .", cfg.Command)
+	require.Equal(t, "timestamp", cfg.Spec.IDMethod)
+	require.Equal(t, 0, cfg.Spec.Counter)
 
 	skillPath := filepath.Join(dir, ".claude", "skills", "spek-new", "SKILL.md")
 	skillData, err := os.ReadFile(skillPath)

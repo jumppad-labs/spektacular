@@ -27,15 +27,22 @@ func Execute() {
 	}
 }
 
+func configFilePath() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getting working directory: %w", err)
+	}
+	return filepath.Join(cwd, ".spektacular", "config.yaml"), nil
+}
+
 // loadConfig loads the project config from the current working directory.
 // Returns defaults if the config file does not exist.
 // Returns an error if the config file exists but is invalid.
 func loadConfig() (config.Config, error) {
-	cwd, err := os.Getwd()
+	cfgPath, err := configFilePath()
 	if err != nil {
-		return config.Config{}, fmt.Errorf("getting working directory: %w", err)
+		return config.Config{}, err
 	}
-	cfgPath := filepath.Join(cwd, ".spektacular", "config.yaml")
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		return config.NewDefault(), nil
 	}

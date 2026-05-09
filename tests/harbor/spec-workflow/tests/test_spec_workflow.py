@@ -13,8 +13,7 @@ from pathlib import Path
 PROJECT_DIR = Path("/app")
 SPEK_DIR = PROJECT_DIR / ".spektacular"
 STATE_FILE = SPEK_DIR / "state.json"
-SPEC_FILE = SPEK_DIR / "specs" / "user-auth.md"
-AGENT_TRANSCRIPT = Path("/logs/agent/claude-code.txt")
+AGENT_LOG_DIR = Path("/logs/agent")
 
 # The canonical step order as defined by the state machine in
 # internal/steps/spec/steps.go → Steps().
@@ -44,9 +43,17 @@ def load_state() -> dict:
     return json.loads(STATE_FILE.read_text())
 
 
+def spec_file_path() -> Path:
+    state = load_state()
+    spec_name = (state.get("data") or {}).get("name")
+    assert spec_name, "state.json has no data.name — cannot resolve spec file"
+    return SPEK_DIR / "specs" / f"{spec_name}.md"
+
+
 def load_spec() -> str:
-    assert SPEC_FILE.exists(), f"Spec file not found at {SPEC_FILE}"
-    return SPEC_FILE.read_text()
+    path = spec_file_path()
+    assert path.exists(), f"Spec file not found at {path}"
+    return path.read_text()
 
 
 def parse_sections(spec_text: str) -> dict[str, str]:
@@ -83,27 +90,34 @@ def extract_tool_calls() -> list[dict]:
 
     Each entry is {"command": "…"} for Bash tool_use blocks.
     """
-    assert AGENT_TRANSCRIPT.exists(), (
-        f"Agent transcript not found at {AGENT_TRANSCRIPT}"
-    )
+    transcripts = sorted(AGENT_LOG_DIR.glob("*.txt"))
+    assert transcripts, f"No agent transcripts found under {AGENT_LOG_DIR}"
 
     calls = []
-    for line in AGENT_TRANSCRIPT.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if obj.get("type") != "assistant":
-            continue
-        msg = obj.get("message", {})
-        for block in msg.get("content", []):
-            if block.get("type") == "tool_use" and block.get("name") == "Bash":
-                cmd = block.get("input", {}).get("command", "")
-                if cmd:
-                    calls.append({"command": cmd})
+    for transcript in transcripts:
+        for line in transcript.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("type") == "item.completed":
+                item = obj.get("item", {})
+                if item.get("type") == "command_execution":
+                    cmd = item.get("command", "")
+                    if cmd:
+                        calls.append({"command": cmd})
+                    continue
+            if obj.get("type") != "assistant":
+                continue
+            msg = obj.get("message", {})
+            for block in msg.get("content", []):
+                if block.get("type") == "tool_use" and block.get("name") == "Bash":
+                    cmd = block.get("input", {}).get("command", "")
+                    if cmd:
+                        calls.append({"command": cmd})
     return calls
 
 
@@ -118,9 +132,18 @@ def find_spektacular_calls(tool_calls: list[dict]) -> list[str]:
         if "spektacular spec new" in cmd:
             results.append("spec new")
         elif "spektacular spec goto" in cmd:
-            m = re.search(r'"step"\s*:\s*"(\w+)"', cmd)
+            normalized = cmd.replace('\\"', '"').replace("\\'", "'")
+            m = re.search(r'["\']step["\']\s*:\s*["\']([a-z_]+)["\']', normalized)
             if m:
                 results.append(f"spec goto {m.group(1)}")
+                continue
+
+            for step in EXPECTED_STEP_ORDER:
+                if step == "new":
+                    continue
+                if re.search(rf"\b{re.escape(step)}\b", normalized):
+                    results.append(f"spec goto {step}")
+                    break
     return results
 
 
@@ -137,7 +160,8 @@ class TestWorkflow:
 
     def test_spec_file_exists(self):
         """The spec markdown file was created."""
-        assert SPEC_FILE.exists(), f"Spec file not found at {SPEC_FILE}"
+        path = spec_file_path()
+        assert path.exists(), f"Spec file not found at {path}"
 
     def test_workflow_reached_finished(self):
         """Workflow current_step is finished or done."""

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/steps/spec"
@@ -17,6 +18,10 @@ import (
 )
 
 var nameRegexp = regexp.MustCompile(`^[a-z0-9_-]+$`)
+
+const identifierInputPattern = `^[^\s/\\\x00-\x1F\x7F](?:[^/\\\x00-\x1F\x7F]*[^\s/\\\x00-\x1F\x7F])?$`
+
+var specIdentifierNow = time.Now
 
 // Schema types for --schema output.
 type schemaProp struct {
@@ -94,6 +99,12 @@ func stateFilePath(dataDir string) string {
 	return filepath.Join(dataDir, "state.json")
 }
 
+type workflowDataBuffer map[string]any
+
+func (b workflowDataBuffer) SetData(key string, value any) {
+	b[key] = value
+}
+
 // readInputIntoWorkflow reads content from either --stdin or --file and stores
 // it in the workflow data. --stdin <key> reads from standard input and stores
 // under <key>. --file <path> reads the file at <path> (relative paths resolve
@@ -139,7 +150,8 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 			Input: &schemaObj{
 				Type: "object",
 				Properties: map[string]*schemaProp{
-					"name": {Type: "string", Pattern: "^[a-z0-9_-]+$", MaxLen: 64},
+					"name": {Type: "string", Pattern: identifierInputPattern, MaxLen: spec.MaxIdentifierPartLength},
+					"id":   {Type: "string", Pattern: identifierInputPattern, MaxLen: spec.MaxIdentifierPartLength},
 				},
 				Required: []string{"name"},
 			},
@@ -156,12 +168,10 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	}
 	var input struct {
 		Name string `json:"name"`
+		ID   string `json:"id"`
 	}
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
 		return fmt.Errorf("parsing --data: %w", err)
-	}
-	if input.Name == "" || !nameRegexp.MatchString(input.Name) || len(input.Name) > 64 {
-		return fmt.Errorf("name must match ^[a-z0-9_-]+$ and be at most 64 characters")
 	}
 
 	dataDir, err := dataDir()
@@ -171,6 +181,35 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+
+	st := store.NewFileStore(dataDir)
+	extraData := workflowDataBuffer{}
+	if err := readInputIntoWorkflow(cmd, extraData); err != nil {
+		return err
+	}
+
+	resolved, err := spec.ResolveIdentifier(spec.IdentifierRequest{
+		Name:    input.Name,
+		ID:      input.ID,
+		Method:  cfg.Spec.IDMethod,
+		Counter: cfg.Spec.Counter,
+		Store:   st,
+		Now:     specIdentifierNow,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !dryRun && resolved.Counter != cfg.Spec.Counter {
+		cfg.Spec.Counter = resolved.Counter
+		cfgPath, err := configFilePath()
+		if err != nil {
+			return err
+		}
+		if err := cfg.ToYAMLFile(cfgPath); err != nil {
+			return fmt.Errorf("writing config: %w", err)
+		}
 	}
 
 	statePath := stateFilePath(dataDir)
@@ -183,12 +222,13 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
 	steps := spec.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(dataDir), out)
-	wf.SetData("name", input.Name)
-
-	if err := readInputIntoWorkflow(cmd, wf); err != nil {
-		return err
+	wf := workflow.New(steps, statePath, wfCfg, st, out)
+	for k, v := range extraData {
+		if k != "name" {
+			wf.SetData(k, v)
+		}
 	}
+	wf.SetData("name", resolved.Name)
 
 	if err := wf.Next(); err != nil {
 		return output.WriteError(cmd.ErrOrStderr(), err)

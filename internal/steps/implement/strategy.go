@@ -3,7 +3,9 @@ package implement
 import (
 	"path/filepath"
 
+	"github.com/jumppad-labs/spektacular/internal/artifact"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
+	"github.com/jumppad-labs/spektacular/internal/workflow"
 )
 
 // PlanFilePath returns the store-relative path for a plan's plan.md file.
@@ -37,6 +39,30 @@ func (strategy) PathVars(instanceName, storeRoot string) map[string]any {
 		"context_path":           contextPath,
 		"research_path":          researchPath,
 		"plan_dir":               filepath.Dir(planPath),
+		"plan_name":              instanceName,
+		"changelog_section_name": "## Changelog",
+	}
+}
+
+func (s strategy) PathVarsWithConfig(instanceName, storeRoot string, cfg workflow.Config) map[string]any {
+	planPath, err := artifact.Path(cfg.Project, artifact.KindPlan, instanceName)
+	if err != nil {
+		return s.PathVars(instanceName, storeRoot)
+	}
+	contextPath, err := artifact.Path(cfg.Project, artifact.KindContext, instanceName)
+	if err != nil {
+		return s.PathVars(instanceName, storeRoot)
+	}
+	researchPath, err := artifact.Path(cfg.Project, artifact.KindResearch, instanceName)
+	if err != nil {
+		return s.PathVars(instanceName, storeRoot)
+	}
+	planAbsPath := filepath.Join(storeRoot, planPath)
+	return map[string]any{
+		"plan_path":              planAbsPath,
+		"context_path":           filepath.Join(storeRoot, contextPath),
+		"research_path":          filepath.Join(storeRoot, researchPath),
+		"plan_dir":               filepath.Dir(planAbsPath),
 		"plan_name":              instanceName,
 		"changelog_section_name": "## Changelog",
 	}

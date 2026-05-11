@@ -3,24 +3,30 @@ on:
   push:
     branches:
       - "**"
+  pull_request:
+    branches:
+      - main
+
 jobs:
-  dagger_build:
+  build:
     name: Dagger Build and Test
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Set keys
+        if: ${{ github.repository == 'jumppad-labs/spektacular' && github.event_name == 'push' }}
         run: |
           echo "${{secrets.QUILL_SIGN_P12}}" | base64 -d  > ./cert.p12
           echo "${{secrets.QUILL_NOTORY_KEY}}" > ./key.p8
           echo "QUILL_SIGN_PASSWORD=${{secrets.QUILL_SIGN_PASSWORD}}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{secrets.GH_TOKEN}}" >> $GITHUB_ENV
-      
-      - name: All
+
+      - name: All signed
+        if: ${{ github.repository == 'jumppad-labs/spektacular' && github.event_name == 'push' }}
         uses: dagger/dagger-for-github@v8.2.0
         with:
           verb: call
@@ -28,29 +34,41 @@ jobs:
           args: all --output=./output --src=. --github-token=GITHUB_TOKEN --notorize-cert=./cert.p12 --notorize-cert-password=QUILL_SIGN_PASSWORD --notorize-key=./key.p8 --notorize-id=${{secrets.QUILL_NOTARY_KEY_ID}} --notorize-issuer=${{secrets.QUILL_NOTARY_ISSUER}}
           version: "0.19.8"
           dagger-flags: "--progress=plain"
-      
+
+      - name: All unsigned
+        if: ${{ github.repository != 'jumppad-labs/spektacular' || github.event_name != 'push' }}
+        uses: dagger/dagger-for-github@v8.2.0
+        with:
+          verb: call
+          module: ./dagger
+          args: all --output=./output --src=.
+          version: "0.19.8"
+          dagger-flags: "--progress=plain"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: archives
           path: |
             ./output
-  
+
   release:
     name: Create GitHub Release
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.repository == 'jumppad-labs/spektacular' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-    needs: 
-      - dagger_build
+    needs:
+      - build
     environment:
       name: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Set keys
         run: |
           echo "GITHUB_TOKEN=${{secrets.GH_TOKEN}}" >> $GITHUB_ENV
           echo "GEMFURY_TOKEN=${{secrets.FURY_TOKEN}}" >> $GITHUB_ENV
-      
+
       - uses: actions/checkout@v4
 
       - name: Download-Binaries
@@ -67,7 +85,7 @@ jobs:
           args: release --src=. --github-token=GITHUB_TOKEN --gemfury-token=GEMFURY_TOKEN --archives=./build_artifacts --output=./version.txt
           version: "0.19.8"
           dagger-flags: "--progress=plain"
-    
+
       - name: Set output
         id: setoutput
         run: |

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/looplab/fsm"
 )
@@ -14,6 +15,7 @@ import (
 type Config struct {
 	Command string
 	DryRun  bool
+	Project config.Config
 }
 
 // ResultWriter is implemented by the output writer and passed into step callbacks.

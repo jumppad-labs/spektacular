@@ -28,4 +28,28 @@ Start the plan workflow by running:
 go run . plan new --data '{"name": "<spec_name>"}'
 ```
 
+## Notion artifact mode
+
+Before starting, run:
+
+```
+go run . notion status
+```
+
+If the returned `status` is `configured`, artifacts are Notion-backed. Ensure the Spec cache exists before planning. If another user or agent already created the spec, locate it by Notion URL, page ID, or external Spec ID; if it is missing locally, fetch the Spec page through Notion MCP and record it:
+
+```
+go run . notion cache pull --data '{"kind":"spec","name":"<spec_name>","content":"<spec_markdown>","remote":{"notion_url":"<page_url>","page_id":"<page_id>","data_source_url":"<specs_data_source>","external_id":"<spec_id>","remote_version":"<last_edited_time>","title":"<title>"}}'
+```
+
+Create or fetch the Plan row through Notion MCP before the write steps. Use the required `Plan ID` auto-increment value as `remote.external_id`. Create or fetch child pages for `context.md` and `research.md` under the Plan page. When submitting each artifact-changing step, update Notion first, then pass the returned metadata with the file:
+
+```
+go run . plan goto --data '{"step":"write_plan","remote":{"notion_url":"<plan_page_url>","page_id":"<plan_page_id>","data_source_url":"<plans_data_source>","external_id":"<plan_id>","remote_version":"<new_last_edited_time>","title":"<title>"}}' --file .spektacular/tmp/plan_template.md
+go run . plan goto --data '{"step":"write_context","context_remote":{"notion_url":"<context_page_url>","page_id":"<context_page_id>","data_source_url":"<plans_data_source>","external_id":"<context_id>","remote_version":"<new_last_edited_time>","title":"context.md"}}' --file .spektacular/tmp/context_template.md
+go run . plan goto --data '{"step":"write_research","research_remote":{"notion_url":"<research_page_url>","page_id":"<research_page_id>","data_source_url":"<plans_data_source>","external_id":"<research_id>","remote_version":"<new_last_edited_time>","title":"research.md"}}' --file .spektacular/tmp/research_template.md
+```
+
+Before any Notion update, use `go run . notion cache prepare-push` with the latest Notion `remote_version`. If it returns `merge_required`, stop and present the merge request; after resolution, run `go run . notion cache resolve-merge` and retry.
+
 This creates the plan file and state file automatically and returns the first `instruction`. From that point on, follow the loop above: do what the instruction says, then call `go run . plan goto --data '{"step":"<next_step>"}'` to get the next one. Do not invent step names — every instruction tells you the exact `goto` command to run next.

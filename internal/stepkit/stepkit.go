@@ -29,6 +29,11 @@ type PathStrategy interface {
 	PrimaryPathField() string
 }
 
+// ConfigPathStrategy can opt into workflow config-aware path generation.
+type ConfigPathStrategy interface {
+	PathVarsWithConfig(instanceName, storeRoot string, cfg workflow.Config) map[string]any
+}
+
 // StepRequest bundles the inputs to WriteStepResult.
 type StepRequest struct {
 	StepName     string
@@ -74,6 +79,9 @@ func WriteStepResult(
 		storeRoot = st.Root()
 	}
 	pathVars := req.Strategy.PathVars(instanceName, storeRoot)
+	if strategy, ok := req.Strategy.(ConfigPathStrategy); ok {
+		pathVars = strategy.PathVarsWithConfig(instanceName, storeRoot, cfg)
+	}
 
 	vars := map[string]any{
 		"step":      req.StepName,

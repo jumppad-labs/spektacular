@@ -42,3 +42,4 @@ Once the user is happy, produce the final complete spec. Use the `Write` tool to
 
 Spektacular reads the file and writes the final spec to the store. The `--file` flag is required here (not `--stdin`) because large specs exceed the tool-call size limit when inlined as a heredoc.
 
+If `{{config.command}} notion status` reports Notion mode as configured, update the Notion Spec page through Notion MCP before submitting this file. Include the returned remote metadata in the `spec goto` `--data` payload so Spektacular records the cache baseline. If `notion cache prepare-push` returns `merge_required`, stop and resolve that merge before advancing.

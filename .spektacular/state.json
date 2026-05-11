@@ -1,11 +1,20 @@
 {
-  "current_step": "overview",
+  "current_step": "finished",
   "completed_steps": [
-    "new"
+    "new",
+    "read_plan",
+    "analyze",
+    "implement",
+    "test",
+    "verify",
+    "update_plan",
+    "update_changelog",
+    "update_repo_changelog",
+    "finished"
   ],
-  "created_at": "2026-04-19T17:02:31.870898072Z",
-  "updated_at": "2026-04-19T17:02:31.871201179Z",
+  "created_at": "2026-05-09T17:32:55.684958Z",
+  "updated_at": "2026-05-10T16:16:22.701914Z",
   "data": {
-    "name": "testing"
+    "name": "20260509154708-notion-artifact-sync"
   }
 }

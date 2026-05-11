@@ -88,3 +88,5 @@ Do **not** write directly to `{{plan_path}}` — spektacular owns that file. Ins
 ```
 
 Spektacular reads the file and stores its contents under the workflow key derived from the filename (`plan_template`), then writes the final plan to `{{plan_path}}`. The `--file` flag is required here (not `--stdin`) because large plans exceed the tool-call size limit when inlined as a heredoc.
+
+If `{{config.command}} notion status` reports Notion mode as configured, update the matching Notion artifact through MCP before each write step and include the returned metadata in the `plan goto` `--data` payload: `remote` for plan.md, `context_remote` for context.md, and `research_remote` for research.md. If `notion cache prepare-push` returns `merge_required`, stop and resolve the merge before advancing.

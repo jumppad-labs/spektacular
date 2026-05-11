@@ -3,6 +3,8 @@ package plan
 import (
 	"fmt"
 
+	"github.com/jumppad-labs/spektacular/internal/artifact"
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -21,6 +23,10 @@ func ContextFilePath(name string) string {
 // ResearchFilePath returns the store-relative path for a plan's research file.
 func ResearchFilePath(name string) string {
 	return "plans/" + name + "/research.md"
+}
+
+func planArtifactPath(cfg workflow.Config, kind, name string) (string, error) {
+	return artifact.Path(cfg.Project, kind, name)
 }
 
 // Steps returns the ordered step configs for a plan workflow.
@@ -184,7 +190,14 @@ func writePlan() workflow.StepCallback {
 			return "", fmt.Errorf("plan_template missing — submit the filled plan.md via --file or --stdin plan_template")
 		}
 		if !cfg.DryRun {
-			if err := st.Write(PlanFilePath(planName), []byte(content)); err != nil {
+			planPath, err := planArtifactPath(cfg, artifact.KindPlan, planName)
+			if err != nil {
+				return "", err
+			}
+			if err := st.Write(planPath, []byte(content)); err != nil {
+				return "", err
+			}
+			if err := recordPlanRemote(data, st, cfg, artifact.KindPlan, planName, "remote", []byte(content)); err != nil {
 				return "", err
 			}
 		}
@@ -201,7 +214,14 @@ func writeContext() workflow.StepCallback {
 			return "", fmt.Errorf("context_template missing — submit the filled context.md via --file or --stdin context_template")
 		}
 		if !cfg.DryRun {
-			if err := st.Write(ContextFilePath(planName), []byte(content)); err != nil {
+			contextPath, err := planArtifactPath(cfg, artifact.KindContext, planName)
+			if err != nil {
+				return "", err
+			}
+			if err := st.Write(contextPath, []byte(content)); err != nil {
+				return "", err
+			}
+			if err := recordPlanRemote(data, st, cfg, artifact.KindContext, planName, "context_remote", []byte(content)); err != nil {
 				return "", err
 			}
 		}
@@ -218,7 +238,14 @@ func writeResearch() workflow.StepCallback {
 			return "", fmt.Errorf("research_template missing — submit the filled research.md via --file or --stdin research_template")
 		}
 		if !cfg.DryRun {
-			if err := st.Write(ResearchFilePath(planName), []byte(content)); err != nil {
+			researchPath, err := planArtifactPath(cfg, artifact.KindResearch, planName)
+			if err != nil {
+				return "", err
+			}
+			if err := st.Write(researchPath, []byte(content)); err != nil {
+				return "", err
+			}
+			if err := recordPlanRemote(data, st, cfg, artifact.KindResearch, planName, "research_remote", []byte(content)); err != nil {
 				return "", err
 			}
 		}
@@ -232,11 +259,41 @@ func finished() workflow.StepCallback {
 			return "", writeStep("finished", "", "steps/plan/17-finished.md", data, out, st, cfg, nil)
 		}
 		planName := stepkit.GetString(data, "name")
-		for _, p := range []string{PlanFilePath(planName), ContextFilePath(planName), ResearchFilePath(planName)} {
+		paths := make([]string, 0, 3)
+		for _, kind := range []string{artifact.KindPlan, artifact.KindContext, artifact.KindResearch} {
+			path, err := planArtifactPath(cfg, kind, planName)
+			if err != nil {
+				return "", err
+			}
+			paths = append(paths, path)
+		}
+		for _, p := range paths {
 			if !st.Exists(p) {
 				return "", fmt.Errorf("expected file %s not found — the preceding write step should have written it", p)
 			}
 		}
 		return "", writeStep("finished", "", "steps/plan/17-finished.md", data, out, st, cfg, nil)
 	}
+}
+
+func recordPlanRemote(data workflow.Data, st store.Store, cfg workflow.Config, kind, name, key string, content []byte) error {
+	if cfg.Project.Artifacts.Backend != config.ArtifactBackendNotion {
+		return nil
+	}
+	value, ok := data.Get(key)
+	if !ok || value == nil {
+		return fmt.Errorf("%s metadata is required in Notion mode", key)
+	}
+	remote, _, err := artifact.RemoteMetadataFromAny(value)
+	if err != nil {
+		return fmt.Errorf("reading %s metadata: %w", key, err)
+	}
+	if err := artifact.ValidateRemoteMetadata(remote); err != nil {
+		return err
+	}
+	if _, err := artifact.RecordPull(st, cfg.Project, kind, name, content, remote); err != nil {
+		return err
+	}
+	data.Set(key, nil)
+	return nil
 }

@@ -3,6 +3,8 @@ package spec
 import (
 	"fmt"
 
+	"github.com/jumppad-labs/spektacular/internal/artifact"
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -11,6 +13,10 @@ import (
 // SpecFilePath returns the store-relative path for a spec file.
 func SpecFilePath(name string) string {
 	return "specs/" + name + ".md"
+}
+
+func specArtifactPath(cfg workflow.Config, name string) (string, error) {
+	return artifact.Path(cfg.Project, artifact.KindSpec, name)
 }
 
 // Steps returns the ordered step configs for a spec workflow.
@@ -73,7 +79,14 @@ func new() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		if err := st.Write(SpecFilePath(name), []byte(rendered)); err != nil {
+		specPath, err := specArtifactPath(cfg, name)
+		if err != nil {
+			return "", err
+		}
+		if err := st.Write(specPath, []byte(rendered)); err != nil {
+			return "", err
+		}
+		if err := recordSpecRemote(data, st, cfg, name, []byte(rendered), true); err != nil {
 			return "", err
 		}
 		return "overview", nil
@@ -138,12 +151,43 @@ func verification() workflow.StepCallback {
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
 		specName := stepkit.GetString(data, "name")
-		specPath := SpecFilePath(specName)
 		if content := stepkit.GetString(data, "spec_template"); content != "" {
+			specPath, err := specArtifactPath(cfg, specName)
+			if err != nil {
+				return "", err
+			}
 			if err := st.Write(specPath, []byte(content)); err != nil {
+				return "", err
+			}
+			if err := recordSpecRemote(data, st, cfg, specName, []byte(content), true); err != nil {
 				return "", err
 			}
 		}
 		return "", writeStep("finished", "", "steps/spec/09-finished.md", data, out, st, cfg, nil)
 	}
+}
+
+func recordSpecRemote(data workflow.Data, st store.Store, cfg workflow.Config, name string, content []byte, required bool) error {
+	if cfg.Project.Artifacts.Backend != config.ArtifactBackendNotion {
+		return nil
+	}
+	value, ok := data.Get("remote")
+	if !ok || value == nil {
+		if required {
+			return fmt.Errorf("remote metadata is required in Notion mode")
+		}
+		return nil
+	}
+	remote, _, err := artifact.RemoteMetadataFromAny(value)
+	if err != nil {
+		return fmt.Errorf("reading remote metadata: %w", err)
+	}
+	if err := artifact.ValidateRemoteMetadata(remote); err != nil {
+		return err
+	}
+	if _, err := artifact.RecordPull(st, cfg.Project, artifact.KindSpec, name, content, remote); err != nil {
+		return err
+	}
+	data.Set("remote", nil)
+	return nil
 }

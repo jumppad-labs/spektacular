@@ -5,29 +5,60 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/templates"
 )
 
+// InitOptions configures Spektacular project initialisation.
+type InitOptions struct {
+	Force                   bool
+	Config                  config.Config
+	CreateLocalArtifactDirs bool
+	CreateNotionCacheDir    bool
+}
+
 // Init creates the .spektacular directory structure in projectPath.
 // If force is false and the directory already exists, an error is returned.
 func Init(projectPath string, force bool) error {
+	return InitWithOptions(projectPath, InitOptions{
+		Force:                   force,
+		Config:                  config.NewDefault(),
+		CreateLocalArtifactDirs: true,
+	})
+}
+
+// InitWithOptions creates the .spektacular directory structure in projectPath
+// using mode-specific artifact directory options.
+func InitWithOptions(projectPath string, opts InitOptions) error {
 	spektacularDir := filepath.Join(projectPath, ".spektacular")
 
-	if _, err := os.Stat(spektacularDir); err == nil && !force {
+	if _, err := os.Stat(spektacularDir); err == nil && !opts.Force {
 		return fmt.Errorf(".spektacular directory already exists at %s; use --force to overwrite", spektacularDir)
+	}
+
+	cfg := opts.Config
+	if reflect.DeepEqual(cfg, config.Config{}) {
+		cfg = config.NewDefault()
 	}
 
 	dirs := []string{
 		spektacularDir,
-		filepath.Join(spektacularDir, "plans"),
-		filepath.Join(spektacularDir, "specs"),
 		filepath.Join(spektacularDir, "knowledge"),
 		filepath.Join(spektacularDir, "knowledge", "learnings"),
 		filepath.Join(spektacularDir, "knowledge", "architecture"),
 		filepath.Join(spektacularDir, "knowledge", "gotchas"),
+	}
+	if opts.CreateLocalArtifactDirs {
+		dirs = append(dirs,
+			filepath.Join(spektacularDir, "plans"),
+			filepath.Join(spektacularDir, "specs"),
+		)
+	}
+	if opts.CreateNotionCacheDir {
+		dirs = append(dirs, filepath.Join(spektacularDir, cfg.Artifacts.CacheDir))
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -38,7 +69,6 @@ func Init(projectPath string, force bool) error {
 	// Write default config.yaml only if it does not already exist.
 	configPath := filepath.Join(spektacularDir, "config.yaml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		cfg := config.NewDefault()
 		if err := cfg.ToYAMLFile(configPath); err != nil {
 			return fmt.Errorf("writing config: %w", err)
 		}

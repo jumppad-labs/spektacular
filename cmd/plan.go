@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jumppad-labs/spektacular/internal/artifact"
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/steps/plan"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -87,7 +89,10 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--data is required (e.g. --data '{\"name\":\"my-feature\"}')")
 	}
 	var input struct {
-		Name string `json:"name"`
+		Name           string                  `json:"name"`
+		Remote         artifact.RemoteMetadata `json:"remote"`
+		ContextRemote  artifact.RemoteMetadata `json:"context_remote"`
+		ResearchRemote artifact.RemoteMetadata `json:"research_remote"`
 	}
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
 		return fmt.Errorf("parsing --data: %w", err)
@@ -112,11 +117,22 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		_ = os.Remove(statePath)
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
+	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, Project: cfg}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(dataDir), out)
 	wf.SetData("name", input.Name)
+	if cfg.Artifacts.Backend == config.ArtifactBackendNotion {
+		if input.Remote.RemoteVersion != "" {
+			wf.SetData("remote", input.Remote)
+		}
+		if input.ContextRemote.RemoteVersion != "" {
+			wf.SetData("context_remote", input.ContextRemote)
+		}
+		if input.ResearchRemote.RemoteVersion != "" {
+			wf.SetData("research_remote", input.ResearchRemote)
+		}
+	}
 
 	if err := readInputIntoWorkflow(cmd, wf); err != nil {
 		return err
@@ -167,7 +183,7 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
+	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, Project: cfg}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(dataDir), out)

@@ -2,6 +2,10 @@
 *.log
 .env
 
+# Spektacular Notion cache
+cache/notion/
+*.sync.tmp
+
 # Python
 __pycache__/
 *.py[cod]

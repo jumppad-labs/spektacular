@@ -22,7 +22,19 @@ Plan name: $ARGUMENTS
 
 If no plan name was provided, check `.spektacular/state.json` for an active plan under `data.name`. If one exists, ask the user whether they want to implement that plan, offering the option to name a different one. If no active plan is found, ask the user which plan to implement before proceeding.
 
-The plan file must already exist at `.spektacular/plans/<plan_name>/plan.md`. If it does not, stop and tell the user to run `go run . plan` first.
+Before enforcing the plan-file precondition, run:
+
+```
+go run . notion status
+```
+
+If the returned `status` is not `configured`, the plan file must already exist at `.spektacular/plans/<plan_name>/plan.md`. If it does not, stop and tell the user to run `go run . plan` first.
+
+If Notion mode is configured, the plan cache must exist under `.spektacular/cache/notion/plans/<plan_name>/plan.md`. If it is missing, fetch the Plan page, `context.md`, and `research.md` child pages through Notion MCP and record them with `go run . notion cache pull`. You can pull by Notion URL, page ID, or Spektacular external ID when another user or agent already created the work.
+
+During implementation, any step that changes a cached artifact must sync before advancing. Run `go run . notion cache prepare-push` with the latest Notion `remote_version`; if it returns `ready`, update Notion through MCP and then run `go run . notion cache commit-push` with the returned metadata. If it returns `merge_required`, stop and surface the merge request to the user/agent. After resolution, run `go run . notion cache resolve-merge`, retry `prepare-push`, update Notion, and then commit the returned metadata.
+
+Doctor/setup flow: if Notion databases are not linked or validation reports issues, run `go run . notion link` to validate existing data sources and `go run . notion doctor` for fixable/blocking reports. Only apply additive doctor repairs after explicit user approval.
 
 Start the implement workflow by running:
 

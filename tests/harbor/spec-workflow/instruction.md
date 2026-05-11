@@ -8,22 +8,23 @@ The binary is already installed at `/usr/local/bin/spektacular`.
 First initialize the project:
 
 ```bash
-spektacular init claude
+spektacular init codex
 ```
 
 ## Task
 
 Create a specification for a **user authentication feature using JWT tokens** by
-using the `/spek:new` skill that was installed during init.
+driving the native `spektacular spec` workflow.
 
-Run the skill:
+Start the workflow:
 
+```bash
+spektacular spec new --data '{"name":"user-auth"}'
 ```
-/spek:new user-auth
-```
 
-The skill will guide you through the full spec workflow. Follow each instruction
-it gives you.
+The CLI returns JSON with a normalized, prefixed `spec_name` and `spec_path`.
+Use those returned values as the source of truth. Follow each instruction the
+CLI gives you, and advance with `spektacular spec goto --data '{"step":"..."}'`.
 
 When writing content for each section, use these details about the feature:
 - **What**: Stateless user authentication using JWT access and refresh tokens
@@ -44,5 +45,5 @@ cp -r /app/.spektacular /logs/artifacts/spektacular
 
 - The workflow reaches the `finished` or `done` state
 - All steps appear in the completed_steps list
-- The spec file at `.spektacular/specs/user-auth.md` contains content
+- The spec file at the returned `spec_path` contains content
 - Each spec section has meaningful, non-placeholder text

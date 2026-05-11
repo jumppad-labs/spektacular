@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/jumppad-labs/spektacular/internal/artifact"
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/steps/implement"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -111,7 +113,15 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 
 	// Precondition: the plan file must exist before an implement workflow
 	// can run against it. The workflow operates on an already-approved plan.
-	planPath := filepath.Join(dataDir, implement.PlanFilePath(input.Name))
+	planRelPath := implement.PlanFilePath(input.Name)
+	if cfg.Artifacts.Backend == config.ArtifactBackendNotion {
+		resolvedPath, err := artifact.Path(cfg, artifact.KindPlan, input.Name)
+		if err != nil {
+			return err
+		}
+		planRelPath = resolvedPath
+	}
+	planPath := filepath.Join(dataDir, planRelPath)
 	if _, statErr := os.Stat(planPath); statErr != nil {
 		return fmt.Errorf("plan file not found at %s — run 'plan new' first or check the name", planPath)
 	}
@@ -123,7 +133,7 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 		_ = os.Remove(statePath)
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
+	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, Project: cfg}
 	steps := implement.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(dataDir), out)
@@ -178,7 +188,7 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
+	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, Project: cfg}
 	steps := implement.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(dataDir), out)

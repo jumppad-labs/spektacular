@@ -36,28 +36,9 @@ func TestClaudeAgent_Install(t *testing.T) {
 		require.NotContains(t, string(data), "{{command}}")
 	}
 
-	// Exactly three command wrappers under .claude/commands/spek/, basenames
-	// stripped of the `spek-` prefix.
-	commandAssertions := map[string]string{
-		"new.md":       "`spek-new` skill",
-		"plan.md":      "`spek-plan` skill",
-		"implement.md": "`spek-implement` skill",
-	}
-	for base, expected := range commandAssertions {
-		cmdPath := filepath.Join(tmp, ".claude", "commands", "spek", base)
-		require.FileExists(t, cmdPath)
-		data, err := os.ReadFile(cmdPath)
-		require.NoError(t, err)
-		require.Contains(t, string(data), expected)
-		require.NotContains(t, string(data), "{{command}}")
-		require.NotContains(t, string(data), "{{skill}}")
-	}
-
-	// Claude command filenames strip the `spek-` prefix — make sure the
-	// prefixed variants do NOT exist on disk.
-	for _, prefixed := range []string{"spek-new.md", "spek-plan.md", "spek-implement.md"} {
-		require.NoFileExists(t, filepath.Join(tmp, ".claude", "commands", "spek", prefixed))
-	}
+	// Claude surfaces installed skills directly in its slash-command menu, so no
+	// command wrappers are installed — the commands tree must not exist.
+	require.NoDirExists(t, filepath.Join(tmp, ".claude", "commands"))
 
 	// Each installed SKILL.md must have a valid frontmatter block that
 	// satisfies the agentskills.io naming rules.

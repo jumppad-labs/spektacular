@@ -1,10 +1,12 @@
 ## Step {{step}}: {{title}}
 
-Append a phase entry to the inline `{{changelog_section_name}}` section of `{{plan_path}}`, then decide whether to loop back for another phase or advance to the repo-level changelog.
+Append a phase entry to the inline `{{changelog_section_name}}` section of plan.md, then decide whether to loop back for another phase or advance to the repo-level changelog.
+
+The plan documents are owned by spektacular. **Never read or edit plan.md with the `Read`, `Write`, or `Edit` tools** — go through `{{config.command}} plan file read` and `{{config.command}} plan file write`.
 
 ### Step 1: Ensure the `{{changelog_section_name}}` section exists
 
-Read `{{plan_path}}`. If the `{{changelog_section_name}}` heading is absent, this is the first `update_changelog` invocation for this plan — append a new `{{changelog_section_name}}` section **after** the existing `## Out of Scope` section (or at the very end of the file if `## Out of Scope` is missing).
+Read plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md`. If the `{{changelog_section_name}}` heading is absent, this is the first `update_changelog` invocation for this plan — append a new `{{changelog_section_name}}` section **after** the existing `## Out of Scope` section (or at the very end of the file if `## Out of Scope` is missing).
 
 If the `{{changelog_section_name}}` heading is present, append new entries under the existing section, after any entries already there.
 
@@ -32,9 +34,15 @@ For the exact format and more examples, launch a sub-agent with:
 {{config.command}} skill update-changelog
 ```
 
+Apply the entry by reading plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md`, adding the entry, staging the updated document with the `Write` tool at the scratch path `.spektacular/tmp/plan_update.md`, then committing it:
+
+```
+cat .spektacular/tmp/plan_update.md | {{config.command}} plan file write {{plan_name}}/plan.md
+```
+
 ### Step 3: Check for remaining unchecked phases
 
-Re-read `{{plan_path}}` and count `#### - [ ] Phase` (unchecked) headings under `## Milestones & Phases`.
+Re-read plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md` and count `#### - [ ] Phase` (unchecked) headings under `## Milestones & Phases`.
 
 **If unchecked phases remain**:
 

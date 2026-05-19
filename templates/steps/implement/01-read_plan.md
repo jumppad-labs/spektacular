@@ -4,11 +4,15 @@ This step is the **validation and drift gate** for the implement workflow. Nothi
 
 ### Step 1: Full plan read
 
-Read the following three files **in full** (no offset, no limit). These are the source of truth for every downstream step.
+Read the three plan documents **in full** through the plan store. The plan documents are owned by spektacular — always read them with `{{config.command}} plan file read`, never with the `Read` tool, which bypasses the CLI:
 
-- `{{plan_path}}`
-- `{{context_path}}`
-- `{{research_path}}`
+```
+{{config.command}} plan file read {{plan_name}}/plan.md
+{{config.command}} plan file read {{plan_name}}/context.md
+{{config.command}} plan file read {{plan_name}}/research.md
+```
+
+These are the source of truth for every downstream step.
 
 ### Step 2: Structural validation
 

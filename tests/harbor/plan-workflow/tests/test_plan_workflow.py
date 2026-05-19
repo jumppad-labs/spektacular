@@ -1,6 +1,6 @@
 """Verify that the spektacular plan workflow completed successfully.
 
-Per-step pass/fail reporting for the full plan workflow, driven by four
+Per-step pass/fail reporting for the full plan workflow, driven by five
 layers of assertions:
 
   1. Workflow integrity — state reached finished, completed_steps matches
@@ -16,6 +16,9 @@ layers of assertions:
      context.md, research.md exist with substantive on-topic content, and
      every rendered instruction's next_step directive references a valid
      state-machine step.
+  5. Plan-file CLI usage — the plan documents were committed with
+     `spektacular plan file write` and never written or edited with the
+     built-in Write/Edit tools.
 
 All expectation maps (step order, skills per step, sub-agent spawn steps)
 are hand-maintained in this module — they are the independent behavioural
@@ -95,6 +98,10 @@ EXPECTED_SKILLS_PER_STEP = {
 EXPECTED_SPAWN_STEPS = frozenset({"discovery"})
 
 MIN_SECTION_LENGTH = 100
+
+# Built-in agent tools that mutate files directly, bypassing the spektacular
+# CLI. The plan documents must never be written or edited with these.
+BUILTIN_FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 
 # Hand-maintained list of scaffold slot strings that must be replaced when
 # the agent fills the scaffolds. An occurrence of any of these substrings in
@@ -261,6 +268,28 @@ def extract_tool_calls() -> list:
                     )
                 )
     return calls
+
+
+def extract_builtin_file_edits() -> list:
+    """Return every built-in file-mutation tool call (Write/Edit/...) in order.
+
+    Each entry is {"name": <tool>, "file_path": <path>}. These are the tools
+    the agent must NOT use on the plan documents — `extract_tool_calls` does
+    not capture them, so this walks the transcript separately.
+    """
+    edits: list = []
+    for obj in _iter_transcript_objects():
+        if obj.get("type") != "assistant":
+            continue
+        for block in obj.get("message", {}).get("content", []):
+            if block.get("type") != "tool_use":
+                continue
+            if block.get("name") not in BUILTIN_FILE_TOOLS:
+                continue
+            inp = block.get("input", {}) or {}
+            path = inp.get("file_path") or inp.get("notebook_path") or ""
+            edits.append({"name": block["name"], "file_path": path})
+    return edits
 
 
 def extract_tool_results() -> dict:
@@ -540,6 +569,45 @@ class TestWorkflow:
     def test_artefact_files_exist(self):
         for path in plan_artefact_paths():
             assert path.exists(), f"Artefact file missing: {path}"
+
+
+class TestPlanFileCommands:
+    """The plan documents were written through the spektacular CLI, not built-in tools.
+
+    Spektacular owns the plan documents. plan.md, context.md and research.md
+    must each be committed with `spektacular plan file write`, which routes the
+    write through the CLI into the configured plan directory. The agent must
+    never create or edit a file in the plan directory with the built-in
+    Write/Edit tools — those bypass the CLI entirely.
+    """
+
+    def test_plan_file_write_command_used(self):
+        """The agent committed the plan documents via `spektacular plan file write`."""
+        used = [
+            _bash_command(c)
+            for c in _calls_cache()
+            if "spektacular plan file write" in _bash_command(c)
+        ]
+        assert used, (
+            "Agent never ran 'spektacular plan file write' — the plan "
+            "documents must be committed to the store through the CLI rather "
+            "than written to disk directly."
+        )
+
+    def test_plan_documents_not_written_with_builtin_tools(self):
+        """No Write/Edit tool call targeted a file in the plan directory.
+
+        The scratch files used to stage documents (.spektacular/tmp/...) are
+        fine; only writes into the plan directory itself are a violation.
+        """
+        offending = [
+            e for e in extract_builtin_file_edits()
+            if ".spektacular/plans/" in e["file_path"]
+        ]
+        assert not offending, (
+            "Agent used built-in file tools on the plan documents instead of "
+            f"'spektacular plan file write': {offending}"
+        )
 
 
 # ---------------------------------------------------------------------------

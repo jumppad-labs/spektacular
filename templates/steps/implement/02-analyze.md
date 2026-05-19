@@ -4,15 +4,15 @@ Identify the current phase, then research the codebase touchpoints before writin
 
 ### Step 1: Pick the current phase
 
-Re-read `{{plan_path}}` and locate the first unchecked `#### - [ ] Phase N.M:` heading under `## Milestones & Phases`. That is **the current phase**. Record its number (e.g. `1.2`), its title, and its `*Technical detail:*` link to a section in `{{context_path}}`.
+Re-read plan.md through the plan store — `{{config.command}} plan file read {{plan_name}}/plan.md` — and locate the first unchecked `#### - [ ] Phase N.M:` heading under `## Milestones & Phases`. That is **the current phase**. Record its number (e.g. `1.2`), its title, and its `*Technical detail:*` link to a section in context.md.
 
 If every phase is already checked, STOP — this should only happen if the user manually advanced the workflow past `update_changelog` without looping. Report the situation and ask the user what to do.
 
 ### Step 2: Read the phase's technical detail
 
-Open `{{context_path}}` at the `### Phase N.M:` heading the `*Technical detail:*` link points to. Read the entire phase section. It should contain file:line references, complexity, token estimate, and an agent strategy.
+Read context.md through the plan store — `{{config.command}} plan file read {{plan_name}}/context.md` — and find the `### Phase N.M:` heading the `*Technical detail:*` link points to. Read the entire phase section. It should contain file:line references, complexity, token estimate, and an agent strategy.
 
-If the section is missing, unreadable, or empty, STOP and ask the user whether to fix `{{context_path}}` before proceeding. This is a plan/reality mismatch — do not guess.
+Always read the plan documents with `{{config.command}} plan file read`, never with the `Read` tool. If the section is missing, unreadable, or empty, STOP and ask the user whether to fix context.md before proceeding. This is a plan/reality mismatch — do not guess.
 
 ### Step 3: Delegate codebase research to sub-agents
 

@@ -146,10 +146,9 @@ func TestFSMLoopFromUpdateChangelogBackToAnalyze(t *testing.T) {
 func TestReadPlanStepContainsFullReadDirective(t *testing.T) {
 	out := renderStep(t, readPlan())
 	lower := strings.ToLower(out)
-	require.Contains(t, lower, "no offset")
-	require.Contains(t, lower, "no limit")
-	// {{context_path}} and {{research_path}} resolve to absolute paths ending
-	// in context.md / research.md — assert on the substituted filenames.
+	require.Contains(t, lower, "in full", "read_plan must direct a full read of the plan documents")
+	// Plan documents are read through the CLI, never the built-in Read tool.
+	require.Contains(t, out, "plan file read", "read_plan must read the plan documents via `plan file read`")
 	require.Contains(t, out, "context.md")
 	require.Contains(t, out, "research.md")
 }

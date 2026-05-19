@@ -13,7 +13,7 @@ If the plan touches tests, read the relevant test files directly as part of Step
 Research the codebase in parallel to find:
 
 1. **Files related to the plan** — Organize by category (implementation, tests, config, docs)
-2. **Prior research** — Existing plans, research, or tickets: search the knowledge sources with `{{config.command}} knowledge search <query>`, and check `.spektacular/plans/` and `.spektacular/specs/`
+2. **Prior research** — Existing plans, research, or tickets: search the knowledge sources with `{{config.command}} knowledge search <query>`, list prior plans with `{{config.command}} plan file list` and prior specs with `{{config.command}} spec file list`, then read any that look relevant with `{{config.command}} plan file read <name>/plan.md` or `{{config.command}} spec file read <name>.md`. Always reach plans and specs through these CLI commands — never with the `Read` tool
 3. **Similar implementations** — Code examples to model after, with file:line references
 4. **Architecture and integration points** — How the relevant components fit together
 5. **Alternatives to consider** — Identify 2-3 viable approaches so the next step can compare them with evidence

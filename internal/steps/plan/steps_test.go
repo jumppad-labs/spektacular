@@ -123,15 +123,8 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 	st := store.NewFileStore(tmp, "project")
 	writer := &captureWriter{}
 
-	require.NoError(t, st.Write(PlanFilePath("plans", "test"), []byte("")))
-	require.NoError(t, st.Write(ContextFilePath("plans", "test"), []byte("")))
-	require.NoError(t, st.Write(ResearchFilePath("plans", "test"), []byte("")))
-
 	wf := workflow.New(Steps(), statePath, workflow.Config{Command: "spektacular", DryRun: true, PlanDir: "plans", SpecDir: "specs"}, st, writer)
 	wf.SetData("name", "test")
-	wf.SetData("plan_template", "plan content")
-	wf.SetData("context_template", "context content")
-	wf.SetData("research_template", "research content")
 
 	require.Equal(t, "start", wf.Current())
 
@@ -170,25 +163,26 @@ func TestPlanFilePaths_UseConfiguredDirectory(t *testing.T) {
 	require.Equal(t, "my-plans/x/research.md", ResearchFilePath("my-plans", "x"))
 }
 
-// TestWritePlanStep_WritesUnderConfiguredPlanDir runs the write_plan callback
-// with a non-default PlanDir and asserts plan.md lands under that directory
-// (Phase 2.2, acceptance criterion 2).
-func TestWritePlanStep_WritesUnderConfiguredPlanDir(t *testing.T) {
+// TestWriteStep_WarnsWhenDocumentNotCommitted asserts a write step's callback
+// reads the document back through the store and flags it when the agent has
+// not committed it via `plan file write` (it is missing or still the scaffold).
+func TestWriteStep_WarnsWhenDocumentNotCommitted(t *testing.T) {
 	tmp := t.TempDir()
 	st := store.NewFileStore(tmp, "project")
-	data := &testData{values: map[string]any{
-		"name":             "test",
-		"plan_template":    "plan content",
-		"context_template": "context content",
-	}}
 	writer := &captureWriter{}
+	data := &testData{values: map[string]any{"name": "test"}}
 	cfg := workflow.Config{Command: "spektacular", PlanDir: "my-plans", SpecDir: "specs"}
 
+	// plan.md absent from the store — the step must warn the agent.
 	_, err := writePlan()(data, writer, st, cfg)
 	require.NoError(t, err)
-	require.True(t, st.Exists(PlanFilePath("my-plans", "test")), "plan.md must land under my-plans")
+	require.Contains(t, writer.result.Instruction, "still holds the empty scaffold",
+		"write_plan must warn when plan.md was never committed")
 
-	_, err = writeContext()(data, writer, st, cfg)
+	// A committed, filled plan.md — no warning.
+	require.NoError(t, st.Write(PlanFilePath("my-plans", "test"), []byte("# real filled plan")))
+	_, err = writePlan()(data, writer, st, cfg)
 	require.NoError(t, err)
-	require.True(t, st.Exists(ContextFilePath("my-plans", "test")), "context.md must land under my-plans")
+	require.NotContains(t, writer.result.Instruction, "still holds the empty scaffold",
+		"write_plan must not warn once plan.md is committed")
 }

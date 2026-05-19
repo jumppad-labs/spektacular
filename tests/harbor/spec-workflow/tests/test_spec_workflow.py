@@ -33,6 +33,10 @@ EXPECTED_STEP_ORDER = [
 # Minimum character count for each section's content (excluding comments).
 MIN_SECTION_LENGTH = 100
 
+# Built-in agent tools that mutate files directly, bypassing the spektacular
+# CLI. The spec file must never be written with these.
+BUILTIN_FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -145,6 +149,28 @@ def find_spektacular_calls(tool_calls: list[dict]) -> list[str]:
                     results.append(f"spec goto {step}")
                     break
     return results
+
+
+def extract_builtin_file_edits() -> list[dict]:
+    """Return every built-in file-mutation tool call (Write/Edit/...) in order.
+
+    Each entry is {"name": <tool>, "file_path": <path>}. These are the tools the
+    agent must NOT use on the spec file — only Claude-style `tool_use` blocks
+    carry them.
+    """
+    edits = []
+    for obj in iter_transcript_objects():
+        if obj.get("type") != "assistant":
+            continue
+        for block in obj.get("message", {}).get("content", []):
+            if block.get("type") != "tool_use":
+                continue
+            if block.get("name") not in BUILTIN_FILE_TOOLS:
+                continue
+            inp = block.get("input", {})
+            path = inp.get("file_path") or inp.get("notebook_path") or ""
+            edits.append({"name": block["name"], "file_path": path})
+    return edits
 
 
 def iter_transcript_objects():
@@ -484,4 +510,43 @@ class TestVerificationStep:
         calls = find_spektacular_calls(extract_tool_calls())
         assert "spec goto verification" in calls, (
             f"Agent did not call 'spektacular spec goto' for verification. Calls: {calls}"
+        )
+
+
+class TestSpecFileCommands:
+    """The spec file was written through the spektacular CLI, not built-in tools.
+
+    Spektacular owns the spec file. The completed spec must be committed with
+    `spektacular spec file write`, which routes the write through the CLI into
+    the configured spec directory. The agent must never create or edit a file
+    in the spec directory with the built-in Write/Edit tools — those bypass the
+    CLI entirely.
+    """
+
+    def test_spec_file_write_command_used(self):
+        """The agent committed the spec via `spektacular spec file write`."""
+        commands = [c["command"] for c in extract_tool_calls()]
+        used = [c for c in commands if "spektacular spec file write" in c]
+        assert used, (
+            "Agent never ran 'spektacular spec file write' — the completed "
+            "spec must be committed to the store through the CLI rather than "
+            "written to disk directly."
+        )
+
+    def test_spec_file_not_written_with_builtin_tools(self):
+        """No Write/Edit tool call targeted a file in the spec directory.
+
+        The scratch file used to stage the spec (.spektacular/tmp/...) is fine;
+        only writes into the spec directory itself are a violation.
+        """
+        spec_name = spec_file_path().name
+        offending = [
+            e for e in extract_builtin_file_edits()
+            if ".spektacular/specs/" in e["file_path"]
+            or e["file_path"].endswith(f"/{spec_name}")
+            or e["file_path"] == spec_name
+        ]
+        assert not offending, (
+            "Agent used built-in file tools on the spec file instead of "
+            f"'spektacular spec file write': {offending}"
         )

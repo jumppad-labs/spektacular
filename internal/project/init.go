@@ -34,8 +34,10 @@ func Init(projectPath string, force bool) error {
 
 	dirs := []string{
 		spektacularDir,
-		filepath.Join(spektacularDir, cfg.Plan.Config.Directory),
-		filepath.Join(spektacularDir, cfg.Spec.Config.Directory),
+		// Spec and plan directories are configured as project-root-relative
+		// paths (e.g. ".spektacular/plans"), like the knowledge location.
+		filepath.Join(projectPath, cfg.Plan.Config.Directory),
+		filepath.Join(projectPath, cfg.Spec.Config.Directory),
 		filepath.Join(spektacularDir, "knowledge"),
 		filepath.Join(spektacularDir, "knowledge", "learnings"),
 		filepath.Join(spektacularDir, "knowledge", "architecture"),

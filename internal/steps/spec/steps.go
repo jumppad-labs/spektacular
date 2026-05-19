@@ -138,13 +138,36 @@ func verification() workflow.StepCallback {
 
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		specName := stepkit.GetString(data, "name")
-		specPath := SpecFilePath(cfg.SpecDir, specName)
-		if content := stepkit.GetString(data, "spec_template"); content != "" {
-			if err := st.Write(specPath, []byte(content)); err != nil {
+		// The completed spec is committed to the store by the agent during the
+		// verification step via `spec file write`. Read it back through the
+		// store; if it is still the empty scaffold the agent skipped that
+		// write, so surface a warning in the finished instruction.
+		var extra map[string]any
+		if !cfg.DryRun && st != nil {
+			unwritten, err := specStillScaffold(st, cfg, stepkit.GetString(data, "name"))
+			if err != nil {
 				return "", err
 			}
+			if unwritten {
+				extra = map[string]any{"spec_unwritten": true}
+			}
 		}
-		return "", writeStep("finished", "", "steps/spec/09-finished.md", data, out, st, cfg, nil)
+		return "", writeStep("finished", "", "steps/spec/09-finished.md", data, out, st, cfg, extra)
 	}
+}
+
+// specStillScaffold reads the spec file back through the store and reports
+// whether it still holds the unfilled scaffold — i.e. the completed spec was
+// never committed with `spec file write`. A spec that cannot be read is also
+// treated as unwritten.
+func specStillScaffold(st store.Store, cfg workflow.Config, specName string) (bool, error) {
+	stored, err := st.Read(SpecFilePath(cfg.SpecDir, specName))
+	if err != nil {
+		return true, nil
+	}
+	scaffold, err := stepkit.RenderTemplate("scaffold/spec.md", map[string]any{"name": specName})
+	if err != nil {
+		return false, err
+	}
+	return string(stored) == scaffold, nil
 }

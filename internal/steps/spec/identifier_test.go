@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,9 @@ func identifierStore(t *testing.T) store.Store {
 
 func writeExistingSpec(t *testing.T, st store.Store, name string) {
 	t.Helper()
-	writeExistingSpecIn(t, st, "specs", name)
+	// Generated-mode resolution scans the default spec directory when the
+	// request carries no SpecDir, so the fixture must land in the same place.
+	writeExistingSpecIn(t, st, config.DefaultSpecDir, name)
 }
 
 func writeExistingSpecIn(t *testing.T, st store.Store, dir, name string) {

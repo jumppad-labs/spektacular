@@ -104,6 +104,10 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -111,7 +115,7 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 
 	// Precondition: the plan file must exist before an implement workflow
 	// can run against it. The workflow operates on an already-approved plan.
-	planPath := filepath.Join(dataDir, implement.PlanFilePath(cfg.Plan.Config.Directory, input.Name))
+	planPath := filepath.Join(root, implement.PlanFilePath(cfg.Plan.Config.Directory, input.Name))
 	if _, statErr := os.Stat(planPath); statErr != nil {
 		return fmt.Errorf("plan file not found at %s — run 'plan new' first or check the name", planPath)
 	}
@@ -126,7 +130,7 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := implement.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(dataDir, "project"), out)
+	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(root, "project"), out)
 	wf.SetData("name", input.Name)
 
 	if err := readInputIntoWorkflow(cmd, wf); err != nil {
@@ -173,6 +177,10 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -181,7 +189,7 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := implement.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(dataDir, "project"), out)
+	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
 
 	for k, v := range input {
 		if k != "step" {
@@ -213,6 +221,10 @@ func runImplementStatus(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -227,7 +239,7 @@ func runImplementStatus(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("no active implement workflow found — run 'implement new' first")
 	}
 	planName := fmt.Sprintf("%v", nameVal)
-	planPath := filepath.Join(dataDir, implement.PlanFilePath(cfg.Plan.Config.Directory, planName))
+	planPath := filepath.Join(root, implement.PlanFilePath(cfg.Plan.Config.Directory, planName))
 
 	stepInfos := wf.StepStatus()
 	entries := make([]implement.StepEntry, len(stepInfos))

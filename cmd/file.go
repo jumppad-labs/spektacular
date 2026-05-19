@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -42,8 +43,24 @@ var specFileListCmd = &cobra.Command{
 	RunE:  runSpecFileList,
 }
 
+// specFileStore returns a store rooted at the project root together with the
+// configured spec directory. Path arguments to the `spec file` subcommands are
+// resolved relative to that configured directory, so callers pass a spec file
+// name (e.g. "000020_context.md") rather than a full project path.
+func specFileStore() (store.Store, string, error) {
+	root, err := projectRoot()
+	if err != nil {
+		return nil, "", err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	return store.NewFileStore(root, "project"), cfg.Spec.Config.Directory, nil
+}
+
 func runSpecFileWrite(cmd *cobra.Command, args []string) error {
-	dataDir, err := dataDir()
+	st, specDir, err := specFileStore()
 	if err != nil {
 		return err
 	}
@@ -51,15 +68,15 @@ func runSpecFileWrite(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading stdin: %w", err)
 	}
-	return store.NewFileStore(dataDir, "project").Write(args[0], content)
+	return st.Write(filepath.Join(specDir, args[0]), content)
 }
 
 func runSpecFileRead(cmd *cobra.Command, args []string) error {
-	dataDir, err := dataDir()
+	st, specDir, err := specFileStore()
 	if err != nil {
 		return err
 	}
-	content, err := store.NewFileStore(dataDir, "project").Read(args[0])
+	content, err := st.Read(filepath.Join(specDir, args[0]))
 	if err != nil {
 		return err
 	}
@@ -68,23 +85,23 @@ func runSpecFileRead(cmd *cobra.Command, args []string) error {
 }
 
 func runSpecFileDelete(_ *cobra.Command, args []string) error {
-	dataDir, err := dataDir()
+	st, specDir, err := specFileStore()
 	if err != nil {
 		return err
 	}
-	return store.NewFileStore(dataDir, "project").Delete(args[0])
+	return st.Delete(filepath.Join(specDir, args[0]))
 }
 
 func runSpecFileList(cmd *cobra.Command, args []string) error {
-	dataDir, err := dataDir()
+	st, specDir, err := specFileStore()
 	if err != nil {
 		return err
 	}
-	path := ""
+	path := specDir
 	if len(args) > 0 {
-		path = args[0]
+		path = filepath.Join(specDir, args[0])
 	}
-	entries, err := store.NewFileStore(dataDir, "project").List(path)
+	entries, err := st.List(path)
 	if err != nil {
 		return err
 	}

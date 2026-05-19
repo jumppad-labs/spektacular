@@ -10,11 +10,21 @@ This skill drives a **multi-step interactive workflow** that produces a complete
 On each turn, the CLI returns JSON containing an `instruction` field. That instruction describes exactly one step (e.g. overview, requirements, acceptance criteria, …). You must:
 
 1. Read the `instruction` carefully.
-2. Perform the step — usually this means interviewing the user, capturing their answers, and writing the relevant section of the spec file.
+2. Perform the step — usually this means interviewing the user and capturing their answers. Some steps tell you to commit the gathered content to the spec file.
 3. When the step is complete, run the `goto` command named at the bottom of the instruction to advance the state machine.
 4. Read the next `instruction` from the new JSON response and repeat.
 
 **This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user.
+
+# Reading and writing the spec file
+
+The CLI owns the spec file. **Never read or write it with the `Write`, `Edit`, or `Read` tools** — those bypass Spektacular and the configured spec directory. All spec file access goes through `{{command}} spec file`:
+
+- `{{command}} spec file read <name>.md` — read a spec file from the spec store.
+- `{{command}} spec file write <name>.md` — write a spec file into the spec store (reads stdin).
+- `{{command}} spec file list` — list spec files in the spec store.
+
+Path arguments are spec file names; `spec file` resolves them against the configured spec directory itself.
 
 # How to start
 

@@ -34,11 +34,21 @@ Do not silently rewrite — the user may have intentionally locked in a design d
 
 Report any issues to the user and ask for clarification until you are confident the spec is correct, complete, and free of section-hygiene leaks.
 
-Once the user is happy, produce the final complete spec. Use the `Write` tool to stage it at `.spektacular/tmp/spec_template.md`, then submit it:
+Once the user is happy, produce the final complete spec and commit it to the spec store.
+
+**Never edit the spec file with the `Write` or `Edit` tools.** `{{config.command}} spec file write` is the only supported way to write the spec — it routes the write through Spektacular into the configured spec directory.
+
+Large specs exceed the tool-call size limit when inlined as a heredoc, so stage the content through a scratch file first. Use the `Write` tool to write the completed spec to the scratch path `.spektacular/tmp/spec_template.md`, then pipe that scratch file into the store:
 
 ```
-{{config.command}} spec goto --data '{"step":"{{next_step}}"}' --file .spektacular/tmp/spec_template.md
+cat .spektacular/tmp/spec_template.md | {{config.command}} spec file write {{spec_name}}.md
 ```
 
-Spektacular reads the file and writes the final spec to the store. The `--file` flag is required here (not `--stdin`) because large specs exceed the tool-call size limit when inlined as a heredoc.
+That writes the final spec into the configured spec directory through Spektacular. The path argument is the spec file name only — `spec file write` resolves it against the configured spec directory for you.
+
+Then advance:
+
+```
+{{config.command}} spec goto --data '{"step":"{{next_step}}"}'
+```
 

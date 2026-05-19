@@ -114,6 +114,7 @@ func TestInit_DefaultConfig_CreatesSpecsAndPlansDirs(t *testing.T) {
 // TestInit_NonDefaultConfig_CreatesConfiguredDirs writes a config.yaml with
 // non-default spec/plan directories into a temp project, runs Init, and asserts
 // the configured directories are created on disk (Phase 2.2, criterion 3).
+// Spec and plan directories are project-root-relative paths.
 func TestInit_NonDefaultConfig_CreatesConfiguredDirs(t *testing.T) {
 	dir := t.TempDir()
 	spektacularDir := filepath.Join(dir, ".spektacular")
@@ -127,15 +128,15 @@ func TestInit_NonDefaultConfig_CreatesConfiguredDirs(t *testing.T) {
 	// Force is required because .spektacular already exists.
 	require.NoError(t, Init(dir, true))
 
-	for _, d := range []string{".spektacular/my-specs", ".spektacular/my-plans"} {
+	for _, d := range []string{"my-specs", "my-plans"} {
 		info, err := os.Stat(filepath.Join(dir, d))
 		require.NoError(t, err, "expected configured dir %s", d)
 		require.True(t, info.IsDir(), "%s should be a directory", d)
 	}
-	// The literal default directories must NOT be created.
-	_, err := os.Stat(filepath.Join(dir, ".spektacular", "specs"))
+	// The default directories must NOT be created.
+	_, err := os.Stat(filepath.Join(dir, config.DefaultSpecDir))
 	require.True(t, os.IsNotExist(err), "default specs dir should not be created")
-	_, err = os.Stat(filepath.Join(dir, ".spektacular", "plans"))
+	_, err = os.Stat(filepath.Join(dir, config.DefaultPlanDir))
 	require.True(t, os.IsNotExist(err), "default plans dir should not be created")
 }
 

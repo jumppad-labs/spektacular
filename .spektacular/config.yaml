@@ -6,11 +6,11 @@ spec:
     provider: file
     id_method: counter
     config:
-        directory: specs
+        directory: .spektacular/specs
 plan:
     provider: file
     config:
-        directory: plans
+        directory: .spektacular/plans
 knowledge:
     sources:
         - scope: project

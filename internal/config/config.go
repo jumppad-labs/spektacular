@@ -24,9 +24,11 @@ const ProviderFile = "file"
 
 const (
 	// DefaultSpecDir is the spec output directory used when none is configured.
-	DefaultSpecDir = "specs"
+	// It is resolved relative to the project root, like the knowledge location.
+	DefaultSpecDir = ".spektacular/specs"
 	// DefaultPlanDir is the plan output directory used when none is configured.
-	DefaultPlanDir = "plans"
+	// It is resolved relative to the project root, like the knowledge location.
+	DefaultPlanDir = ".spektacular/plans"
 	// DefaultKnowledgeScope is the scope of the synthesised default knowledge source.
 	DefaultKnowledgeScope = "project"
 	// DefaultKnowledgeLocation is the project-relative location of the

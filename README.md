@@ -184,13 +184,13 @@ debug:
   enabled: false
 spec:
   provider: file
-  id_method: timestamp      # how new spec identifiers are generated
+  id_method: timestamp              # how new spec identifiers are generated
   config:
-    directory: specs        # store-relative directory for spec files
+    directory: .spektacular/specs   # project-root-relative directory for spec files
 plan:
   provider: file
   config:
-    directory: plans        # store-relative directory for plan files
+    directory: .spektacular/plans   # project-root-relative directory for plan files
 knowledge:
   sources:
     - scope: project        # written by init; synthesised if removed
@@ -209,7 +209,7 @@ knowledge:
 - `counter`: creates names like `000001_billing-export`, deriving the next number from existing spec files.
 - `external`: requires an `id` in `spec new --data`; useful when another system owns the identifier.
 
-`spec.config.directory` and `plan.config.directory` are store-relative subdirectories of `.spektacular`; omitting a section falls back to the defaults shown above. `knowledge.sources` is an ordered list of scoped sources. `init` writes the default `project` source at `.spektacular/knowledge` into the config explicitly; if the section is removed entirely, Spektacular falls back to synthesising that same `project` source. Relative source `location` values resolve against the project root, so `team` and `global` sources can point at absolute paths shared across projects.
+`spec.config.directory` and `plan.config.directory` are resolved relative to the project root (like `knowledge` source `location` values); omitting a section falls back to the defaults shown above. `knowledge.sources` is an ordered list of scoped sources. `init` writes the default `project` source at `.spektacular/knowledge` into the config explicitly; if the section is removed entirely, Spektacular falls back to synthesising that same `project` source. Relative source `location` values resolve against the project root, so `team` and `global` sources can point at absolute paths shared across projects.
 
 Names and ids are normalized to lowercase, with accepted separators such as `.`, `@`, `-`, and internal whitespace converted to hyphens. Leading or trailing whitespace, path separators, and control characters are rejected.
 

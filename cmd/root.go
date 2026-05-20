@@ -52,11 +52,23 @@ func loadConfig() (config.Config, error) {
 // dataDir returns the .spektacular directory for the current working directory.
 // Both spec and plan workflows share this directory (and a single state.json).
 func dataDir() (string, error) {
+	root, err := projectRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, ".spektacular"), nil
+}
+
+// projectRoot returns the project root — the current working directory. Spec,
+// plan, and knowledge directories from the config are all resolved relative to
+// this, so the configured paths (e.g. ".spektacular/specs") are project-root
+// relative rather than relative to the .spektacular data directory.
+func projectRoot() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("getting working directory: %w", err)
 	}
-	return filepath.Join(cwd, ".spektacular"), nil
+	return cwd, nil
 }
 
 func init() {
@@ -64,6 +76,7 @@ func init() {
 	rootCmd.AddCommand(specCmd)
 	rootCmd.AddCommand(planCmd)
 	rootCmd.AddCommand(implementCmd)
+	rootCmd.AddCommand(knowledgeCmd)
 	rootCmd.AddCommand(skillCmd)
 	rootCmd.AddCommand(initCmd)
 }

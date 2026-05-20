@@ -6,14 +6,17 @@ import (
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 )
 
-// strategy implements stepkit.PathStrategy for the spec workflow.
-type strategy struct{}
+// strategy implements stepkit.PathStrategy for the spec workflow. specDir is
+// the configured spec directory the workflow writes into.
+type strategy struct {
+	specDir string
+}
 
 func (strategy) PrimaryPathField() string { return "spec_path" }
 
-func (strategy) PathVars(instanceName, storeRoot string) map[string]any {
+func (s strategy) PathVars(instanceName, storeRoot string) map[string]any {
 	return map[string]any{
-		"spec_path": filepath.Join(storeRoot, SpecFilePath(instanceName)),
+		"spec_path": filepath.Join(storeRoot, SpecFilePath(s.specDir, instanceName)),
 		"spec_name": instanceName,
 	}
 }

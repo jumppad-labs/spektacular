@@ -79,12 +79,20 @@ Then verify quality:
 
 If any section is missing from any document, add it and re-review before proceeding. Do **not** advance until every section in every list above is present.
 
-### Step 5: Submit plan.md
+### Step 5: Commit plan.md
 
-Do **not** write directly to `{{plan_path}}` — spektacular owns that file. Instead, use the `Write` tool to stage the filled plan.md at `.spektacular/tmp/plan_template.md`, then submit it via `--file`:
+The plan documents are owned by spektacular. **Never write or edit them with the `Write` or `Edit` tools** — `{{config.command}} plan file write` is the only supported way to write them. It routes the write through the CLI into the configured plan directory.
+
+Large plans exceed the tool-call size limit when inlined as a heredoc, so stage each document through a scratch file. Use the `Write` tool to write the filled plan.md to the scratch path `.spektacular/tmp/plan_template.md`, then commit it to the plan store:
 
 ```
-{{config.command}} plan goto --data '{"step":"{{next_step}}"}' --file .spektacular/tmp/plan_template.md
+cat .spektacular/tmp/plan_template.md | {{config.command}} plan file write {{plan_name}}/plan.md
 ```
 
-Spektacular reads the file and stores its contents under the workflow key derived from the filename (`plan_template`), then writes the final plan to `{{plan_path}}`. The `--file` flag is required here (not `--stdin`) because large plans exceed the tool-call size limit when inlined as a heredoc.
+The path argument is the plan-directory-relative document path — `plan file write` resolves it against the configured plan directory for you.
+
+Then advance:
+
+```
+{{config.command}} plan goto --data '{"step":"{{next_step}}"}'
+```

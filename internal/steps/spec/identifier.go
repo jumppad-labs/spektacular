@@ -25,11 +25,12 @@ const (
 
 // IdentifierRequest describes the data needed to resolve a canonical spec name.
 type IdentifierRequest struct {
-	Name   string
-	ID     string
-	Method string
-	Store  store.Store
-	Now    func() time.Time
+	Name    string
+	ID      string
+	Method  string
+	SpecDir string // configured spec directory; defaults to config.DefaultSpecDir when empty
+	Store   store.Store
+	Now     func() time.Time
 }
 
 // IdentifierResult is the canonical spec name.
@@ -53,12 +54,17 @@ func ResolveIdentifier(req IdentifierRequest) (IdentifierResult, error) {
 		return IdentifierResult{}, err
 	}
 
+	specDir := req.SpecDir
+	if specDir == "" {
+		specDir = config.DefaultSpecDir
+	}
+
 	if req.ID != "" {
 		id, err := NormalizeIdentifierPart("id", req.ID)
 		if err != nil {
 			return IdentifierResult{}, err
 		}
-		resolved, err := resolveWithPrefix(req.Store, id, name)
+		resolved, err := resolveWithPrefix(req.Store, specDir, id, name)
 		if err != nil {
 			return IdentifierResult{}, err
 		}
@@ -69,9 +75,9 @@ func ResolveIdentifier(req IdentifierRequest) (IdentifierResult, error) {
 	case IDMethodExternal:
 		return IdentifierResult{}, fmt.Errorf("id is required when spec.id_method is %q", IDMethodExternal)
 	case IDMethodTimestamp:
-		return resolveTimestamp(req, name)
+		return resolveTimestamp(req, specDir, name)
 	case IDMethodCounter:
-		return resolveCounter(req, name)
+		return resolveCounter(req, specDir, name)
 	default:
 		return IdentifierResult{}, fmt.Errorf("unsupported spec.id_method %q", method)
 	}
@@ -129,7 +135,7 @@ func validateMethod(method string) error {
 	}
 }
 
-func resolveTimestamp(req IdentifierRequest, name string) (IdentifierResult, error) {
+func resolveTimestamp(req IdentifierRequest, specDir, name string) (IdentifierResult, error) {
 	now := req.Now
 	if now == nil {
 		now = time.Now
@@ -138,7 +144,7 @@ func resolveTimestamp(req IdentifierRequest, name string) (IdentifierResult, err
 	timestamp := now().UTC()
 	for {
 		resolved := fmt.Sprintf("%s-%s", timestamp.Format("20060102150405"), name)
-		exists, err := specExists(req.Store, resolved)
+		exists, err := specExists(req.Store, specDir, resolved)
 		if err != nil {
 			return IdentifierResult{}, err
 		}
@@ -149,14 +155,14 @@ func resolveTimestamp(req IdentifierRequest, name string) (IdentifierResult, err
 	}
 }
 
-func resolveCounter(req IdentifierRequest, name string) (IdentifierResult, error) {
-	next, err := nextCounterFromStore(req.Store)
+func resolveCounter(req IdentifierRequest, specDir, name string) (IdentifierResult, error) {
+	next, err := nextCounterFromStore(req.Store, specDir)
 	if err != nil {
 		return IdentifierResult{}, err
 	}
 	for {
 		resolved := fmt.Sprintf("%06d_%s", next, name)
-		exists, err := specExists(req.Store, resolved)
+		exists, err := specExists(req.Store, specDir, resolved)
 		if err != nil {
 			return IdentifierResult{}, err
 		}
@@ -170,11 +176,11 @@ func resolveCounter(req IdentifierRequest, name string) (IdentifierResult, error
 // nextCounterFromStore scans the specs directory for filenames whose names
 // start with `<digits>-` and returns max+1. Returns 1 when no such files
 // exist (or the directory does not yet exist).
-func nextCounterFromStore(st store.Store) (int, error) {
+func nextCounterFromStore(st store.Store, specDir string) (int, error) {
 	if st == nil {
 		return 0, fmt.Errorf("store required for spec identifier resolution")
 	}
-	entries, err := st.List("specs")
+	entries, err := st.List(specDir)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return 1, nil
@@ -182,8 +188,8 @@ func nextCounterFromStore(st store.Store) (int, error) {
 		return 0, err
 	}
 	max := 0
-	for _, name := range entries {
-		base := strings.TrimSuffix(name, ".md")
+	for _, e := range entries {
+		base := strings.TrimSuffix(e.Name, ".md")
 		m := counterPrefixRE.FindStringSubmatch(base)
 		if m == nil {
 			continue
@@ -199,9 +205,9 @@ func nextCounterFromStore(st store.Store) (int, error) {
 	return max + 1, nil
 }
 
-func resolveWithPrefix(st store.Store, prefix, name string) (string, error) {
+func resolveWithPrefix(st store.Store, specDir, prefix, name string) (string, error) {
 	resolved := fmt.Sprintf("%s-%s", prefix, name)
-	exists, err := specExists(st, resolved)
+	exists, err := specExists(st, specDir, resolved)
 	if err != nil {
 		return "", err
 	}
@@ -211,11 +217,11 @@ func resolveWithPrefix(st store.Store, prefix, name string) (string, error) {
 	return resolved, nil
 }
 
-func specExists(st store.Store, name string) (bool, error) {
+func specExists(st store.Store, specDir, name string) (bool, error) {
 	if st == nil {
 		return false, fmt.Errorf("store required for spec identifier resolution")
 	}
-	return st.Exists(SpecFilePath(name)), nil
+	return st.Exists(SpecFilePath(specDir, name)), nil
 }
 
 func isASCIIAlnum(r rune) bool {

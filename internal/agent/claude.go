@@ -2,7 +2,6 @@ package agent
 
 import (
 	"io"
-	"strings"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 )
@@ -12,14 +11,10 @@ type claudeAgent struct{}
 func (claudeAgent) Name() string { return "claude" }
 
 func (claudeAgent) Install(projectPath string, cfg config.Config, out io.Writer) error {
-	if err := installWorkflowSkills(projectPath, ".claude/skills", cfg, out); err != nil {
-		return err
-	}
-	return installCommandWrappers(projectPath, ".claude/commands/spek", claudeCommandFilename, cfg, out)
-}
-
-func claudeCommandFilename(skillName string) string {
-	return strings.TrimPrefix(skillName, "spek-") + ".md"
+	// Claude Code surfaces installed skills directly in its slash-command menu
+	// (e.g. `/spek-new`), so a separate command wrapper would be redundant. Other
+	// agents that lack a skill mechanism still get wrappers via installCommandWrappers.
+	return installWorkflowSkills(projectPath, ".claude/skills", cfg, out)
 }
 
 func init() {

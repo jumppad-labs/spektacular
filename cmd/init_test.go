@@ -39,21 +39,9 @@ func TestInit_Claude(t *testing.T) {
 		require.NotContains(t, string(data), "{{command}}")
 	}
 
-	// Three command wrappers exist under .claude/commands/spek/, each
-	// delegating to its corresponding installed skill.
-	commandAssertions := map[string]string{
-		"new.md":       "`spek-new` skill",
-		"plan.md":      "`spek-plan` skill",
-		"implement.md": "`spek-implement` skill",
-	}
-	for base, expected := range commandAssertions {
-		cmdPath := filepath.Join(dir, ".claude", "commands", "spek", base)
-		data, err := os.ReadFile(cmdPath)
-		require.NoError(t, err, "expected command file %s to exist", cmdPath)
-		require.Contains(t, string(data), expected)
-		require.NotContains(t, string(data), "{{command}}")
-		require.NotContains(t, string(data), "{{skill}}")
-	}
+	// Claude surfaces installed skills directly in its slash-command menu, so no
+	// command wrappers are installed — the commands tree must not exist.
+	require.NoDirExists(t, filepath.Join(dir, ".claude", "commands"))
 }
 
 func TestInit_Bob(t *testing.T) {
@@ -177,12 +165,8 @@ func TestInit_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	// Pre-create sibling files under both the commands and skills trees. Both
-	// must survive re-init.
-	commandsDir := filepath.Join(dir, ".claude", "commands")
-	require.NoError(t, os.MkdirAll(commandsDir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(commandsDir, "other.md"), []byte("keep"), 0644))
-
+	// Pre-create a sibling skill alongside the ones init manages. It must
+	// survive re-init untouched.
 	siblingSkillDir := filepath.Join(dir, ".claude", "skills", "other")
 	require.NoError(t, os.MkdirAll(siblingSkillDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(siblingSkillDir, "SKILL.md"), []byte("keep-skill"), 0644))
@@ -192,11 +176,6 @@ func TestInit_Idempotent(t *testing.T) {
 
 	rootCmd.SetArgs([]string{"init", "claude"})
 	require.NoError(t, rootCmd.Execute())
-
-	// Sibling command file still exists and is untouched.
-	data, err := os.ReadFile(filepath.Join(commandsDir, "other.md"))
-	require.NoError(t, err)
-	require.Equal(t, "keep", string(data))
 
 	// Sibling skill file still exists and is untouched.
 	skillData, err := os.ReadFile(filepath.Join(siblingSkillDir, "SKILL.md"))

@@ -46,7 +46,7 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 			StepName:     stepName,
 			NextStep:     nextStep,
 			TemplatePath: templatePath,
-			Strategy:     strategy{},
+			Strategy:     strategy{planDir: cfg.PlanDir},
 			Extra:        extra,
 		},
 		data, out, st, cfg,

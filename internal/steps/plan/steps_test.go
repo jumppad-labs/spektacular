@@ -36,7 +36,7 @@ func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	t.Helper()
 	data := &testData{values: map[string]any{"name": "test"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(t.TempDir())
+	st := store.NewFileStore(t.TempDir(), "project")
 	_, err := cb(data, writer, st, workflow.Config{Command: "spektacular"})
 	require.NoError(t, err)
 	return writer.result.Instruction
@@ -46,6 +46,23 @@ func TestArchitectureStepContainsOptionsAndAgreementBeat(t *testing.T) {
 	out := renderStep(t, architecture())
 	require.Contains(t, strings.ToLower(out), "option", "architecture step must prompt the agent to present design options")
 	require.Contains(t, strings.ToLower(out), "agreement", "architecture step must prompt the agent to get user agreement")
+}
+
+// TestDiscoveryStepUsesKnowledgeCommands asserts the discovery step drives the
+// agent through the `knowledge` CLI commands instead of a hardcoded knowledge
+// directory, and gates knowledge writes behind explicit user confirmation
+// (Phase 3.1, acceptance criteria 1 and 2).
+func TestDiscoveryStepUsesKnowledgeCommands(t *testing.T) {
+	out := renderStep(t, discovery())
+
+	// Criterion 1: uses the knowledge commands, no hardcoded knowledge path.
+	require.Contains(t, out, "knowledge search", "discovery step must instruct the agent to use `knowledge search`")
+	require.Contains(t, out, "knowledge read", "discovery step must instruct the agent to use `knowledge read`")
+	require.NotContains(t, out, ".spektacular/knowledge/", "discovery step must not hardcode the knowledge directory path")
+
+	// Criterion 2: knowledge writes require explicit user confirmation.
+	require.Contains(t, out, "knowledge write", "discovery step must reference `knowledge write` for capturing learnings")
+	require.Contains(t, strings.ToLower(out), "confirm", "discovery step must require explicit user confirmation before a knowledge write")
 }
 
 func TestImplementationDetailStepIsHighLevelOnly(t *testing.T) {
@@ -103,18 +120,11 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 func TestFSMWalkFromNewToFinished(t *testing.T) {
 	tmp := t.TempDir()
 	statePath := filepath.Join(tmp, "state.json")
-	st := store.NewFileStore(tmp)
+	st := store.NewFileStore(tmp, "project")
 	writer := &captureWriter{}
 
-	require.NoError(t, st.Write(PlanFilePath("test"), []byte("")))
-	require.NoError(t, st.Write(ContextFilePath("test"), []byte("")))
-	require.NoError(t, st.Write(ResearchFilePath("test"), []byte("")))
-
-	wf := workflow.New(Steps(), statePath, workflow.Config{Command: "spektacular", DryRun: true}, st, writer)
+	wf := workflow.New(Steps(), statePath, workflow.Config{Command: "spektacular", DryRun: true, PlanDir: "plans", SpecDir: "specs"}, st, writer)
 	wf.SetData("name", "test")
-	wf.SetData("plan_template", "plan content")
-	wf.SetData("context_template", "context content")
-	wf.SetData("research_template", "research content")
 
 	require.Equal(t, "start", wf.Current())
 
@@ -142,4 +152,37 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 		require.NoError(t, wf.Next(), "transition to %s failed", want)
 		require.Equal(t, want, wf.Current(), "expected state %s after transition", want)
 	}
+}
+
+// TestPlanFilePaths_UseConfiguredDirectory asserts the path helpers root plan,
+// context and research files under the given directory argument (Phase 2.2,
+// acceptance criterion 2).
+func TestPlanFilePaths_UseConfiguredDirectory(t *testing.T) {
+	require.Equal(t, "my-plans/x/plan.md", PlanFilePath("my-plans", "x"))
+	require.Equal(t, "my-plans/x/context.md", ContextFilePath("my-plans", "x"))
+	require.Equal(t, "my-plans/x/research.md", ResearchFilePath("my-plans", "x"))
+}
+
+// TestWriteStep_WarnsWhenDocumentNotCommitted asserts a write step's callback
+// reads the document back through the store and flags it when the agent has
+// not committed it via `plan file write` (it is missing or still the scaffold).
+func TestWriteStep_WarnsWhenDocumentNotCommitted(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	writer := &captureWriter{}
+	data := &testData{values: map[string]any{"name": "test"}}
+	cfg := workflow.Config{Command: "spektacular", PlanDir: "my-plans", SpecDir: "specs"}
+
+	// plan.md absent from the store — the step must warn the agent.
+	_, err := writePlan()(data, writer, st, cfg)
+	require.NoError(t, err)
+	require.Contains(t, writer.result.Instruction, "still holds the empty scaffold",
+		"write_plan must warn when plan.md was never committed")
+
+	// A committed, filled plan.md — no warning.
+	require.NoError(t, st.Write(PlanFilePath("my-plans", "test"), []byte("# real filled plan")))
+	_, err = writePlan()(data, writer, st, cfg)
+	require.NoError(t, err)
+	require.NotContains(t, writer.result.Instruction, "still holds the empty scaffold",
+		"write_plan must not warn once plan.md is committed")
 }

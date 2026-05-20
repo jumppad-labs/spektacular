@@ -4,9 +4,9 @@
 # NOTE: This script documents the CLI sequence a correct run follows. It does
 # NOT produce an agent transcript, so running it in isolation will not satisfy
 # the verifier's transcript-driven assertions (skill retrieval, sub-agent
-# spawning, next_step invariant). Its purpose is to prove the CLI surface is
-# solvable end-to-end and to write the three artefact files; the real test is
-# a `harbor run` with the claude-code agent.
+# spawning, next_step invariant, plan-file CLI usage). Its purpose is to prove
+# the CLI surface is solvable end-to-end and to write the three artefact files;
+# the real test is a `harbor run` with the claude-code agent.
 set -e
 
 cd /app
@@ -31,11 +31,11 @@ spektacular plan goto --data '{"step":"open_questions"}'
 spektacular plan goto --data '{"step":"out_of_scope"}'
 spektacular plan goto --data '{"step":"verification"}'
 
-# The verification step's instruction pipes each filled document back via
-# stdin — spektacular itself writes the files. Three sequential pipes:
-# write_plan → write_context → write_research → finished.
+# The plan documents are owned by spektacular. Stage each filled document to a
+# scratch file, then commit it into the plan store with `plan file write` —
+# never write the plan documents with built-in file tools.
 
-cat <<'PLAN_EOF' | spektacular plan goto --data '{"step":"write_plan"}' --stdin plan_template
+cat > /tmp/plan.md <<'PLAN_EOF'
 # Plan: user-auth
 
 ## Overview
@@ -156,8 +156,9 @@ None — every implementation uncertainty was resolved during planning.
 - Social login
 - Fine-grained permission scoping beyond role
 PLAN_EOF
+cat /tmp/plan.md | spektacular plan file write user-auth/plan.md
 
-cat <<'CONTEXT_EOF' | spektacular plan goto --data '{"step":"write_context"}' --stdin context_template
+cat > /tmp/context.md <<'CONTEXT_EOF'
 # Context: user-auth
 
 ## Current State Analysis
@@ -223,8 +224,9 @@ Token verification must add less than 5ms p99 latency. RS256 verification
 is CPU-bound; benchmarks show ~0.3ms per verification on the production
 hardware profile.
 CONTEXT_EOF
+cat /tmp/context.md | spektacular plan file write user-auth/context.md
 
-cat <<'RESEARCH_EOF' | spektacular plan goto --data '{"step":"write_research"}' --stdin research_template
+cat > /tmp/research.md <<'RESEARCH_EOF'
 # Research: user-auth
 
 ## Alternatives considered and rejected
@@ -289,7 +291,13 @@ negligible latency to the refresh flow.
 - `auth/session/session.go` shows the current auth path
 - `router/router.go:42` is where the new middleware slots in
 RESEARCH_EOF
+cat /tmp/research.md | spektacular plan file write user-auth/research.md
 
+# Advance through the write steps — each verifies its document was committed —
+# to the finished step.
+spektacular plan goto --data '{"step":"write_plan"}'
+spektacular plan goto --data '{"step":"write_context"}'
+spektacular plan goto --data '{"step":"write_research"}'
 spektacular plan goto --data '{"step":"finished"}'
 
 cp -r /app/.spektacular /logs/artifacts/spektacular

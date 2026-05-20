@@ -10,7 +10,7 @@ import (
 
 func newTestStore(t *testing.T) *FileStore {
 	t.Helper()
-	return NewFileStore(t.TempDir())
+	return NewFileStore(t.TempDir(), "project")
 }
 
 func TestWrite_CreatesFileAndParentDirs(t *testing.T) {
@@ -50,13 +50,18 @@ func TestDelete_IdempotentOnMissing(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestList_ReturnsEntryNames(t *testing.T) {
+func TestList_DistinguishesFilesFromDirectories(t *testing.T) {
 	st := newTestStore(t)
 	require.NoError(t, st.Write("dir/a.txt", []byte("a")))
 	require.NoError(t, st.Write("dir/b.txt", []byte("b")))
-	names, err := st.List("dir")
+	require.NoError(t, st.Write("dir/sub/c.txt", []byte("c")))
+	entries, err := st.List("dir")
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"a.txt", "b.txt"}, names)
+	require.ElementsMatch(t, []DirEntry{
+		{Name: "a.txt", IsDir: false},
+		{Name: "b.txt", IsDir: false},
+		{Name: "sub", IsDir: true},
+	}, entries)
 }
 
 func TestList_ReturnsErrNotFoundForMissingDir(t *testing.T) {
@@ -78,9 +83,16 @@ func TestExists_FalseForMissing(t *testing.T) {
 
 func TestRoot_ReturnsAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
-	st := NewFileStore(dir)
+	st := NewFileStore(dir, "project")
 	require.Equal(t, filepath.Clean(dir), st.Root())
 }
+
+func TestNewFileStore_RecordsScope(t *testing.T) {
+	st := NewFileStore(t.TempDir(), "project")
+	require.Equal(t, "project", st.Scope())
+}
+
+var _ Store = (*FileStore)(nil)
 
 func TestPathTraversal_Rejected(t *testing.T) {
 	st := newTestStore(t)

@@ -3,4 +3,17 @@ agent: claude
 debug:
     enabled: true
 spec:
+    provider: file
     id_method: counter
+    config:
+        directory: .spektacular/specs
+plan:
+    provider: file
+    config:
+        directory: .spektacular/plans
+knowledge:
+    sources:
+        - scope: project
+          provider: file
+          config:
+            location: .spektacular/knowledge

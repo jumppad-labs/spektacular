@@ -20,15 +20,46 @@ func Init(projectPath string, force bool) error {
 		return fmt.Errorf(".spektacular directory already exists at %s; use --force to overwrite", spektacularDir)
 	}
 
+	// Resolve the spec, plan, and knowledge configuration from an existing
+	// config.yaml, or fall back to the defaults when no config exists yet.
+	configPath := filepath.Join(spektacularDir, "config.yaml")
+	cfg := config.NewDefault()
+	if _, err := os.Stat(configPath); err == nil {
+		loaded, err := config.FromYAMLFile(configPath)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+		cfg = loaded
+	}
+
 	dirs := []string{
 		spektacularDir,
-		filepath.Join(spektacularDir, "plans"),
-		filepath.Join(spektacularDir, "specs"),
+		// Spec and plan directories are configured as project-root-relative
+		// paths (e.g. ".spektacular/plans"), like the knowledge location.
+		filepath.Join(projectPath, cfg.Plan.Config.Directory),
+		filepath.Join(projectPath, cfg.Spec.Config.Directory),
 		filepath.Join(spektacularDir, "knowledge"),
 		filepath.Join(spektacularDir, "knowledge", "learnings"),
 		filepath.Join(spektacularDir, "knowledge", "architecture"),
 		filepath.Join(spektacularDir, "knowledge", "gotchas"),
 	}
+
+	// Create the directory for the project knowledge source so the knowledge
+	// commands can reach it. Only the project scope is created by init; team
+	// and global sources are shared and expected to exist independently.
+	// WithDefaults covers the synthesised default project source, and relative
+	// locations resolve against the project root as knowledge.NewSet resolves them.
+	for _, src := range cfg.Knowledge.WithDefaults(projectPath).Sources {
+		if src.Provider != config.ProviderFile || src.Scope != config.DefaultKnowledgeScope {
+			continue
+		}
+		location := src.Config.Location
+		if !filepath.IsAbs(location) {
+			location = filepath.Join(projectPath, location)
+		}
+		dirs = append(dirs, location)
+	}
+
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", d, err)
@@ -36,9 +67,7 @@ func Init(projectPath string, force bool) error {
 	}
 
 	// Write default config.yaml only if it does not already exist.
-	configPath := filepath.Join(spektacularDir, "config.yaml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		cfg := config.NewDefault()
 		if err := cfg.ToYAMLFile(configPath); err != nil {
 			return fmt.Errorf("writing config: %w", err)
 		}

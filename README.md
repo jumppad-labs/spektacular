@@ -121,21 +121,61 @@ Running `spektacular init <agent>` creates:
 
 ```
 .spektacular/
-├── config.yaml              # CLI command, agent, debug, and spec ID settings
+├── config.yaml              # CLI command, agent, debug, and provider settings
 ├── specs/                   # Your specification files
 ├── plans/                   # Generated plans (plan.md, research.md, context.md)
-└── knowledge/               # Project knowledge base
+└── knowledge/               # Default project knowledge source
     ├── conventions.md       # Code style and standards
     ├── architecture/        # System design docs
     ├── learnings/           # Captured corrections from past runs
     └── gotchas/             # Known issues and workarounds
 ```
 
-The knowledge directory feeds context to the planning agent. Adding architecture docs and past learnings here improves plan quality over time.
+Knowledge feeds context to the planning agent. By default Spektacular reads `.spektacular/knowledge/` as the `project` knowledge source; additional sources at other scopes — for example a shared `team` directory or a machine-wide `global` one — can be configured under `knowledge.sources` (see [Configuration](#configuration)). Adding architecture docs and past learnings improves plan quality over time.
+
+## Extending Storage
+
+Spektacular reads and writes every file — specs, plans, and knowledge entries — through a single `Store` interface, so a new backend can be added without touching the workflows. The interface lives in `internal/store`:
+
+```go
+type Store interface {
+    Root() string                              // absolute path of the store root
+    Read(path string) ([]byte, error)          // file contents at path
+    Write(path string, content []byte) error   // create or overwrite, creating parent dirs
+    Delete(path string) error                  // remove path; nil if it does not exist
+    List(path string) ([]DirEntry, error)      // direct children, each typed file-or-dir
+    Exists(path string) bool                   // whether a file or directory exists
+    Search(query string) ([]Hit, error)        // keyword search, returning scope-tagged hits
+}
+```
+
+`List` returns typed entries so a caller can recurse a tree, and `Search` returns compact, scope-tagged results:
+
+```go
+type DirEntry struct {
+    Name  string // child name, not a full path
+    IsDir bool   // true for a subdirectory — recurse into it via List
+}
+
+type Hit struct {
+    Scope   string  // scope label of the originating store
+    Path    string  // locator relative to the store root — pass to Read
+    Excerpt string  // compact excerpt, capped at the excerpt budget
+    Score   float64 // optional relevance score; 0 when the backend has none
+}
+```
+
+**Worked example: `FileStore`.** `internal/store/store.go` and `internal/store/search.go` implement `Store` over the local filesystem. It is the model for a new backend:
+
+- Construct it with `NewFileStore(root, scope string)` — `root` is the directory it is rooted at, `scope` is the label every `Hit` it produces is tagged with.
+- All paths are resolved relative to `root`; the `abs` helper rejects path traversal so a caller cannot escape the root.
+- `Search` prefers the `ripgrep` binary when one is on `PATH` and falls back to a native Go directory walk otherwise — both paths produce equivalent `Hit`s.
+
+To add a backend (e.g. a remote or GitHub-hosted store), implement the seven `Store` methods on a new type, then register it as a provider: the `knowledge` layer resolves a configured source's `provider` field to a concrete `Store` in `knowledge.NewSet` (`internal/knowledge/set.go`), where today only the `file` provider is wired. Add a new `case` there for the new provider name.
 
 ## Configuration
 
-`.spektacular/config.yaml` controls the installed agent command and spec identifier behavior:
+`.spektacular/config.yaml` controls the installed agent command and the provider-based `spec`, `plan`, and `knowledge` settings. Each of `spec`, `plan`, and `knowledge` names a `provider` (only `file` ships today) and carries a provider-specific `config` block:
 
 ```yaml
 command: spektacular
@@ -143,15 +183,33 @@ agent: claude
 debug:
   enabled: false
 spec:
-  id_method: timestamp
-  counter: 0
+  provider: file
+  id_method: timestamp              # how new spec identifiers are generated
+  config:
+    directory: .spektacular/specs   # project-root-relative directory for spec files
+plan:
+  provider: file
+  config:
+    directory: .spektacular/plans   # project-root-relative directory for plan files
+knowledge:
+  sources:
+    - scope: project        # written by init; synthesised if removed
+      provider: file
+      config:
+        location: .spektacular/knowledge
+    - scope: team           # optional: a shared, hand-configured source
+      provider: file
+      config:
+        location: /shared/team-kb
 ```
 
-`spec.id_method` controls the prefix used for new spec filenames:
+`spec.id_method` controls the prefix used for new spec filenames. It sits beside `provider` rather than inside the provider's `config` block, because identifier generation is independent of the storage backend:
 
 - `timestamp` (default): creates names like `20260509010203-billing-export`; collisions bump by one second until unused.
-- `counter`: creates names like `000001-billing-export` and persists the latest value in `spec.counter`.
+- `counter`: creates names like `000001_billing-export`, deriving the next number from existing spec files.
 - `external`: requires an `id` in `spec new --data`; useful when another system owns the identifier.
+
+`spec.config.directory` and `plan.config.directory` are resolved relative to the project root (like `knowledge` source `location` values); omitting a section falls back to the defaults shown above. `knowledge.sources` is an ordered list of scoped sources. `init` writes the default `project` source at `.spektacular/knowledge` into the config explicitly; if the section is removed entirely, Spektacular falls back to synthesising that same `project` source. Relative source `location` values resolve against the project root, so `team` and `global` sources can point at absolute paths shared across projects.
 
 Names and ids are normalized to lowercase, with accepted separators such as `.`, `@`, `-`, and internal whitespace converted to hyphens. Leading or trailing whitespace, path separators, and control characters are rejected.
 

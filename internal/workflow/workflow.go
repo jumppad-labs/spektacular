@@ -14,6 +14,10 @@ import (
 type Config struct {
 	Command string
 	DryRun  bool
+	// SpecDir and PlanDir are the store-relative directories the spec and plan
+	// workflows write into, sourced from the project configuration.
+	SpecDir string
+	PlanDir string
 }
 
 // ResultWriter is implemented by the output writer and passed into step callbacks.

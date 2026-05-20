@@ -10,11 +10,21 @@ This skill drives a **multi-step interactive workflow** that produces a complete
 On each turn, the CLI returns JSON containing an `instruction` field. That instruction describes exactly one step (e.g. discovery, data structures, phases, testing approach, …). You must:
 
 1. Read the `instruction` carefully.
-2. Perform the step — this may mean researching the codebase, spawning subagents, interviewing the user, or writing a section of the plan file.
+2. Perform the step — this may mean researching the codebase, spawning subagents, interviewing the user, or committing a plan document to the store.
 3. When the step is complete, run the `goto` command named at the bottom of the instruction to advance the state machine.
 4. Read the next `instruction` from the new JSON response and repeat.
 
 **This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user.
+
+# Reading and writing plan files
+
+The CLI owns the plan documents — `plan.md`, `context.md`, and `research.md`. **Never read or write them with the `Write`, `Edit`, or `Read` tools** — those bypass Spektacular and the configured plan directory. All plan document access goes through `{{command}} plan file`:
+
+- `{{command}} plan file read <name>/<doc>.md` — read a plan document from the plan store.
+- `{{command}} plan file write <name>/<doc>.md` — write a plan document into the plan store (reads stdin).
+- `{{command}} plan file list` — list plans in the plan store.
+
+Path arguments are plan-directory-relative document paths (e.g. `my-feature/plan.md`); `plan file` resolves them against the configured plan directory itself.
 
 # How to start
 

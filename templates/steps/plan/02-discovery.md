@@ -4,7 +4,7 @@ Research the codebase to understand what's needed to implement the spec you read
 
 ### Step 1: Project Context
 
-Search `.spektacular/knowledge/` for anything already written about this area of the codebase — architecture notes, conventions, gotchas, prior learnings. If something relevant exists, read it before investigating; it may already answer your questions or flag dead ends. Nothing is required to exist here — the directory can be empty.
+Search the configured knowledge sources for anything already written about this area of the codebase — architecture notes, conventions, gotchas, prior learnings — with `{{config.command}} knowledge search <query>`. Hits are tagged with the scope they came from (e.g. `project`, `team`, `global`); read a promising one in full with `{{config.command}} knowledge read --data '{"scope":"<scope>","path":"<path>"}'`. If something relevant exists, read it before investigating; it may already answer your questions or flag dead ends. Nothing is required to exist — the knowledge sources can be empty.
 
 If the plan touches tests, read the relevant test files directly as part of Step 2 to understand conventions (framework, naming, fixtures, mocking) before planning changes. Don't cache findings — the test files are the source of truth.
 
@@ -13,7 +13,7 @@ If the plan touches tests, read the relevant test files directly as part of Step
 Research the codebase in parallel to find:
 
 1. **Files related to the plan** — Organize by category (implementation, tests, config, docs)
-2. **Prior research** — Existing plans, research, or tickets in `.spektacular/knowledge/`, `.spektacular/plans/`, `.spektacular/specs/`
+2. **Prior research** — Existing plans, research, or tickets: search the knowledge sources with `{{config.command}} knowledge search <query>`, list prior plans with `{{config.command}} plan file list` and prior specs with `{{config.command}} spec file list`, then read any that look relevant with `{{config.command}} plan file read <name>/plan.md` or `{{config.command}} spec file read <name>.md`. Always reach plans and specs through these CLI commands — never with the `Read` tool
 3. **Similar implementations** — Code examples to model after, with file:line references
 4. **Architecture and integration points** — How the relevant components fit together
 5. **Alternatives to consider** — Identify 2-3 viable approaches so the next step can compare them with evidence
@@ -39,6 +39,10 @@ Keep this dense. Assume a future agent will read it cold and need to make decisi
 - Read all findings fully
 - Ask only questions the code cannot answer
 - Present a summary of key discoveries to the user
+
+### Step 5: Capturing a learning (optional)
+
+If your research surfaces a durable learning, gotcha, or convention worth keeping for future plans, you may persist it with `{{config.command}} knowledge write`. Before writing, run `{{config.command}} knowledge sources` to see the available scopes, then **propose to the user a target scope and the exact content you intend to write, and wait for explicit confirmation**. Do not invoke `{{config.command}} knowledge write` until the user has confirmed. Propose, then wait for confirmation — never write to a knowledge source unprompted.
 
 Once research is complete, advance:
 

@@ -12,9 +12,13 @@ First initialize the project:
 spektacular init claude
 ```
 
-A specification file already exists at `.spektacular/specs/user-auth.md`
-describing a stateless JWT authentication feature. Read it before you start
-planning — the plan workflow's first step needs that context.
+A specification file already exists describing a stateless JWT authentication
+feature. Read it through the CLI before you start planning — the plan
+workflow's first step needs that context:
+
+```bash
+spektacular spec file read user-auth.md
+```
 
 ## Task
 
@@ -36,11 +40,12 @@ The skill will guide you through every plan step from `overview` through
   template references.
 - At the `verification` step, retrieve the `gather-project-metadata` and
   `determine-feature-slug` skills the template references. Then follow the
-  rendered pipe instructions: spektacular writes each file when you pipe the
-  filled content back via `--stdin plan_template` / `--stdin context_template`
-  / `--stdin research_template` across the `write_plan`, `write_context`, and
-  `write_research` steps. Do **not** use the `Write` tool for these three files
-  — the workflow owns the write.
+  rendered instructions to commit each filled document into the plan store
+  with `spektacular plan file write user-auth/<doc>.md` across the
+  `write_plan`, `write_context`, and `write_research` steps. Never write or
+  edit the plan documents (`plan.md`, `context.md`, `research.md`) with the
+  `Write` or `Edit` tools — `plan file write` is the only supported way to
+  write them.
 
 Write meaningful, non-placeholder content for every section of every artefact.
 The plan is a plan for *implementing the JWT authentication feature described
@@ -62,5 +67,6 @@ cp -r /app/.spektacular /logs/artifacts/spektacular
 - All steps appear in `completed_steps` in canonical order
 - `plan.md`, `context.md`, `research.md` exist under `.spektacular/plans/user-auth/`
 - Each section of each artefact has meaningful, non-placeholder text
+- Each plan document is committed through `spektacular plan file write` — never written or edited directly with built-in file tools
 - The agent retrieved every template-referenced skill during the step that referenced it
 - The agent spawned at least one sub-agent during the `discovery` step

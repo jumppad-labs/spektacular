@@ -1,11 +1,20 @@
 {
-  "current_step": "overview",
+  "current_step": "finished",
   "completed_steps": [
-    "new"
+    "new",
+    "read_plan",
+    "analyze",
+    "implement",
+    "test",
+    "verify",
+    "update_plan",
+    "update_changelog",
+    "update_repo_changelog",
+    "finished"
   ],
-  "created_at": "2026-05-14T12:16:28.274488996Z",
-  "updated_at": "2026-05-14T12:16:28.274680024Z",
+  "created_at": "2026-05-18T09:25:56.100536704Z",
+  "updated_at": "2026-05-18T10:10:49.044100117Z",
   "data": {
-    "name": "000001-testing"
+    "name": "000020_context"
   }
 }

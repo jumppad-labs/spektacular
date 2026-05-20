@@ -19,7 +19,7 @@ clean:
 	rm -f ./bin 
 
 install-local: build
-	sudo cp $(BINARY) /usr/local/bin/$(BINARY)
+	sudo cp ./bin/$(BINARY) /usr/local/bin/$(BINARY)
 
 dagger_build:
 	dagger -v call --progress=plain -m dagger all \

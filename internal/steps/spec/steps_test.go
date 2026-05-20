@@ -35,7 +35,7 @@ func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	t.Helper()
 	data := &testData{values: map[string]any{"name": "test"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(t.TempDir())
+	st := store.NewFileStore(t.TempDir(), "project")
 	_, err := cb(data, writer, st, workflow.Config{Command: "spektacular"})
 	require.NoError(t, err)
 	return writer.result.Instruction
@@ -64,7 +64,7 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 func TestFSMWalkFromNewToFinished(t *testing.T) {
 	tmp := t.TempDir()
 	statePath := filepath.Join(tmp, "state.json")
-	st := store.NewFileStore(tmp)
+	st := store.NewFileStore(tmp, "project")
 	writer := &captureWriter{}
 
 	wf := workflow.New(Steps(), statePath, workflow.Config{Command: "spektacular", DryRun: true}, st, writer)
@@ -102,7 +102,7 @@ func TestVerificationStepPassesSpecTemplate(t *testing.T) {
 	tmp := t.TempDir()
 	data := &testData{values: map[string]any{"name": "test"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(tmp)
+	st := store.NewFileStore(tmp, "project")
 
 	_, err := verification()(data, writer, st, workflow.Config{Command: "spektacular"})
 	require.NoError(t, err)
@@ -113,10 +113,31 @@ func TestNewStepWritesScaffold(t *testing.T) {
 	tmp := t.TempDir()
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(tmp)
+	st := store.NewFileStore(tmp, "project")
 
-	next, err := new()(data, writer, st, workflow.Config{Command: "spektacular"})
+	next, err := new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "specs"})
 	require.NoError(t, err)
 	require.Equal(t, "overview", next)
-	require.True(t, st.Exists(SpecFilePath("fixture")))
+	require.True(t, st.Exists(SpecFilePath("specs", "fixture")))
+}
+
+// TestSpecFilePath_UsesConfiguredDirectory asserts the path helper roots the
+// spec file under the given directory argument (Phase 2.2, criterion 1).
+func TestSpecFilePath_UsesConfiguredDirectory(t *testing.T) {
+	require.Equal(t, "my-specs/x.md", SpecFilePath("my-specs", "x"))
+}
+
+// TestNewStep_WritesUnderConfiguredSpecDir runs the new callback with a
+// non-default SpecDir and asserts the spec file lands under that directory
+// (Phase 2.2, criterion 1).
+func TestNewStep_WritesUnderConfiguredSpecDir(t *testing.T) {
+	tmp := t.TempDir()
+	data := &testData{values: map[string]any{"name": "fixture"}}
+	writer := &captureWriter{}
+	st := store.NewFileStore(tmp, "project")
+
+	_, err := new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "my-specs"})
+	require.NoError(t, err)
+	require.True(t, st.Exists(SpecFilePath("my-specs", "fixture")), "spec must land under my-specs")
+	require.False(t, st.Exists(SpecFilePath("specs", "fixture")), "spec must not land under default specs")
 }

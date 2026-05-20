@@ -100,6 +100,10 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -112,10 +116,10 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		_ = os.Remove(statePath)
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
+	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(dataDir), out)
+	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(root, "project"), out)
 	wf.SetData("name", input.Name)
 
 	if err := readInputIntoWorkflow(cmd, wf); err != nil {
@@ -162,15 +166,19 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun}
+	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(dataDir), out)
+	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
 
 	for k, v := range input {
 		if k != "step" {
@@ -202,6 +210,14 @@ func runPlanStatus(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
 
 	steps := plan.Steps()
 	wf := workflow.New(steps, stateFilePath(dataDir), workflow.Config{}, nil, nil)
@@ -212,7 +228,7 @@ func runPlanStatus(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("no active plan found — run 'plan new' first")
 	}
 	planName := fmt.Sprintf("%v", nameVal)
-	planPath := filepath.Join(dataDir, plan.PlanFilePath(planName))
+	planPath := filepath.Join(root, plan.PlanFilePath(cfg.Plan.Config.Directory, planName))
 
 	stepInfos := wf.StepStatus()
 	entries := make([]plan.StepEntry, len(stepInfos))

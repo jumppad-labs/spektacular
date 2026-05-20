@@ -46,3 +46,4 @@ cp -r /app/.spektacular /logs/artifacts/spektacular
 - All steps appear in the completed_steps list
 - The created spec file under `.spektacular/specs/` contains content
 - Each spec section has meaningful, non-placeholder text
+- The spec file is committed through `spektacular spec file write` — never written or edited directly with built-in file tools

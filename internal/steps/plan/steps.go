@@ -1,26 +1,27 @@
 package plan
 
 import (
-	"fmt"
-
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 )
 
-// PlanFilePath returns the store-relative path for a plan file.
-func PlanFilePath(name string) string {
-	return "plans/" + name + "/plan.md"
+// PlanFilePath returns the store-relative path for a plan file under the
+// configured plan directory.
+func PlanFilePath(dir, name string) string {
+	return dir + "/" + name + "/plan.md"
 }
 
-// ContextFilePath returns the store-relative path for a plan's context file.
-func ContextFilePath(name string) string {
-	return "plans/" + name + "/context.md"
+// ContextFilePath returns the store-relative path for a plan's context file
+// under the configured plan directory.
+func ContextFilePath(dir, name string) string {
+	return dir + "/" + name + "/context.md"
 }
 
-// ResearchFilePath returns the store-relative path for a plan's research file.
-func ResearchFilePath(name string) string {
-	return "plans/" + name + "/research.md"
+// ResearchFilePath returns the store-relative path for a plan's research file
+// under the configured plan directory.
+func ResearchFilePath(dir, name string) string {
+	return dir + "/" + name + "/research.md"
 }
 
 // Steps returns the ordered step configs for a plan workflow.
@@ -65,7 +66,7 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 			StepName:     stepName,
 			NextStep:     nextStep,
 			TemplatePath: templatePath,
-			Strategy:     strategy{},
+			Strategy:     strategy{planDir: cfg.PlanDir, specDir: cfg.SpecDir},
 			Extra:        extra,
 		},
 		data, out, st, cfg,
@@ -175,68 +176,111 @@ func verification() workflow.StepCallback {
 	}
 }
 
-// writePlan writes plan.md from the plan_template data key.
+// planDocPathFunc is the signature shared by PlanFilePath, ContextFilePath and
+// ResearchFilePath: it maps the configured plan directory and plan name to a
+// store-relative document path.
+type planDocPathFunc func(dir, name string) string
+
+// planDoc pairs a generated plan document's store-path helper with the
+// scaffold template it is verified against.
+type planDoc struct {
+	path     planDocPathFunc
+	scaffold string
+}
+
+// planDocs are the three documents the plan workflow produces, each committed
+// to the store by the agent via `plan file write` during the write steps.
+var planDocs = []planDoc{
+	{PlanFilePath, "scaffold/plan.md"},
+	{ContextFilePath, "scaffold/context.md"},
+	{ResearchFilePath, "scaffold/research.md"},
+}
+
+// planDocStillScaffold reads a generated plan document back through the store
+// and reports whether it is missing or still holds the unfilled scaffold — i.e.
+// the agent has not yet committed it with `plan file write`.
+func planDocStillScaffold(st store.Store, doc planDoc, planDir, planName string) (bool, error) {
+	stored, err := st.Read(doc.path(planDir, planName))
+	if err != nil {
+		return true, nil
+	}
+	scaffold, err := stepkit.RenderTemplate(doc.scaffold, map[string]any{"name": planName})
+	if err != nil {
+		return false, err
+	}
+	return string(stored) == scaffold, nil
+}
+
+// docWarning checks one plan document and returns the template extras: when the
+// document is missing or still the scaffold it sets warnKey=true so the step
+// instruction can warn the agent to commit it via `plan file write`.
+func docWarning(data workflow.Data, st store.Store, cfg workflow.Config, doc planDoc, warnKey string) (map[string]any, error) {
+	if cfg.DryRun || st == nil {
+		return nil, nil
+	}
+	unwritten, err := planDocStillScaffold(st, doc, cfg.PlanDir, stepkit.GetString(data, "name"))
+	if err != nil {
+		return nil, err
+	}
+	if unwritten {
+		return map[string]any{warnKey: true}, nil
+	}
+	return nil, nil
+}
+
+// writePlan verifies plan.md was committed to the store via `plan file write`.
 func writePlan() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		planName := stepkit.GetString(data, "name")
-		content := stepkit.GetString(data, "plan_template")
-		if content == "" {
-			return "", fmt.Errorf("plan_template missing — submit the filled plan.md via --file or --stdin plan_template")
+		extra, err := docWarning(data, st, cfg, planDocs[0], "plan_unwritten")
+		if err != nil {
+			return "", err
 		}
-		if !cfg.DryRun {
-			if err := st.Write(PlanFilePath(planName), []byte(content)); err != nil {
-				return "", err
-			}
-		}
-		return "", writeStep("write_plan", "write_context", "steps/plan/14-write_plan.md", data, out, st, cfg, nil)
+		return "", writeStep("write_plan", "write_context", "steps/plan/14-write_plan.md", data, out, st, cfg, extra)
 	}
 }
 
-// writeContext writes context.md from the context_template data key.
+// writeContext verifies context.md was committed to the store via `plan file write`.
 func writeContext() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		planName := stepkit.GetString(data, "name")
-		content := stepkit.GetString(data, "context_template")
-		if content == "" {
-			return "", fmt.Errorf("context_template missing — submit the filled context.md via --file or --stdin context_template")
+		extra, err := docWarning(data, st, cfg, planDocs[1], "context_unwritten")
+		if err != nil {
+			return "", err
 		}
-		if !cfg.DryRun {
-			if err := st.Write(ContextFilePath(planName), []byte(content)); err != nil {
-				return "", err
-			}
-		}
-		return "", writeStep("write_context", "write_research", "steps/plan/15-write_context.md", data, out, st, cfg, nil)
+		return "", writeStep("write_context", "write_research", "steps/plan/15-write_context.md", data, out, st, cfg, extra)
 	}
 }
 
-// writeResearch writes research.md from the research_template data key.
+// writeResearch verifies research.md was committed to the store via `plan file write`.
 func writeResearch() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		planName := stepkit.GetString(data, "name")
-		content := stepkit.GetString(data, "research_template")
-		if content == "" {
-			return "", fmt.Errorf("research_template missing — submit the filled research.md via --file or --stdin research_template")
+		extra, err := docWarning(data, st, cfg, planDocs[2], "research_unwritten")
+		if err != nil {
+			return "", err
 		}
-		if !cfg.DryRun {
-			if err := st.Write(ResearchFilePath(planName), []byte(content)); err != nil {
-				return "", err
-			}
-		}
-		return "", writeStep("write_research", "finished", "steps/plan/16-write_research.md", data, out, st, cfg, nil)
+		return "", writeStep("write_research", "finished", "steps/plan/16-write_research.md", data, out, st, cfg, extra)
 	}
 }
 
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		if cfg.DryRun {
-			return "", writeStep("finished", "", "steps/plan/17-finished.md", data, out, st, cfg, nil)
-		}
-		planName := stepkit.GetString(data, "name")
-		for _, p := range []string{PlanFilePath(planName), ContextFilePath(planName), ResearchFilePath(planName)} {
-			if !st.Exists(p) {
-				return "", fmt.Errorf("expected file %s not found — the preceding write step should have written it", p)
+		// Read every plan document back through the store; if any is missing
+		// or still the scaffold, surface a warning in the finished instruction
+		// rather than erroring (a fatal error here would strand the workflow
+		// state on the terminal step).
+		var extra map[string]any
+		if !cfg.DryRun && st != nil {
+			planName := stepkit.GetString(data, "name")
+			for _, doc := range planDocs {
+				unwritten, err := planDocStillScaffold(st, doc, cfg.PlanDir, planName)
+				if err != nil {
+					return "", err
+				}
+				if unwritten {
+					extra = map[string]any{"plan_incomplete": true}
+					break
+				}
 			}
 		}
-		return "", writeStep("finished", "", "steps/plan/17-finished.md", data, out, st, cfg, nil)
+		return "", writeStep("finished", "", "steps/plan/17-finished.md", data, out, st, cfg, extra)
 	}
 }

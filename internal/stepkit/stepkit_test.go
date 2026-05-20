@@ -120,7 +120,7 @@ func TestWriteStepResultStandardAndStrategyVars(t *testing.T) {
 	tmp := t.TempDir()
 	data := &testData{values: map[string]any{"name": "widget"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(tmp)
+	st := store.NewFileStore(tmp, "project")
 
 	err := WriteStepResult(
 		StepRequest{
@@ -146,7 +146,7 @@ func TestWriteStepResultExtraOverridesStrategy(t *testing.T) {
 	tmp := t.TempDir()
 	data := &testData{values: map[string]any{"name": "widget"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(tmp)
+	st := store.NewFileStore(tmp, "project")
 
 	// Inject a fake strategy that returns fake_primary = X, then override
 	// via Extra to Y. Result should reflect the pre-override strategy value
@@ -173,7 +173,7 @@ func TestWriteStepResultExtraOverridesStrategy(t *testing.T) {
 func TestWriteStepResultMissingTemplateError(t *testing.T) {
 	data := &testData{values: map[string]any{"name": "widget"}}
 	writer := &captureWriter{}
-	st := store.NewFileStore(t.TempDir())
+	st := store.NewFileStore(t.TempDir(), "project")
 
 	err := WriteStepResult(
 		StepRequest{
@@ -194,7 +194,7 @@ func TestWriteStepResultRequiresStrategy(t *testing.T) {
 		StepRequest{StepName: "x", TemplatePath: "y"},
 		&testData{values: map[string]any{}},
 		&captureWriter{},
-		store.NewFileStore(t.TempDir()),
+		store.NewFileStore(t.TempDir(), "project"),
 		workflow.Config{},
 		buildFakeResult,
 	)
@@ -206,7 +206,7 @@ func TestWriteStepResultRequiresBuilder(t *testing.T) {
 		StepRequest{StepName: "x", TemplatePath: "y", Strategy: fakeStrategy{}},
 		&testData{values: map[string]any{}},
 		&captureWriter{},
-		store.NewFileStore(t.TempDir()),
+		store.NewFileStore(t.TempDir(), "project"),
 		workflow.Config{},
 		nil,
 	)

@@ -1,5 +1,5 @@
 BINARY := spektacular
-VERSION := 0.1.1
+VERSION := 0.3.0
 
 HARBOR_AUTH := ANTHROPIC_AUTH_TOKEN=$$(python3 -c "import json; print(json.load(open('$$HOME/.claude/.credentials.json'))['claudeAiOauth']['accessToken'])")
 HARBOR_MODEL := claude-sonnet-4-6

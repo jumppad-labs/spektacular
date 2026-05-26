@@ -19,6 +19,7 @@ var workflowDescriptions = map[string]string{
 	"spek-new":       "Create a new Specification for a feature.",
 	"spek-plan":      "Create a new Plan from an approved Specification.",
 	"spek-implement": "Execute an approved Plan to implement the feature.",
+	"spek-knowledge": "Search, contribute to, or update the project's knowledge base.",
 }
 
 // installCommandWrappers renders the shared command wrapper once per workflow

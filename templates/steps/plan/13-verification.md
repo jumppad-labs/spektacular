@@ -83,10 +83,11 @@ If any section is missing from any document, add it and re-review before proceed
 
 The plan documents are owned by spektacular. **Never write or edit them with the `Write` or `Edit` tools** — `{{config.command}} plan file write` is the only supported way to write them. It routes the write through the CLI into the configured plan directory.
 
-Large plans exceed the tool-call size limit when inlined as a heredoc, so stage each document through a scratch file. Use the `Write` tool to write the filled plan.md to the scratch path `.spektacular/tmp/plan_template.md`, then commit it to the plan store:
+Stage each document through a scratch file. Use the `Write` tool to write the filled plan.md to the scratch path `.spektacular/tmp/plan_template.md`, point `plan file write` at it with `--from`, then remove the scratch file:
 
 ```
-cat .spektacular/tmp/plan_template.md | {{config.command}} plan file write {{plan_name}}/plan.md
+{{config.command}} plan file write {{plan_name}}/plan.md --from .spektacular/tmp/plan_template.md
+rm .spektacular/tmp/plan_template.md
 ```
 
 The path argument is the plan-directory-relative document path — `plan file write` resolves it against the configured plan directory for you.

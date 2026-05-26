@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
@@ -38,22 +38,25 @@ func storeFileStore(dir storeDirFunc) (store.Store, string, error) {
 func newStoreFileCmd(short string, dir storeDirFunc) *cobra.Command {
 	fileCmd := &cobra.Command{Use: "file", Short: short}
 
+	var fromPath string
 	write := &cobra.Command{
 		Use:   "write <path>",
-		Short: "Write stdin to a file in the store",
+		Short: "Write the contents of a source file into the store",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, storeDir, err := storeFileStore(dir)
 			if err != nil {
 				return err
 			}
-			content, err := io.ReadAll(cmd.InOrStdin())
+			content, err := os.ReadFile(fromPath)
 			if err != nil {
-				return fmt.Errorf("reading stdin: %w", err)
+				return fmt.Errorf("reading source file %q: %w", fromPath, err)
 			}
 			return st.Write(filepath.Join(storeDir, args[0]), content)
 		},
 	}
+	write.Flags().StringVar(&fromPath, "from", "", "Path to the source file whose contents will be written into the store")
+	_ = write.MarkFlagRequired("from")
 
 	read := &cobra.Command{
 		Use:   "read <path>",

@@ -1,12 +1,13 @@
 ## Step {{step}}: {{title}}
 
 {{#plan_incomplete}}
-⚠️ One or more plan documents are missing from the plan store, or still hold the empty scaffold. Before telling the user the workflow is done, commit the missing documents through the CLI:
+⚠️ One or more plan documents are missing from the plan store, or still hold the empty scaffold. Before telling the user the workflow is done, commit the missing documents through the CLI and remove the scratch files:
 
 ```
-cat .spektacular/tmp/plan_template.md     | {{config.command}} plan file write {{plan_name}}/plan.md
-cat .spektacular/tmp/context_template.md  | {{config.command}} plan file write {{plan_name}}/context.md
-cat .spektacular/tmp/research_template.md | {{config.command}} plan file write {{plan_name}}/research.md
+{{config.command}} plan file write {{plan_name}}/plan.md     --from .spektacular/tmp/plan_template.md
+{{config.command}} plan file write {{plan_name}}/context.md  --from .spektacular/tmp/context_template.md
+{{config.command}} plan file write {{plan_name}}/research.md --from .spektacular/tmp/research_template.md
+rm .spektacular/tmp/plan_template.md .spektacular/tmp/context_template.md .spektacular/tmp/research_template.md
 ```
 
 Never write or edit the plan documents with the `Write` or `Edit` tools — `{{config.command}} plan file write` is the only supported way to write them. Verify each document with `{{config.command}} plan file read {{plan_name}}/<doc>.md`, then re-run this step.

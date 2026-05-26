@@ -1,10 +1,11 @@
 ## Step {{step}}: {{title}}
 
 {{#research_unwritten}}
-⚠️ research.md was not found in the plan store, or still holds the empty scaffold — it was never committed. Commit the filled research.md before continuing:
+⚠️ research.md was not found in the plan store, or still holds the empty scaffold — it was never committed. Commit the filled research.md before continuing, then remove the scratch file:
 
 ```
-cat .spektacular/tmp/research_template.md | {{config.command}} plan file write {{plan_name}}/research.md
+{{config.command}} plan file write {{plan_name}}/research.md --from .spektacular/tmp/research_template.md
+rm .spektacular/tmp/research_template.md
 ```
 {{/research_unwritten}}
 {{^research_unwritten}}

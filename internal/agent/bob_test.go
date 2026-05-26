@@ -26,6 +26,7 @@ func TestBobAgent_Install(t *testing.T) {
 		"spek-new":       "spektacular spec new",
 		"spek-plan":      "spektacular plan new",
 		"spek-implement": "spektacular implement new",
+		"spek-knowledge": "knowledge",
 	}
 	for skill, expected := range skillAssertions {
 		skillPath := filepath.Join(tmp, ".bob", "skills", skill, "SKILL.md")
@@ -42,6 +43,7 @@ func TestBobAgent_Install(t *testing.T) {
 		"spek-new.md":       "`spek-new` skill",
 		"spek-plan.md":      "`spek-plan` skill",
 		"spek-implement.md": "`spek-implement` skill",
+		"spek-knowledge.md": "`spek-knowledge` skill",
 	}
 	for base, expected := range commandAssertions {
 		cmdPath := filepath.Join(tmp, ".bob", "commands", base)
@@ -55,7 +57,7 @@ func TestBobAgent_Install(t *testing.T) {
 
 	// Bob command filenames keep the `spek-` prefix — make sure the stripped
 	// variants do NOT exist on disk.
-	for _, stripped := range []string{"new.md", "plan.md", "implement.md"} {
+	for _, stripped := range []string{"new.md", "plan.md", "implement.md", "knowledge.md"} {
 		require.NoFileExists(t, filepath.Join(tmp, ".bob", "commands", stripped))
 	}
 

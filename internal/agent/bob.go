@@ -14,7 +14,10 @@ func (bobAgent) Install(projectPath string, cfg config.Config, out io.Writer) er
 	if err := installWorkflowSkills(projectPath, ".bob/skills", cfg, out); err != nil {
 		return err
 	}
-	return installCommandWrappers(projectPath, ".bob/commands", bobCommandFilename, cfg, out)
+	if err := installCommandWrappers(projectPath, ".bob/commands", bobCommandFilename, cfg, out); err != nil {
+		return err
+	}
+	return installMemoryContextSection(projectPath, cfg, out)
 }
 
 func bobCommandFilename(skillName string) string {

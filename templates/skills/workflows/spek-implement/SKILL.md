@@ -21,7 +21,7 @@ On each turn, the CLI returns JSON containing an `instruction` field. That instr
 The CLI owns the plan documents — `plan.md`, `context.md`, and `research.md`. **Never read or write them with the `Write`, `Edit`, or `Read` tools** — those bypass Spektacular and the configured plan directory. All plan document access goes through `{{command}} plan file`:
 
 - `{{command}} plan file read <name>/<doc>.md` — read a plan document from the plan store.
-- `{{command}} plan file write <name>/<doc>.md` — write a plan document into the plan store (reads stdin).
+- `{{command}} plan file write <name>/<doc>.md --from <source-path>` — write a plan document into the plan store from a source file on disk. Stage the body under `.spektacular/tmp/` first, then `rm` the scratch file after a successful write.
 
 This includes the edits the implement workflow makes to `plan.md` — ticking phase checkboxes and appending changelog entries. Read the document with `plan file read`, apply the change, and commit it with `plan file write`. Never edit a plan document in place with the `Edit` tool. Path arguments are plan-directory-relative document paths (e.g. `my-feature/plan.md`).
 

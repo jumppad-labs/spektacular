@@ -3,10 +3,11 @@
 {{#spec_unwritten}}
 ⚠️ The spec file `{{spec_name}}.md` still holds the empty scaffold — the completed spec was never committed to the store.
 
-Before telling the user the workflow is done, write the spec through Spektacular. Stage the completed spec to a scratch file with the `Write` tool, then:
+Before telling the user the workflow is done, write the spec through Spektacular. Stage the completed spec to `.spektacular/tmp/spec_template.md` with the `Write` tool, point `spec file write` at it with `--from`, then remove the scratch file:
 
 ```
-{{config.command}} spec file write {{spec_name}}.md
+{{config.command}} spec file write {{spec_name}}.md --from .spektacular/tmp/spec_template.md
+rm .spektacular/tmp/spec_template.md
 ```
 
 Never edit the spec file with the `Write` or `Edit` tools — `{{config.command}} spec file write` is the only supported way to write it.

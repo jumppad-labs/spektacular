@@ -26,6 +26,7 @@ func TestClaudeAgent_Install(t *testing.T) {
 		"spek-new":       "spektacular spec new",
 		"spek-plan":      "spektacular plan new",
 		"spek-implement": "spektacular implement new",
+		"spek-knowledge": "knowledge",
 	}
 	for skill, expected := range skillAssertions {
 		skillPath := filepath.Join(tmp, ".claude", "skills", skill, "SKILL.md")

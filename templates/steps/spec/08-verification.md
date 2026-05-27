@@ -38,10 +38,11 @@ Once the user is happy, produce the final complete spec and commit it to the spe
 
 **Never edit the spec file with the `Write` or `Edit` tools.** `{{config.command}} spec file write` is the only supported way to write the spec — it routes the write through Spektacular into the configured spec directory.
 
-Large specs exceed the tool-call size limit when inlined as a heredoc, so stage the content through a scratch file first. Use the `Write` tool to write the completed spec to the scratch path `.spektacular/tmp/spec_template.md`, then pipe that scratch file into the store:
+Stage the content through a scratch file first. Use the `Write` tool to write the completed spec to the scratch path `.spektacular/tmp/spec_template.md`, point `spec file write` at it with `--from`, then remove the scratch file:
 
 ```
-cat .spektacular/tmp/spec_template.md | {{config.command}} spec file write {{spec_name}}.md
+{{config.command}} spec file write {{spec_name}}.md --from .spektacular/tmp/spec_template.md
+rm .spektacular/tmp/spec_template.md
 ```
 
 That writes the final spec into the configured spec directory through Spektacular. The path argument is the spec file name only — `spec file write` resolves it against the configured spec directory for you.

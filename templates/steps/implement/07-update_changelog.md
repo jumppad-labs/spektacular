@@ -34,10 +34,11 @@ For the exact format and more examples, launch a sub-agent with:
 {{config.command}} skill update-changelog
 ```
 
-Apply the entry by reading plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md`, adding the entry, staging the updated document with the `Write` tool at the scratch path `.spektacular/tmp/plan_update.md`, then committing it:
+Apply the entry by reading plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md`, adding the entry, staging the updated document with the `Write` tool at the scratch path `.spektacular/tmp/plan_update.md`, then committing it and removing the scratch file:
 
 ```
-cat .spektacular/tmp/plan_update.md | {{config.command}} plan file write {{plan_name}}/plan.md
+{{config.command}} plan file write {{plan_name}}/plan.md --from .spektacular/tmp/plan_update.md
+rm .spektacular/tmp/plan_update.md
 ```
 
 ### Step 3: Check for remaining unchecked phases

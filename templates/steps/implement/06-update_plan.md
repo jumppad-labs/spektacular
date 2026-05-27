@@ -16,10 +16,11 @@ The plan documents are owned by spektacular. **Never edit plan.md with the `Writ
 
 1. Read the current plan.md: `{{config.command}} plan file read {{plan_name}}/plan.md`.
 2. Apply the checkbox changes above to the content you read.
-3. Stage the updated plan.md with the `Write` tool at the scratch path `.spektacular/tmp/plan_update.md`, then commit it back to the plan store:
+3. Stage the updated plan.md with the `Write` tool at the scratch path `.spektacular/tmp/plan_update.md`, point `plan file write` at it with `--from`, then remove the scratch file:
 
    ```
-   cat .spektacular/tmp/plan_update.md | {{config.command}} plan file write {{plan_name}}/plan.md
+   {{config.command}} plan file write {{plan_name}}/plan.md --from .spektacular/tmp/plan_update.md
+   rm .spektacular/tmp/plan_update.md
    ```
 
 ### STOP-on-mismatch

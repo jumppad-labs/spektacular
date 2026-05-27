@@ -308,11 +308,15 @@ func (d *Spektacular) Archive(
 	return out, nil
 }
 
-func (d Spektacular) GenerateChecksums(
+func (d *Spektacular) GenerateChecksums(
 	ctx context.Context,
 	files *dagger.Directory,
 	version string,
 ) (*dagger.Directory, error) {
+	if d.hasError() {
+		return nil, d.lastError
+	}
+
 	cli := dag
 	checksums := strings.Builder{}
 
@@ -343,7 +347,7 @@ var notorize = []Archive{
 }
 
 // SignAndNotorize signs and notorizes the osx binaries using the Apple notary service
-func (d Spektacular) SignAndNotorize(
+func (d *Spektacular) SignAndNotorize(
 	ctx context.Context,
 	version string,
 	archives *dagger.Directory,

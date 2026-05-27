@@ -26,6 +26,7 @@ var workflowSkills = []workflowSkill{
 	{Name: "spek-new", TemplatePath: "skills/workflows/spek-new/SKILL.md"},
 	{Name: "spek-plan", TemplatePath: "skills/workflows/spek-plan/SKILL.md"},
 	{Name: "spek-implement", TemplatePath: "skills/workflows/spek-implement/SKILL.md"},
+	{Name: "spek-knowledge", TemplatePath: "skills/workflows/spek-knowledge/SKILL.md"},
 }
 
 // sourceFS is the filesystem the install helpers read templates from. It is

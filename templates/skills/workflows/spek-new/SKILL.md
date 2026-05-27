@@ -21,7 +21,7 @@ On each turn, the CLI returns JSON containing an `instruction` field. That instr
 The CLI owns the spec file. **Never read or write it with the `Write`, `Edit`, or `Read` tools** — those bypass Spektacular and the configured spec directory. All spec file access goes through `{{command}} spec file`:
 
 - `{{command}} spec file read <name>.md` — read a spec file from the spec store.
-- `{{command}} spec file write <name>.md` — write a spec file into the spec store (reads stdin).
+- `{{command}} spec file write <name>.md --from <source-path>` — write a spec file into the spec store from a source file on disk. Stage the body under `.spektacular/tmp/` first, then `rm` the scratch file after a successful write.
 - `{{command}} spec file list` — list spec files in the spec store.
 
 Path arguments are spec file names; `spec file` resolves them against the configured spec directory itself.

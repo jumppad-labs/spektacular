@@ -1,5 +1,5 @@
 command: go run .
-agent: claude
+agent: bob
 debug:
     enabled: true
 spec:

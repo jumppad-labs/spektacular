@@ -1,9 +1,3 @@
-
-
-# Agent Rules <!-- tessl-managed -->
-
-@.tessl/RULES.md follow the [instructions](.tessl/RULES.md)
-
 ## Memory & Context
 
 > Managed by `spektacular init` — edit `templates/agents/memory-context.md`

@@ -18,7 +18,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set keys
-        if: ${{ github.repository == 'jumppad-labs/spektacular' && github.event_name == 'push' }}
+        if: |
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == 'jumppad-labs/spektacular') ||
+          (github.event_name != 'pull_request' &&
+           github.repository == 'jumppad-labs/spektacular')
         run: |
           echo "${{secrets.QUILL_SIGN_P12}}" | base64 -d  > ./cert.p12
           echo "${{secrets.QUILL_NOTORY_KEY}}" > ./key.p8
@@ -26,7 +30,11 @@ jobs:
           echo "GITHUB_TOKEN=${{secrets.GH_TOKEN}}" >> $GITHUB_ENV
 
       - name: All signed
-        if: ${{ github.repository == 'jumppad-labs/spektacular' && github.event_name == 'push' }}
+        if: |
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == 'jumppad-labs/spektacular') ||
+          (github.event_name != 'pull_request' &&
+           github.repository == 'jumppad-labs/spektacular')
         uses: dagger/dagger-for-github@v8.2.0
         with:
           verb: call
@@ -36,7 +44,11 @@ jobs:
           dagger-flags: "--progress=plain"
 
       - name: All unsigned
-        if: ${{ github.repository != 'jumppad-labs/spektacular' || github.event_name != 'push' }}
+        if: |
+          !((github.event_name == 'pull_request' &&
+             github.event.pull_request.head.repo.full_name == 'jumppad-labs/spektacular') ||
+            (github.event_name != 'pull_request' &&
+             github.repository == 'jumppad-labs/spektacular'))
         uses: dagger/dagger-for-github@v8.2.0
         with:
           verb: call

@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/templates"
 	"github.com/stretchr/testify/require"
 )
@@ -45,16 +47,19 @@ func TestEmbeddedTemplatesAvoidStdinInstructionSurface(t *testing.T) {
 	}
 }
 
-// TestRenderedSkillsAvoidStdinInstructionSurface walks the dogfooded
-// .claude/skills/ tree at the project root and asserts no rendered SKILL.md
-// contains a pattern from the old stdin/heredoc CLI surface.
+// TestRenderedSkillsAvoidStdinInstructionSurface renders every workflow skill
+// into a freshly-created temp directory via the real install path and asserts
+// no rendered SKILL.md contains a pattern from the old stdin/heredoc CLI
+// surface. The test owns the directory it walks — it does not depend on any
+// pre-existing on-disk state.
 func TestRenderedSkillsAvoidStdinInstructionSurface(t *testing.T) {
-	root := filepath.Join("..", "..", ".claude", "skills")
-	info, err := os.Stat(root)
-	require.NoError(t, err, "rendered skills tree must exist at %s — run `go run . init claude` to regenerate", root)
-	require.True(t, info.IsDir(), "%s is not a directory", root)
+	tmp := t.TempDir()
+	cfg := config.NewDefault()
 
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	require.NoError(t, installWorkflowSkills(tmp, ".claude/skills", cfg, io.Discard))
+
+	root := filepath.Join(tmp, ".claude", "skills")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		require.NoError(t, err)
 		if d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil
@@ -67,16 +72,20 @@ func TestRenderedSkillsAvoidStdinInstructionSurface(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestRenderedSpekKnowledgeBodyContainsCRUDInvocations asserts the dogfooded
-// rendered spek-knowledge SKILL.md contains every CRUD entry point its prose
-// orchestrates. This is a regression guard against a future edit accidentally
-// dropping a load-bearing CLI reference; the expected substrings are
-// hand-maintained as a literal Go slice rather than derived from the file.
+// TestRenderedSpekKnowledgeBodyContainsCRUDInvocations renders the workflow
+// skills into a fresh temp directory and asserts the rendered spek-knowledge
+// SKILL.md contains every CRUD entry point its prose orchestrates. This is a
+// regression guard against a future edit accidentally dropping a load-bearing
+// CLI reference; the expected substrings are hand-maintained as a literal Go
+// slice rather than derived from the file. The test owns the directory it
+// reads — it does not depend on any pre-existing on-disk state.
 func TestRenderedSpekKnowledgeBodyContainsCRUDInvocations(t *testing.T) {
-	path := filepath.Join("..", "..", ".claude", "skills", "spek-knowledge", "SKILL.md")
-	_, err := os.Stat(path)
-	require.NoError(t, err, "rendered spek-knowledge SKILL.md must exist at %s — run `go run . init claude` to regenerate", path)
+	tmp := t.TempDir()
+	cfg := config.NewDefault()
 
+	require.NoError(t, installWorkflowSkills(tmp, ".claude/skills", cfg, io.Discard))
+
+	path := filepath.Join(tmp, ".claude", "skills", "spek-knowledge", "SKILL.md")
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)
 	rendered := string(body)

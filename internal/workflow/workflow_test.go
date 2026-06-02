@@ -67,15 +67,59 @@ func TestGotoForward(t *testing.T) {
 	require.Equal(t, "two", wf.Current())
 }
 
-func TestGotoSameStepIsNoop(t *testing.T) {
+// captureWriter is an in-test ResultWriter that records each WriteResult call,
+// letting the re-render test assert the step's instruction was re-emitted.
+type captureWriter struct {
+	calls int
+	last  any
+}
+
+func (c *captureWriter) WriteResult(v any) error {
+	c.calls++
+	c.last = v
+	return nil
+}
+
+func TestGotoSameStepReRenders(t *testing.T) {
+	// invoked counts how many times the "one" callback fires; the closure also
+	// writes a sentinel result so we can confirm the instruction is re-emitted.
+	// Returning "" means the callback does NOT advance the workflow.
+	invoked := 0
+	steps := []StepConfig{
+		{
+			Name: "one",
+			Src:  []string{"new"},
+			Dst:  "one",
+			Callback: func(data Data, out ResultWriter, st store.Store, cfg Config) (string, error) {
+				invoked++
+				_ = out.WriteResult("one-instruction")
+				return "", nil
+			},
+		},
+		{Name: "two", Src: []string{"one"}, Dst: "two"},
+		{Name: "three", Src: []string{"two"}, Dst: "three"},
+	}
+
 	sp := filepath.Join(t.TempDir(), "state.json")
-	wf := New(testSteps, sp, Config{}, nil, nil)
+	out := &captureWriter{}
+	wf := New(steps, sp, Config{}, nil, out)
 
-	wf.Next() // → one
+	require.NoError(t, wf.Next()) // new → one (fires "one" callback once)
 
-	err := wf.Goto("one")
+	baselineInvoked := invoked
+	baselineWrites := out.calls
+
+	err := wf.Goto("one") // same as current step → re-render, no transition
 	require.NoError(t, err)
+
+	// The callback ran again, re-emitting the instruction, without advancing.
+	require.Equal(t, baselineInvoked+1, invoked)
+	require.Equal(t, baselineWrites+1, out.calls)
+	require.Equal(t, "one-instruction", out.last)
+
+	// Current step and completed-steps list are unchanged by the re-render.
 	require.Equal(t, "one", wf.Current())
+	require.Equal(t, []string{}, wf.State().CompletedSteps)
 }
 
 func TestGotoInvalidStepFails(t *testing.T) {
@@ -200,4 +244,36 @@ func TestCompletedStepsTracked(t *testing.T) {
 	// The terminal step is marked completed by commitTerminal after the
 	// event fires, since no further transition will mark it later.
 	require.Equal(t, []string{"one", "two", "three"}, wf.State().CompletedSteps)
+}
+
+func TestKindPersistedOnNew(t *testing.T) {
+	sp := filepath.Join(t.TempDir(), "state.json")
+	wf := New(testSteps, sp, Config{Kind: "spec"}, nil, nil)
+
+	// Trigger a save so the state file is written to disk.
+	require.NoError(t, wf.Next()) // new → one
+
+	// Read the persisted state back from disk and assert the recorded kind.
+	loaded, err := loadState(sp)
+	require.NoError(t, err)
+	require.Equal(t, "spec", loaded.Kind)
+}
+
+func TestInProgress(t *testing.T) {
+	tests := []struct {
+		name        string
+		currentStep string
+		expected    bool
+	}{
+		{name: "empty step is not in progress", currentStep: "", expected: false},
+		{name: "finished step is not in progress", currentStep: "finished", expected: false},
+		{name: "unfinished step is in progress", currentStep: "one", expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &State{CurrentStep: tt.currentStep}
+			require.Equal(t, tt.expected, s.InProgress())
+		})
+	}
 }

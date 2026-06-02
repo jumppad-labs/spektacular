@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jumppad-labs/spektacular/internal/steps/spec"
+	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,6 +42,7 @@ func resetSpecCommandFlags(t *testing.T) {
 		require.NoError(t, specNewCmd.Flags().Set("data", ""))
 		require.NoError(t, specNewCmd.Flags().Set("stdin", ""))
 		require.NoError(t, specNewCmd.Flags().Set("file", ""))
+		require.NoError(t, specNewCmd.Flags().Set("force", "false"))
 	}
 	reset()
 	t.Cleanup(reset)
@@ -254,4 +256,112 @@ func TestSpecNew_RejectsUnknownConfiguredIDMethod(t *testing.T) {
 	require.Contains(t, err.Error(), "spec.id_method")
 	require.NoFileExists(t, filepath.Join(dataDir, "specs", "fixture.md"))
 	require.NoFileExists(t, filepath.Join(dataDir, "state.json"))
+}
+
+// fixedResumeTime is a deterministic timestamp for seeded in-progress state so
+// byte-for-byte oracles never depend on time.Now().
+var fixedResumeTime = time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+func TestSpecNew_InProgressReturnsResumeReportAndPreservesState(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dataDir := filepath.Join(dir, ".spektacular")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		Kind:           "spec",
+		CurrentStep:    "overview",
+		CompletedSteps: []string{"new"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "000024_resume"},
+	})
+
+	before, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+
+	resetSpecCommandFlags(t)
+	stdout, _ := setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"whatever"}`})
+	require.NoError(t, rootCmd.Execute())
+
+	var r ResumeReport
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
+	require.True(t, r.Resumable)
+	require.Equal(t, "spec", r.Kind)
+	require.Equal(t, "000024_resume", r.Name)
+	require.Equal(t, "overview", r.CurrentStep)
+	require.NotEmpty(t, r.Instruction)
+
+	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+
+	require.NoDirExists(t, filepath.Join(dataDir, "specs"))
+}
+
+func TestSpecNew_ForceStartsFreshOverInProgress(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dataDir := filepath.Join(dir, ".spektacular")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		Kind:           "spec",
+		CurrentStep:    "overview",
+		CompletedSteps: []string{"new"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "000024_resume"},
+	})
+
+	resetSpecCommandFlags(t)
+	stdout, _ := setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"spec", "new", "--force", "--data", `{"name":"billing"}`})
+	require.NoError(t, rootCmd.Execute())
+
+	var result specCommandResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Equal(t, "overview", result.Step)
+	require.FileExists(t, result.SpecPath)
+}
+
+func TestSpecNew_CleanDirHasNoResumeReport(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	resetSpecCommandFlags(t)
+	stdout, _ := setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"billing"}`})
+	require.NoError(t, rootCmd.Execute())
+
+	var r ResumeReport
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
+	require.False(t, r.Resumable)
+}
+
+func TestSpecNew_KindlessInProgressStateErrorsWithoutClobber(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dataDir := filepath.Join(dir, ".spektacular")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		CurrentStep:    "overview",
+		CompletedSteps: []string{"new"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "legacy"},
+	})
+
+	before, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+
+	resetSpecCommandFlags(t)
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"whatever"}`})
+	err = rootCmd.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "kind marker")
+
+	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 }

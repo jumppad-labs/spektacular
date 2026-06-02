@@ -86,6 +86,7 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 
 	dataStr, _ := cmd.Flags().GetString("data")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	force, _ := cmd.Flags().GetBool("force")
 
 	if dataStr == "" {
 		return fmt.Errorf("--data is required (e.g. --data '{\"name\":\"my-feature\"}')")
@@ -124,10 +125,16 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 	if dryRun {
 		statePath += ".dryrun-tmp"
 	} else {
-		_ = os.Remove(statePath)
+		handled, err := resumeOrClear(cmd, statePath, cfg.Command, force)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "implement", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := implement.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(root, "project"), out)
@@ -289,6 +296,7 @@ func init() {
 	implementCmd.PersistentFlags().BoolP("dry-run", "n", false, "Validate and preview without writing any files or persisting state")
 
 	implementNewCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"name":"my-feature"}')`)
+	implementNewCmd.Flags().Bool("force", false, "Overwrite any in-progress workflow and start fresh")
 	implementNewCmd.Flags().String("stdin", "", "Read stdin and store it in workflow data under this key")
 	implementNewCmd.Flags().String("file", "", "Read a file at <path> (relative to cwd) and store its contents under the filename's basename (without extension)")
 	implementGotoCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"step":"analyze"}')`)

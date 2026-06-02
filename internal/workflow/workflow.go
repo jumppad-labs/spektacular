@@ -13,7 +13,10 @@ import (
 // Config holds runtime configuration for a workflow. It is not persisted.
 type Config struct {
 	Command string
-	DryRun  bool
+	// Kind identifies which workflow ("spec"/"plan"/"implement") this config
+	// drives. It is stamped onto freshly-created State by New().
+	Kind   string
+	DryRun bool
 	// SpecDir and PlanDir are the store-relative directories the spec and plan
 	// workflows write into, sourced from the project configuration.
 	SpecDir string
@@ -76,6 +79,7 @@ func New(steps []StepConfig, statePath string, cfg Config, st store.Store, out R
 		initialState = steps[0].Src[0]
 		now := time.Now().UTC()
 		state = &State{
+			Kind:           cfg.Kind,
 			CurrentStep:    initialState,
 			CompletedSteps: []string{},
 			CreatedAt:      now,
@@ -166,7 +170,7 @@ func (w *Workflow) Next() error {
 // If the step callback returns a next step name, Goto calls itself recursively.
 func (w *Workflow) Goto(name string) error {
 	if w.Current() == name {
-		return nil
+		return w.renderStep(name)
 	}
 
 	w.pendingGoto = ""
@@ -177,6 +181,33 @@ func (w *Workflow) Goto(name string) error {
 		return w.Goto(w.pendingGoto)
 	}
 	w.commitTerminal()
+	return nil
+}
+
+// renderStep re-invokes a step's callback to re-emit its instruction without
+// firing an FSM transition, so the current step can be re-presented (the resume
+// path) while leaving current_step and completed_steps untouched. It mirrors the
+// after_<name> callback invocation shape. If the callback returns a next step
+// (defensive — a resting current step is normally a render-only step), it is
+// followed via Goto, matching Next/Goto.
+func (w *Workflow) renderStep(name string) error {
+	for _, step := range w.steps {
+		if step.Name != name {
+			continue
+		}
+		if step.Callback == nil {
+			return nil
+		}
+		w.pendingGoto = ""
+		nextStep, err := step.Callback(w.data, w.out, w.store, w.cfg)
+		if err != nil {
+			return err
+		}
+		if nextStep != "" {
+			return w.Goto(nextStep)
+		}
+		return nil
+	}
 	return nil
 }
 

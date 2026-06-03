@@ -10,6 +10,8 @@
 rm .spektacular/tmp/plan_template.md .spektacular/tmp/context_template.md .spektacular/tmp/research_template.md
 ```
 
+If a scratch file under `.spektacular/tmp/` is gone (that path is git-ignored and does not survive a crash), re-assemble the affected document from the per-section working files under `.spektacular/work/{{plan_name}}/` before committing — they are the durable source.
+
 Never write or edit the plan documents with the `Write` or `Edit` tools — `{{config.command}} plan file write` is the only supported way to write them. Verify each document with `{{config.command}} plan file read {{plan_name}}/<doc>.md`, then re-run this step.
 {{/plan_incomplete}}
 {{^plan_incomplete}}

@@ -36,6 +36,17 @@ For guidance on agent orchestration: `{{config.command}} skill spawn-implementat
 - Acceptance criteria in plan.md are outcome statements, not shell commands. Verification commands belong in the agent's head, not in plan.md.
 - The phase summary in plan.md is the primary artifact the user reads — prioritize clarity over completeness.
 
+Before advancing, save this step's work to its **two** working files. Using your own `Write` tool, write:
+
+- the **plan.md** phase content (the `#### - [ ] Phase N.M:` headings, summaries, technical-detail links, and acceptance criteria described under "Phase content in plan.md" above) to `.spektacular/work/{{plan_name}}/phases_plan.md`, and
+- the **context.md** phase content (the `### Phase N.M:` headings with file:line detail, complexity, token estimate, and agent strategy described under "Phase content in context.md" above) to `.spektacular/work/{{plan_name}}/phases_context.md`.
+
+Both working files are git-tracked and are read back on resume and when the plan documents are assembled, so they must hold the final content. They are **not** plan store documents — write them directly with your file tools and do **not** route them through `{{config.command}} plan file write` (that command is only for the final plan documents).
+
 Present the phases to the user for review. Once agreed, advance:
 
 {{config.command}} plan goto --data '{"step":"{{next_step}}"}'
+
+---
+
+**Before you advance:** refresh `.spektacular/context.md` with your cross-cutting working context only — the key decisions and substitutions made, the answers the user gave to your questions, and learnings worth carrying forward. Keep it to learnings and decisions, not a transcript and not a copy of content already captured elsewhere (such as a section's own working file). Use your own file tools. This file is git-tracked, and a resumed session reads it back to pick up where you left off, so keep it current every time before running the `goto` command above.

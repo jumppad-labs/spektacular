@@ -22,7 +22,7 @@ Use your agent orchestration capability to parallelize this research. For guidan
 
 ### Step 3: Distill findings into research.md — the decision log
 
-You are not writing research.md to disk yet (the verification step will handle that). You are gathering the content that will go into these required sections:
+You are gathering the content for research.md's required sections — you will save it to a working file at the end of this step, and the verification step assembles it into the store document. The required sections are:
 
 - **Alternatives considered and rejected** — options you considered; for each, what it is, why rejected, with citation (file:line or external reference). This prevents future agents from re-proposing the same dead ends.
 - **Chosen approach — evidence** — the file:line or external references that support the option you'll recommend in the next step. Evidence, not the decision itself.
@@ -44,6 +44,12 @@ Keep this dense. Assume a future agent will read it cold and need to make decisi
 
 If your research surfaces a durable learning, gotcha, or convention worth keeping for future plans, you may persist it with `{{config.command}} knowledge write`. Before writing, run `{{config.command}} knowledge sources` to see the available scopes, then **propose to the user a target scope and the exact content you intend to write, and wait for explicit confirmation**. Do not invoke `{{config.command}} knowledge write` until the user has confirmed. Propose, then wait for confirmation — never write to a knowledge source unprompted.
 
+Before advancing, save your research to its working file. Using your own `Write` tool, write the distilled research content — all seven sections above (alternatives, chosen-approach evidence, files examined, external references, prior plans/specs, open assumptions, rehydration cues), body content only — to `.spektacular/work/{{plan_name}}/research.md`. This working file is git-tracked and is read back on resume and when the plan documents are assembled, so it must hold the final content. It is **not** a plan store document — write it directly with your file tools and do **not** route it through `{{config.command}} plan file write` (that command is only for the final plan documents).
+
 Once research is complete, advance:
 
 {{config.command}} plan goto --data '{"step":"{{next_step}}"}'
+
+---
+
+**Before you advance:** refresh `.spektacular/context.md` with your cross-cutting working context only — the key decisions and substitutions made, the answers the user gave to your questions, and learnings worth carrying forward. Keep it to learnings and decisions, not a transcript and not a copy of content already captured elsewhere (such as a section's own working file). Use your own file tools. This file is git-tracked, and a resumed session reads it back to pick up where you left off, so keep it current every time before running the `goto` command above.

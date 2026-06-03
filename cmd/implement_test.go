@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +34,16 @@ fixture
 `
 	require.NoError(t, os.WriteFile(planPath, []byte(body), 0o644))
 	return planPath
+}
+
+// writeInProgressState marshals a workflow.State to .spektacular/state.json so a
+// `new` command's resume prologue (resumeOrClear) sees an in-progress workflow.
+func writeInProgressState(t *testing.T, dataDir string, st workflow.State) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	b, err := json.MarshalIndent(st, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "state.json"), b, 0o644))
 }
 
 // setupImplementCmd resets rootCmd state for a clean test invocation.
@@ -182,6 +193,36 @@ func TestImplementSteps_ListsAllTenSteps(t *testing.T) {
 	for i, want := range expected {
 		require.Equal(t, want, steps[i])
 	}
+}
+
+// TestImplementNew_InProgressReturnsResumeReport proves `implement new` runs the
+// shared resume prologue and emits a ResumeReport for an in-progress implement
+// workflow instead of starting fresh.
+func TestImplementNew_InProgressReturnsResumeReport(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dataDir := filepath.Join(dir, ".spektacular")
+	writeFixturePlan(t, dataDir, "fixture")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		Kind:           "implement",
+		CurrentStep:    "analyze",
+		CompletedSteps: []string{"new", "read_plan"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "fixture"},
+	})
+
+	stdout, _ := setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"implement", "new", "--data", `{"name":"fixture"}`})
+	require.NoError(t, rootCmd.Execute())
+
+	var r ResumeReport
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
+	require.True(t, r.Resumable)
+	require.Equal(t, "implement", r.Kind)
+	require.Equal(t, "fixture", r.Name)
+	require.Equal(t, "analyze", r.CurrentStep)
 }
 
 func TestImplementNew_SchemaOutput(t *testing.T) {

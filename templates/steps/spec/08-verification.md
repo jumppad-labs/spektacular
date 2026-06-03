@@ -1,12 +1,22 @@
 ## Step {{step}}: {{title}}
 
-Complete the following template with all of the information you have gathered so far
+Assemble the final spec from the per-section working files you wrote during the earlier steps. Read each section's working file under `.spektacular/work/{{spec_name}}/` and drop its content under the matching `## ` heading in the scaffold below. The working files hold body content only — this scaffold owns the headings and their order:
+
+- `.spektacular/work/{{spec_name}}/overview.md` → `## Overview`
+- `.spektacular/work/{{spec_name}}/requirements.md` → `## Requirements`
+- `.spektacular/work/{{spec_name}}/constraints.md` → `## Constraints`
+- `.spektacular/work/{{spec_name}}/acceptance_criteria.md` → `## Acceptance Criteria`
+- `.spektacular/work/{{spec_name}}/technical_approach.md` → `## Technical Approach`
+- `.spektacular/work/{{spec_name}}/success_metrics.md` → `## Success Metrics`
+- `.spektacular/work/{{spec_name}}/non_goals.md` → `## Non-Goals`
+
+If a working file is missing, that section was never completed — STOP and gather it (re-run the matching step) before assembling.
 
 ```markdown
 {{spec_template}}
 ```
 
-Review all the information gathered across every step and validate the complete spec for:
+Review the assembled spec and validate it for:
 • Completeness — all sections are filled
 • Clarity — requirements are specific and testable
 • Consistency — sections reference each other appropriately
@@ -47,9 +57,19 @@ rm .spektacular/tmp/spec_template.md
 
 That writes the final spec into the configured spec directory through Spektacular. The path argument is the spec file name only — `spec file write` resolves it against the configured spec directory for you.
 
+After `spec file write` succeeds, verify the stored spec with `{{config.command}} spec file read {{spec_name}}.md`. Once you have confirmed it is correct, the per-section working files have served their purpose — remove the working directory with your own file tools:
+
+```
+rm -rf .spektacular/work/{{spec_name}}
+```
+
 Then advance:
 
 ```
 {{config.command}} spec goto --data '{"step":"{{next_step}}"}'
 ```
 
+
+---
+
+**Before you advance:** refresh `.spektacular/context.md` with your cross-cutting working context only — the key decisions and substitutions made, the answers the user gave to your questions, and learnings worth carrying forward. Keep it to learnings and decisions, not a transcript and not a copy of content already captured elsewhere (such as a section's own working file). Use your own file tools. This file is git-tracked, and a resumed session reads it back to pick up where you left off, so keep it current every time before running the `goto` command above.

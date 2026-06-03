@@ -29,7 +29,7 @@ This includes the edits the implement workflow makes to `plan.md` — ticking ph
 
 Plan name: $ARGUMENTS
 
-If no plan name was provided, check `.spektacular/state.json` for an active plan under `data.name`. If one exists, ask the user whether they want to implement that plan, offering the option to name a different one. If no active plan is found, ask the user which plan to implement before proceeding.
+If no plan name was provided, ask the user which plan to implement before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 The plan file must already exist at `.spektacular/plans/<plan_name>/plan.md`. If it does not, stop and tell the user to run `{{command}} plan` first.
 
@@ -39,4 +39,20 @@ Start the implement workflow by running:
 {{command}} implement new --data '{"name": "<plan_name>"}'
 ```
 
-This creates the state file automatically and returns the first `instruction`. From that point on, follow the loop above: do what the instruction says, then call `{{command}} implement goto --data '{"step":"<next_step>"}'` to get the next one. Do not invent step names — every instruction tells you the exact `goto` command to run next.
+**If a workflow was interrupted and is still in progress**, this command does not start a fresh one. Instead it returns a *resume report* — a JSON object with `"resumable": true` plus the in-progress workflow's `kind`, `name`, and `current_step`, and an `instruction` field — and changes nothing on disk. When you get a resume report:
+
+1. Ask the user whether to **resume** the in-progress workflow or **start a new one**. (The report's `instruction` field restates both options.)
+2. **To resume**, first read `.spektacular/context.md` — the git-tracked working-context file the previous session left behind — to recover its learnings and the answers you gave to the user's questions, then run the resume command using the report's `kind` and `current_step` (follow the report's `instruction` field, which is tailored to that kind):
+
+   ```
+   {{command}} <kind> goto --data '{"step":"<current_step>"}'
+   ```
+
+   The in-progress workflow may be a *different* kind (a spec or plan left open); use the `kind` from the report, not necessarily `implement`.
+3. **To start fresh** (discarding the in-progress workflow — it remains recoverable via git), re-run with `--force`:
+
+   ```
+   {{command}} implement new --force --data '{"name": "<plan_name>"}'
+   ```
+
+Otherwise the command returns the first `instruction` and a fresh workflow has started. From that point on, follow the loop above: do what the instruction says, then call `{{command}} implement goto --data '{"step":"<next_step>"}'` to get the next one. Do not invent step names — every instruction tells you the exact `goto` command to run next.

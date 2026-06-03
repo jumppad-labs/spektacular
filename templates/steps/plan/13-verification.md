@@ -14,7 +14,28 @@ For skill details: `{{config.command}} skill determine-feature-slug`
 
 ### Step 3: Fill in the Three Scaffolds
 
-Fill in ALL sections of all three scaffolds — no placeholders, no open questions.
+Assemble all three scaffolds from the per-section working files you wrote during the earlier steps — no placeholders, no open questions. The working files hold body content only; each scaffold below owns its headings and their order. Drop each working file's content under the matching heading.
+
+**plan.md** ← files under `.spektacular/work/{{plan_name}}/`:
+- `architecture.md` → `## Architecture & Design Decisions`
+- `components.md` → `## Component Breakdown`
+- `data_structures.md` → `## Data Structures & Interfaces`
+- `implementation_detail.md` → `## Implementation Detail`
+- `dependencies.md` → `## Dependencies`
+- `testing_approach.md` → `## Testing Approach`
+- `milestones.md` + `phases_plan.md` → `## Milestones & Phases`
+- `open_questions.md` → `## Open Questions`
+- `out_of_scope.md` → `## Out of Scope`
+- `## Overview` ← derive from the spec you read in step 01 and your `.spektacular/context.md` notes.
+
+**context.md** ← files under `.spektacular/work/{{plan_name}}/`:
+- `phases_context.md` → `## Per-Phase Technical Notes`
+- `testing_approach.md` → `## Testing Strategy` (recast at per-phase granularity)
+- `## Current State Analysis`, `## Project References`, `## Token Management Strategy`, `## Migration Notes`, `## Performance Considerations` ← your research findings in `research.md` and `.spektacular/context.md`.
+
+**research.md** ← `.spektacular/work/{{plan_name}}/research.md` (it maps directly onto research.md's seven sections).
+
+If a required working file is missing, the matching gathering step was not completed — STOP and complete it before assembling.
 
 #### plan.md scaffold
 
@@ -77,7 +98,7 @@ Then verify quality:
 - **context.md** — per-phase technical notes under headings matching plan.md's `*Technical detail:*` anchors.
 - **research.md** — alternatives considered and rejected with citations. Dense enough to rehydrate a cold session.
 
-If any section is missing from any document, add it and re-review before proceeding. Do **not** advance until every section in every list above is present.
+If any section is missing from any document, add it and re-review before proceeding. Do **not** advance until every section in every list above is present. If a section came out empty, check its working file under `.spektacular/work/{{plan_name}}/` — the gathering step may have been skipped. In particular, confirm both `phases_plan.md` and `phases_context.md` exist, since the phases step writes two files that feed plan.md and context.md respectively.
 
 ### Step 5: Commit plan.md
 
@@ -97,3 +118,7 @@ Then advance:
 ```
 {{config.command}} plan goto --data '{"step":"{{next_step}}"}'
 ```
+
+---
+
+**Before you advance:** refresh `.spektacular/context.md` with your cross-cutting working context only — the key decisions and substitutions made, the answers the user gave to your questions, and learnings worth carrying forward. Keep it to learnings and decisions, not a transcript and not a copy of content already captured elsewhere (such as a section's own working file). Use your own file tools. This file is git-tracked, and a resumed session reads it back to pick up where you left off, so keep it current every time before running the `goto` command above.

@@ -28,6 +28,10 @@ func writeSearchFixture(t *testing.T) string {
 	require.NoError(t, fx.Write("nomatch.txt", []byte("nothing of interest here\njust filler text\n")))
 	require.NoError(t, fx.Write("nested/deep.txt", []byte("a NEEDLE with different case\ntrailing line\n")))
 	require.NoError(t, fx.Write("long.txt", []byte(longMatchLine+"\n")))
+	// A file under conventions/ that DOES contain "needle": if the exclusion
+	// were broken, this would be returned, which is what makes the equivalence
+	// test's exclusion assertion meaningful.
+	require.NoError(t, fx.Write("conventions/style.md", []byte("the needle lives in a convention\n")))
 
 	return dir
 }
@@ -94,6 +98,13 @@ func TestSearch_RipgrepAndFallbackEquivalent(t *testing.T) {
 
 	require.NotEmpty(t, rgHits, "rg path should find matches")
 	require.ElementsMatch(t, project(fbHits), project(rgHits))
+
+	// conventions/ is excluded by both paths; ElementsMatch above proves the
+	// sets agree, so asserting on rgHits alone covers both.
+	for _, h := range rgHits {
+		require.False(t, strings.HasPrefix(h.Path, "conventions/"),
+			"search must exclude conventions/, but returned %s", h.Path)
+	}
 }
 
 // Criterion 3: each hit carries the store's scope and a Path that round-trips

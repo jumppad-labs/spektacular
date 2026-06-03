@@ -35,7 +35,8 @@ The skill will guide you through every plan step from `overview` through
 - At the `discovery` step, use your agent-orchestration capability to spawn
   sub-agents in parallel for codebase research, and retrieve the skills the
   step template references (`discover-project-commands`, `discover-test-patterns`,
-  `spawn-planning-agents`).
+  `spawn-planning-agents`). Also load the project's always-apply conventions in
+  full with `spektacular knowledge conventions`, as the step instructs.
 - At the `phases` step, retrieve the `spawn-implementation-agents` skill the
   template references.
 - At the `verification` step, retrieve the `gather-project-metadata` and

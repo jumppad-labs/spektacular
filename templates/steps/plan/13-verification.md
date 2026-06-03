@@ -17,6 +17,7 @@ For skill details: `{{config.command}} skill determine-feature-slug`
 Assemble all three scaffolds from the per-section working files you wrote during the earlier steps — no placeholders, no open questions. The working files hold body content only; each scaffold below owns its headings and their order. Drop each working file's content under the matching heading.
 
 **plan.md** ← files under `.spektacular/work/{{plan_name}}/`:
+- `conventions.md` → `## Conventions`
 - `architecture.md` → `## Architecture & Design Decisions`
 - `components.md` → `## Component Breakdown`
 - `data_structures.md` → `## Data Structures & Interfaces`
@@ -62,15 +63,16 @@ Before piping any document, verify **every required section is present**. A comm
 **plan.md — required `##` sections** (in order):
 
 1. `## Overview`
-2. `## Architecture & Design Decisions`
-3. `## Component Breakdown`
-4. `## Data Structures & Interfaces`
-5. `## Implementation Detail`
-6. `## Dependencies`
-7. `## Testing Approach`
-8. `## Milestones & Phases`
-9. `## Open Questions`
-10. `## Out of Scope`
+2. `## Conventions`
+3. `## Architecture & Design Decisions`
+4. `## Component Breakdown`
+5. `## Data Structures & Interfaces`
+6. `## Implementation Detail`
+7. `## Dependencies`
+8. `## Testing Approach`
+9. `## Milestones & Phases`
+10. `## Open Questions`
+11. `## Out of Scope`
 
 **context.md — required `##` sections** (in order):
 

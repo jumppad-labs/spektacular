@@ -21,6 +21,21 @@
 
 
 <!--
+  CONVENTIONS
+  The project conventions (always-apply standards) that bear on this work,
+  each with a one-line reason it applies — and only the relevant ones, not
+  the whole knowledge base. Conventions are loaded in full during discovery
+  and the relevant subset is chosen as the design is locked, then confirmed
+  by the user. Cite a convention inline in the sections it drives. If no
+  conventions are relevant (or the project has none), state that plainly,
+  e.g. "No project conventions apply to this feature." An empty or generic
+  list is a visible signal the knowledge base was not consulted.
+-->
+## Conventions
+
+
+
+<!--
   ARCHITECTURE & DESIGN DECISIONS
   The chosen design direction in 2-4 short paragraphs. Explain the shape of
   the solution, the key decisions and their trade-offs, and why the chosen

@@ -178,3 +178,69 @@ func TestNewSet_SynthesisesDefaultProjectSource(t *testing.T) {
 		{Scope: config.DefaultKnowledgeScope, Provider: config.ProviderFile, Location: knowledgeDir},
 	}, set.Sources())
 }
+
+// Conventions returns the full body of every always-apply convention across
+// every configured scope, tagged with its scope and path, including those
+// nested in subdirectories. The expected set is hand-written and exact, so it
+// also proves non-convention files (readme.md, architecture/*) are excluded.
+func TestSet_ConventionsFanAcrossScopesIncludingSubdirs(t *testing.T) {
+	set, projectDir, teamDir := twoScopeSet(t)
+
+	writeFile(t, projectDir, "conventions/style.md", "project: use tabs not spaces\n")
+	writeFile(t, projectDir, "conventions/naming/files.md", "project: kebab-case file names\n")
+	writeFile(t, teamDir, "conventions/review.md", "team: two approvals required\n")
+
+	conventions, err := set.Conventions()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []Convention{
+		{Scope: "project", Path: "conventions/style.md", Content: "project: use tabs not spaces\n"},
+		{Scope: "project", Path: "conventions/naming/files.md", Content: "project: kebab-case file names\n"},
+		{Scope: "team", Path: "conventions/review.md", Content: "team: two approvals required\n"},
+	}, conventions)
+}
+
+// Conventions concatenates per-scope in configured order: every project-scope
+// convention precedes every team-scope one. Asserted via the sequence of the
+// returned .Scope fields, independent of within-scope filesystem ordering.
+func TestSet_ConventionsConcatenateInConfiguredScopeOrder(t *testing.T) {
+	set, projectDir, teamDir := twoScopeSet(t)
+
+	writeFile(t, projectDir, "conventions/a.md", "project a\n")
+	writeFile(t, projectDir, "conventions/b.md", "project b\n")
+	writeFile(t, teamDir, "conventions/c.md", "team c\n")
+	writeFile(t, teamDir, "conventions/d.md", "team d\n")
+
+	conventions, err := set.Conventions()
+	require.NoError(t, err)
+
+	scopeSeq := make([]string, len(conventions))
+	for i, c := range conventions {
+		scopeSeq[i] = c.Scope
+	}
+	require.Equal(t, []string{"project", "project", "team", "team"}, scopeSeq)
+}
+
+// A scope without a conventions/ directory contributes nothing and produces no
+// error: only the populated scope's conventions are returned.
+func TestSet_ConventionsSkipScopeWithoutConventionsDir(t *testing.T) {
+	set, projectDir, _ := twoScopeSet(t)
+
+	// Only the project scope gets a conventions/ dir; team has none.
+	writeFile(t, projectDir, "conventions/style.md", "project: lint before commit\n")
+
+	conventions, err := set.Conventions()
+	require.NoError(t, err)
+	require.Equal(t, []Convention{
+		{Scope: "project", Path: "conventions/style.md", Content: "project: lint before commit\n"},
+	}, conventions)
+}
+
+// When no scope has a conventions/ directory, Conventions returns an empty
+// result and no error.
+func TestSet_ConventionsEmptyWhenNoScopeHasConventions(t *testing.T) {
+	set, _, _ := twoScopeSet(t)
+
+	conventions, err := set.Conventions()
+	require.NoError(t, err)
+	require.Empty(t, conventions)
+}

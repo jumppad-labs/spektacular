@@ -19,13 +19,20 @@ layers of assertions:
   5. Plan-file CLI usage — the plan documents were committed with
      `spektacular plan file write` and never written or edited with the
      built-in Write/Edit tools.
+  6. Convention-aware planning — the discovery step read the seeded
+     convention through `spektacular knowledge conventions`
+     (CONVENTIONS_READ_COMMAND) within its window, and plan.md's
+     ## Conventions section reflects the seeded convention's distinctive
+     token (SEEDED_CONVENTION_TOKEN).
 
-All expectation maps (step order, skills per step, sub-agent spawn steps)
-are hand-maintained in this module — they are the independent behavioural
-oracle. Do NOT derive them from `spektacular plan steps` or from the
-`templates/steps/plan/*.md` files at runtime: that would make the test
-tautological (asserting "the agent did what the state machine / templates
-told it to do" is a closed loop, not a behavioural check).
+All expectation maps (step order, skills per step, sub-agent spawn steps,
+expected plan sections, and the convention oracles CONVENTIONS_READ_COMMAND /
+SEEDED_CONVENTION_TOKEN) are hand-maintained in this module — they are the
+independent behavioural oracle. Do NOT derive them from `spektacular plan
+steps`, from the `templates/steps/plan/*.md` files, or from the seeded
+convention file at runtime: that would make the test tautological (asserting
+"the agent did what the state machine / templates told it to do" is a closed
+loop, not a behavioural check).
 
 When a legitimate change lands in `internal/steps/plan/steps.go` Steps() or
 in `templates/steps/plan/*.md`, update the corresponding map below in the
@@ -99,6 +106,18 @@ EXPECTED_SPAWN_STEPS = frozenset({"discovery"})
 
 MIN_SECTION_LENGTH = 100
 
+# Hand-maintained oracle for convention-aware planning. The environment
+# (environment/Dockerfile + environment/auth-audit-logging.md) seeds a single
+# distinctive always-apply convention under .spektacular/knowledge/conventions/.
+# CONVENTIONS_READ_COMMAND is the CLI substring the discovery step must invoke
+# to read it; SEEDED_CONVENTION_TOKEN is a distinctive anchor unlikely to
+# appear incidentally in a JWT plan, so finding it in plan.md's ## Conventions
+# section proves the seeded convention was digested into the plan rather than a
+# command merely having run. Update both here in the same commit if the seeded
+# convention or the discovery instruction changes.
+CONVENTIONS_READ_COMMAND = "knowledge conventions"
+SEEDED_CONVENTION_TOKEN = "AUTH_AUDIT_V2"
+
 # Built-in agent tools that mutate files directly, bypassing the spektacular
 # CLI. The plan documents must never be written or edited with these.
 BUILTIN_FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
@@ -134,6 +153,7 @@ SCAFFOLD_LEFTOVERS = (
 # verification step writes it.
 EXPECTED_PLAN_SECTIONS = (
     "overview",
+    "conventions",
     "architecture & design decisions",
     "component breakdown",
     "data structures & interfaces",
@@ -453,6 +473,48 @@ def _agent_auth_failure():
     return None
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _abort_on_failed_agent_run():
+    """Stop the whole session immediately when the agent never ran or failed to
+    authenticate, instead of letting ~80 downstream tests fail with misleading
+    errors.
+
+    An auth failure (e.g. a missing or invalid ANTHROPIC_API_KEY) means no
+    artefacts are ever produced, so every artefact/state/CLI assertion fails
+    with a symptom ("config.yaml missing", "state.json missing", …) that buries
+    the real cause. This autouse session fixture trips ONLY on the fatal
+    preflight conditions — no transcript, an auth failure, or an agent run that
+    did not finish — and calls pytest.exit so the run reports one clear reason
+    and a non-zero status. A genuine workflow regression (the agent ran but did
+    the wrong thing) does NOT trip this, so the full suite still reports every
+    such failure.
+    """
+    if not TRANSCRIPT.exists():
+        pytest.exit(
+            f"Agent transcript not found at {TRANSCRIPT} — the agent never ran. "
+            "Aborting before the misleading downstream cascade.",
+            returncode=1,
+        )
+    failure = _agent_auth_failure()
+    if failure is not None:
+        pytest.exit(
+            "Agent failed to authenticate with the Anthropic API "
+            f"(api_error_status={failure.get('api_error_status')}): "
+            f"{failure.get('result') or failure.get('error')!r}. "
+            "Set a valid ANTHROPIC_API_KEY before running harbor. Aborting "
+            "before the misleading downstream cascade.",
+            returncode=1,
+        )
+    results = _agent_result_events()
+    if not results or results[-1].get("is_error"):
+        detail = results[-1].get("result") if results else "no result event"
+        pytest.exit(
+            f"Agent run did not finish successfully ({detail!r}). Aborting "
+            "before the misleading downstream cascade.",
+            returncode=1,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Agent-execution preflight tests — run first
 # ---------------------------------------------------------------------------
@@ -698,6 +760,51 @@ class TestSubAgentSpawning:
             f"Step '{step}' expected sub-agent spawning but found no "
             f"Task/Agent tool_use in its window "
             f"({len(window_calls)} tool calls)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Convention-aware planning tests
+# ---------------------------------------------------------------------------
+
+
+class TestConventionAwarePlanning:
+    """The discovery step reads the seeded convention and the finished plan's
+    ## Conventions section reflects it.
+
+    Two independent checks: (1) a behavioural check that the conventions CLI
+    verb ran inside the discovery window, and (2) a content check that the
+    seeded convention's distinctive token reached plan.md. Both oracles are
+    hand-maintained (CONVENTIONS_READ_COMMAND, SEEDED_CONVENTION_TOKEN) — they
+    are never derived from the templates or state machine at runtime.
+    """
+
+    def test_conventions_read_during_discovery(self):
+        windows = _windows_cache()
+        calls = _calls_cache()
+        window = windows.get("discovery")
+        assert window is not None, (
+            "Discovery step was never entered — cannot verify conventions were read"
+        )
+        window_calls = calls[window.start : window.end]
+        read = any(
+            CONVENTIONS_READ_COMMAND in _bash_command(c) for c in window_calls
+        )
+        assert read, (
+            "Discovery step did not run "
+            f"'spektacular {CONVENTIONS_READ_COMMAND}' — checked "
+            f"{len(window_calls)} tool calls in the step's window. The plan "
+            "workflow must load all conventions in full during discovery."
+        )
+
+    def test_conventions_section_reflects_seeded_convention(self):
+        sections = _plan_sections()
+        content = sections.get("conventions", "")
+        assert SEEDED_CONVENTION_TOKEN in content, (
+            f"plan.md's ## Conventions section does not mention "
+            f"'{SEEDED_CONVENTION_TOKEN}', the distinctive token from the "
+            "seeded auth convention. The relevant convention was not digested "
+            f"into the plan. Section content: {content[:300]!r}"
         )
 
 

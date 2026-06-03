@@ -48,6 +48,12 @@ var knowledgeSourcesCmd = &cobra.Command{
 	RunE:  runKnowledgeSources,
 }
 
+var knowledgeConventionsCmd = &cobra.Command{
+	Use:   "conventions",
+	Short: "Read every always-apply convention across all configured scopes",
+	RunE:  runKnowledgeConventions,
+}
+
 var knowledgeSearchOutputSchema = &schemaObj{
 	Type:       "object",
 	Properties: map[string]*schemaProp{"hits": {Type: "array"}},
@@ -78,6 +84,11 @@ var knowledgeWriteOutputSchema = &schemaObj{
 var knowledgeSourcesOutputSchema = &schemaObj{
 	Type:       "object",
 	Properties: map[string]*schemaProp{"sources": {Type: "array"}},
+}
+
+var knowledgeConventionsOutputSchema = &schemaObj{
+	Type:       "object",
+	Properties: map[string]*schemaProp{"conventions": {Type: "array"}},
 }
 
 var knowledgeScopePathInputSchema = &schemaObj{
@@ -200,6 +211,25 @@ func runKnowledgeSources(cmd *cobra.Command, _ []string) error {
 	return out.WriteResult(map[string]any{"sources": set.Sources()})
 }
 
+func runKnowledgeConventions(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeConventionsOutputSchema}, "")
+	}
+	set, err := newKnowledgeSet()
+	if err != nil {
+		return output.WriteError(cmd.ErrOrStderr(), err)
+	}
+	conventions, err := set.Conventions()
+	if err != nil {
+		return output.WriteError(cmd.ErrOrStderr(), err)
+	}
+	if conventions == nil {
+		conventions = []knowledge.Convention{}
+	}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	return out.WriteResult(map[string]any{"conventions": conventions})
+}
+
 // knowledgeScopePathInput is the --data payload for the read and write commands.
 type knowledgeScopePathInput struct {
 	Scope string `json:"scope"`
@@ -248,5 +278,5 @@ func init() {
 	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().String("file", "", "Read entry content from the file at <path> (relative to cwd); stdin is used when omitted")
 
-	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd)
+	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd)
 }

@@ -39,6 +39,7 @@ func Init(projectPath string, force bool) error {
 		filepath.Join(projectPath, cfg.Plan.Config.Directory),
 		filepath.Join(projectPath, cfg.Spec.Config.Directory),
 		filepath.Join(spektacularDir, "knowledge"),
+		filepath.Join(spektacularDir, "knowledge", "conventions"),
 		filepath.Join(spektacularDir, "knowledge", "learnings"),
 		filepath.Join(spektacularDir, "knowledge", "architecture"),
 		filepath.Join(spektacularDir, "knowledge", "gotchas"),
@@ -82,13 +83,15 @@ func Init(projectPath string, force bool) error {
 		return fmt.Errorf("writing .gitignore: %w", err)
 	}
 
-	// Write embedded conventions.md
+	// Seed the starter convention as an individual one-rule-per-file entry
+	// under knowledge/conventions/. The flat knowledge/conventions.md file is
+	// no longer written: conventions live only under the conventions/ directory.
 	conventionsContent, err := templates.FS.ReadFile(".spektacular/conventions.md")
 	if err != nil {
 		return fmt.Errorf("reading embedded conventions.md: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(spektacularDir, "knowledge", "conventions.md"), conventionsContent, 0644); err != nil {
-		return fmt.Errorf("writing conventions.md: %w", err)
+	if err := os.WriteFile(filepath.Join(spektacularDir, "knowledge", "conventions", "conventions.md"), conventionsContent, 0644); err != nil {
+		return fmt.Errorf("writing conventions starter: %w", err)
 	}
 
 	// Write README files for knowledge subdirectories

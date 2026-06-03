@@ -125,13 +125,53 @@ Running `spektacular init <agent>` creates:
 ├── specs/                   # Your specification files
 ├── plans/                   # Generated plans (plan.md, research.md, context.md)
 └── knowledge/               # Default project knowledge source
-    ├── conventions.md       # Code style and standards
+    ├── conventions/         # Always-apply standards, one rule per file
     ├── architecture/        # System design docs
     ├── learnings/           # Captured corrections from past runs
     └── gotchas/             # Known issues and workarounds
 ```
 
-Knowledge feeds context to the planning agent. By default Spektacular reads `.spektacular/knowledge/` as the `project` knowledge source; additional sources at other scopes — for example a shared `team` directory or a machine-wide `global` one — can be configured under `knowledge.sources` (see [Configuration](#configuration)). Adding architecture docs and past learnings improves plan quality over time.
+Knowledge feeds context to the planning agent. By default Spektacular reads `.spektacular/knowledge/` as the `project` knowledge source; additional sources at other scopes — for example a shared `team` directory or a machine-wide `global` one — can be configured under `knowledge.sources` (see [Configuration](#configuration)). Adding architecture docs and past learnings improves plan quality over time. See [Knowledge](#knowledge) for how it is organised and consumed.
+
+## Knowledge
+
+Knowledge is the accumulated know-how a project draws on when planning — conventions, architecture notes, gotchas, and lessons from past work. It is strictly a **planning-time input**: the planning agent reads it while producing a plan, and the relevant parts are written into the plan itself. The implement workflow then consumes only the plan documents, so it never needs to re-read the knowledge base — the plan is the contract.
+
+### Two tiers
+
+Knowledge is split into two tiers by *how it is accessed*, not where it is stored:
+
+- **Conventions (always-apply).** The standards a project commits to — every plan must reflect them. They live one-rule-per-file under a reserved `conventions/` directory in each knowledge source, so a single convention can be added or changed independently of the others. They are **read in full** at planning time.
+- **Reference knowledge (on-demand).** Architecture notes, gotchas, learnings, and anything else. These live anywhere else under a knowledge source and are reached only through **keyword search**, targeted at the specific surfaces a feature touches.
+
+Conventions are deliberately **excluded from search results** — since they are already read in full, surfacing them again would be redundant noise. This keeps planning focused even as the reference knowledge base grows.
+
+### Scopes
+
+A knowledge source has a **scope** label. The default project ships one scope, `project`, backed by `.spektacular/knowledge/`. You can configure additional scopes — for example a shared `team` directory or a machine-wide `global` one — under `knowledge.sources` (see [Configuration](#configuration)). Every read, search, and convention load fans across all configured scopes in order, and results are tagged with the scope they came from.
+
+### How planning uses it
+
+During the plan workflow's **discovery** step, the agent loads every convention in full and runs surface-targeted searches over the reference knowledge for the design surfaces the feature introduces. As the design is locked in the **architecture** step, the agent selects the subset of conventions that actually bear on the work — each with a one-line reason it applies — and the finished `plan.md` carries them in a dedicated `## Conventions` section. When nothing is relevant (or a project has no conventions), the section says so plainly; an empty or generic section is a visible signal that the knowledge base was not consulted.
+
+### CLI
+
+Agents (and you) reach knowledge through the `spektacular knowledge` commands rather than reading the files directly, so access stays consistent across scopes:
+
+| Command | What it does |
+|---|---|
+| `spektacular knowledge conventions` | Read every always-apply convention across all scopes, returning each one's full body, scope-tagged |
+| `spektacular knowledge search <query>` | Keyword-search every scope (excludes `conventions/`); results are scope-tagged |
+| `spektacular knowledge read --data '{"scope":"project","path":"architecture/x.md"}'` | Read one entry's full body from a named scope |
+| `spektacular knowledge list` | List every entry across all scopes |
+| `spektacular knowledge write --data '{"scope":"project","path":"gotchas/x.md"}' --file <path>` | Write an entry into a named scope (content from `--file`, or stdin) |
+| `spektacular knowledge sources` | List the configured scopes and their locations |
+
+Every subcommand accepts `--schema` to print its input/output JSON schema and exit.
+
+### Capturing knowledge
+
+When research surfaces a durable learning, gotcha, or convention worth keeping, the agent **proposes** the target scope and exact content and waits for your explicit confirmation before writing — it never persists to a knowledge source unprompted. In a Spektacular-initialised repo, the `spek-knowledge` skill is the entry point for reading, contributing to, and updating the knowledge base in any session, and coding agents route what they would otherwise save to their own per-user memory into the project knowledge base instead, so captured knowledge lands in git and travels with the project.
 
 ## Extending Storage
 

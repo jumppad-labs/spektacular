@@ -35,6 +35,14 @@ Keep this section self-contained. Do NOT write `see context.md for …` — plan
 
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Architecture & Design Decisions** content (body only — no `## ` heading line) to `.spektacular/work/{{plan_name}}/architecture.md`. This working file is git-tracked and is read back on resume and when the plan documents are assembled, so it must hold the final content. It is **not** a plan store document — write it directly with your file tools and do **not** route it through `{{config.command}} plan file write` (that command is only for the final plan documents).
 
+### Step 4: Select the conventions that apply
+
+Now the design shape is locked and you know the surfaces this feature touches, select — from the conventions you loaded in full during discovery (`{{config.command}} knowledge conventions`) — the subset that actually bears on this work. For each one you keep, write a one-line rationale for **why it applies to this feature**, and cite it inline in the Architecture & Design Decisions content above wherever it drives a specific choice. Include only the genuinely relevant conventions — not the whole knowledge base.
+
+Relevance is **proposed, not auto-decided**: present the conventions you propose to apply (and any you deliberately dropped) to the user and get their confirmation before saving. If no conventions are relevant, or the project has none, say so plainly rather than padding the list — an empty or generic list is a visible signal the knowledge base was not consulted.
+
+Save the result to its working file. Using your own `Write` tool, write the **Conventions** content (body only — no `## ` heading line) to `.spektacular/work/{{plan_name}}/conventions.md`. Use a bullet list, one convention per line in the form `- **<convention name / one-line summary>** — <why it applies to this feature>.`. When nothing applies, write a single explicit sentence instead, e.g. `No project conventions apply to this feature.`. This working file is always required — write it even in the "none apply" case — and like the others it is git-tracked, read back on resume and when the plan documents are assembled; do **not** route it through `{{config.command}} plan file write`.
+
 Once the user has agreed on the chosen direction and the draft is ready, advance:
 
 {{config.command}} plan goto --data '{"step":"{{next_step}}"}'

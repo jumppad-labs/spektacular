@@ -64,15 +64,6 @@ func TestInit_SeedsConventionsDirectory(t *testing.T) {
 	info, err := os.Stat(conventionsDir)
 	require.NoError(t, err, "conventions directory should exist")
 	require.True(t, info.IsDir(), "conventions should be a directory")
-
-	starterPath := filepath.Join(conventionsDir, "conventions.md")
-	data, err := os.ReadFile(starterPath)
-	require.NoError(t, err, "starter conventions.md should exist")
-	require.NotEmpty(t, data, "starter conventions.md should not be empty")
-
-	flatPath := filepath.Join(dir, ".spektacular", "knowledge", "conventions.md")
-	_, err = os.Stat(flatPath)
-	require.True(t, os.IsNotExist(err), "old flat conventions.md should not exist")
 }
 
 func TestInit_CreatesKnowledgeREADMEs(t *testing.T) {
@@ -80,7 +71,7 @@ func TestInit_CreatesKnowledgeREADMEs(t *testing.T) {
 	err := Init(dir, false)
 	require.NoError(t, err)
 
-	for _, sub := range []string{"learnings", "architecture", "gotchas"} {
+	for _, sub := range []string{"learnings", "architecture", "gotchas", "conventions"} {
 		readmePath := filepath.Join(dir, ".spektacular", "knowledge", sub, "README.md")
 		data, err := os.ReadFile(readmePath)
 		require.NoError(t, err, "README.md should exist in %s", sub)

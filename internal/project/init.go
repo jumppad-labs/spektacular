@@ -83,19 +83,8 @@ func Init(projectPath string, force bool) error {
 		return fmt.Errorf("writing .gitignore: %w", err)
 	}
 
-	// Seed the starter convention as an individual one-rule-per-file entry
-	// under knowledge/conventions/. The flat knowledge/conventions.md file is
-	// no longer written: conventions live only under the conventions/ directory.
-	conventionsContent, err := templates.FS.ReadFile(".spektacular/conventions.md")
-	if err != nil {
-		return fmt.Errorf("reading embedded conventions.md: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(spektacularDir, "knowledge", "conventions", "conventions.md"), conventionsContent, 0644); err != nil {
-		return fmt.Errorf("writing conventions starter: %w", err)
-	}
-
 	// Write README files for knowledge subdirectories
-	for _, sub := range []string{"learnings", "architecture", "gotchas"} {
+	for _, sub := range []string{"learnings", "architecture", "gotchas", "conventions"} {
 		title := strings.Title(sub) //nolint:staticcheck // simple capitalisation
 		content := fmt.Sprintf("# %s\n\nThis directory contains %s documentation.\n", title, sub)
 		readmePath := filepath.Join(spektacularDir, "knowledge", sub, "README.md")

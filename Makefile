@@ -1,7 +1,7 @@
 BINARY := spektacular
-VERSION := 0.3.0
+VERSION := 0.7.0
 
-HARBOR_AUTH := ANTHROPIC_AUTH_TOKEN=$$(python3 -c "import json; print(json.load(open('$$HOME/.claude/.credentials.json'))['claudeAiOauth']['accessToken'])")
+HARBOR_AUTH := CLAUDE_CODE_OAUTH_TOKEN=$$(python3 -c "import json; print(json.load(open('$$HOME/.claude/.credentials.json'))['claudeAiOauth']['accessToken'])")
 HARBOR_MODEL := claude-sonnet-4-6
 
 .PHONY: build test lint clean install install-local cross harbor-test plan-harbor-test harbor-test-spec harbor-test-spec-claude harbor-test-spec-codex _harbor-test-spec

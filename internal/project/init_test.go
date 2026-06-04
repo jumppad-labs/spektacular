@@ -55,14 +55,15 @@ func TestInit_CreatesGitignore(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestInit_CreatesConventionsMd(t *testing.T) {
+func TestInit_SeedsConventionsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	err := Init(dir, false)
 	require.NoError(t, err)
 
-	conventionsPath := filepath.Join(dir, ".spektacular", "knowledge", "conventions.md")
-	_, err = os.Stat(conventionsPath)
-	require.NoError(t, err)
+	conventionsDir := filepath.Join(dir, ".spektacular", "knowledge", "conventions")
+	info, err := os.Stat(conventionsDir)
+	require.NoError(t, err, "conventions directory should exist")
+	require.True(t, info.IsDir(), "conventions should be a directory")
 }
 
 func TestInit_CreatesKnowledgeREADMEs(t *testing.T) {
@@ -70,7 +71,7 @@ func TestInit_CreatesKnowledgeREADMEs(t *testing.T) {
 	err := Init(dir, false)
 	require.NoError(t, err)
 
-	for _, sub := range []string{"learnings", "architecture", "gotchas"} {
+	for _, sub := range []string{"learnings", "architecture", "gotchas", "conventions"} {
 		readmePath := filepath.Join(dir, ".spektacular", "knowledge", sub, "README.md")
 		data, err := os.ReadFile(readmePath)
 		require.NoError(t, err, "README.md should exist in %s", sub)

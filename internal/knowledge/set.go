@@ -4,6 +4,7 @@
 package knowledge
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,15 @@ type Set struct {
 type Entry struct {
 	Scope string `json:"scope"`
 	Path  string `json:"path"`
+}
+
+// Convention is a single always-apply convention, tagged with the scope it
+// lives in and carrying its full body. Unlike Entry it includes Content,
+// because the convention reader returns every convention's text in one call.
+type Convention struct {
+	Scope   string `json:"scope"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 // SourceInfo describes one configured knowledge source.
@@ -120,6 +130,33 @@ func (s *Set) List() ([]Entry, error) {
 		}
 	}
 	return entries, nil
+}
+
+// Conventions reads every always-apply convention across every configured
+// scope, concatenated in configured order, and returns each one's full body
+// tagged with its scope and path. Conventions live under each scope's
+// "conventions/" directory. A scope that has no such directory contributes
+// nothing rather than erroring, so fresh or partially-populated scopes still
+// resolve cleanly.
+func (s *Set) Conventions() ([]Convention, error) {
+	var conventions []Convention
+	for _, src := range s.sources {
+		files, err := listFiles(src.store, "conventions")
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return nil, fmt.Errorf("listing conventions in knowledge source %q: %w", src.scope, err)
+		}
+		for _, f := range files {
+			content, err := src.store.Read(f)
+			if err != nil {
+				return nil, fmt.Errorf("reading convention %q in knowledge source %q: %w", f, src.scope, err)
+			}
+			conventions = append(conventions, Convention{Scope: src.scope, Path: f, Content: string(content)})
+		}
+	}
+	return conventions, nil
 }
 
 // Sources reports the configured scopes and their locations, in order.

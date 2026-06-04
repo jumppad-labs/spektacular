@@ -16,3 +16,10 @@ WORKDIR /app
 
 RUN mkdir -p /app/.spektacular/specs
 COPY user-auth.md /app/.spektacular/specs/user-auth.md
+
+# Seed a distinctive always-apply convention relevant to the JWT auth spec so
+# the plan workflow has a convention to surface into plan.md's ## Conventions
+# section. Named differently from init's starter (conventions.md) so the
+# idempotent `spektacular init` re-create does not clobber it.
+RUN mkdir -p /app/.spektacular/knowledge/conventions
+COPY auth-audit-logging.md /app/.spektacular/knowledge/conventions/auth-audit-logging.md

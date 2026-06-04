@@ -63,7 +63,7 @@ type rgEvent struct {
 // stream into hits. --fixed-strings and --ignore-case make rg's matching
 // literal and case-insensitive, matching the native fallback exactly.
 func (f *FileStore) searchRipgrep(rgPath, query string) ([]Hit, error) {
-	cmd := exec.Command(rgPath, "--json", "--no-heading", "--fixed-strings", "--ignore-case", query, f.root)
+	cmd := exec.Command(rgPath, "--json", "--no-heading", "--fixed-strings", "--ignore-case", "--glob=!**/conventions/**", query, f.root)
 	out, err := cmd.Output()
 	if err != nil {
 		// rg exits 1 when there are simply no matches — not an error.
@@ -114,6 +114,12 @@ func (f *FileStore) searchNative(query string) ([]Hit, error) {
 			return err
 		}
 		if d.IsDir() {
+			// Conventions are read in full via the dedicated conventions
+			// reader; exclude them from search so they are never surfaced
+			// twice. Mirrors the ripgrep --glob=!conventions/** exclusion.
+			if d.Name() == "conventions" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		fileHits, err := scanFile(path, needle)

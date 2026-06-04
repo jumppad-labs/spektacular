@@ -39,6 +39,7 @@ func Init(projectPath string, force bool) error {
 		filepath.Join(projectPath, cfg.Plan.Config.Directory),
 		filepath.Join(projectPath, cfg.Spec.Config.Directory),
 		filepath.Join(spektacularDir, "knowledge"),
+		filepath.Join(spektacularDir, "knowledge", "conventions"),
 		filepath.Join(spektacularDir, "knowledge", "learnings"),
 		filepath.Join(spektacularDir, "knowledge", "architecture"),
 		filepath.Join(spektacularDir, "knowledge", "gotchas"),
@@ -82,17 +83,8 @@ func Init(projectPath string, force bool) error {
 		return fmt.Errorf("writing .gitignore: %w", err)
 	}
 
-	// Write embedded conventions.md
-	conventionsContent, err := templates.FS.ReadFile(".spektacular/conventions.md")
-	if err != nil {
-		return fmt.Errorf("reading embedded conventions.md: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(spektacularDir, "knowledge", "conventions.md"), conventionsContent, 0644); err != nil {
-		return fmt.Errorf("writing conventions.md: %w", err)
-	}
-
 	// Write README files for knowledge subdirectories
-	for _, sub := range []string{"learnings", "architecture", "gotchas"} {
+	for _, sub := range []string{"learnings", "architecture", "gotchas", "conventions"} {
 		title := strings.Title(sub) //nolint:staticcheck // simple capitalisation
 		content := fmt.Sprintf("# %s\n\nThis directory contains %s documentation.\n", title, sub)
 		readmePath := filepath.Join(spektacularDir, "knowledge", sub, "README.md")

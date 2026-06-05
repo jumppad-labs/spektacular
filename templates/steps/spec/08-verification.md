@@ -24,7 +24,10 @@ Review the assembled spec and validate it for:
 
 ### Section hygiene check
 
-Implementation detail tends to drift upward from Technical Approach into Overview, Requirements, Constraints, and Acceptance Criteria. Run each section against its own test and flag any leaks to the user as a proposed rewrite — with the leaked detail moved to Technical Approach, not deleted.
+Run the hygiene review in **both directions**:
+
+1. **Implementation leaking up.** Implementation detail tends to drift upward from Technical Approach into Overview, Requirements, Constraints, and Acceptance Criteria. Run each section against its own test and flag any leaks to the user as a proposed rewrite — with the leaked detail moved to Technical Approach, not deleted.
+2. **Constraints buried down.** A genuine boundary can hide inside Technical Approach (or Requirements) while `## Constraints` is left empty or thinner than the spec implies. An empty Constraints section is not automatically correct — check whether it is *true*, not just *present*. See "Constraints completeness" below.
 
 **Overview** — no file paths, section names, step names, framework/library names, or code identifiers. A non-engineer stakeholder should be able to read it and understand the value.
 
@@ -36,13 +39,29 @@ Implementation detail tends to drift upward from Technical Approach into Overvie
 
 **Technical Approach** — this is where everything the other sections rejected should live. It's the one section where file paths, state names, library choices, and concrete mechanisms are welcome.
 
+### Constraints completeness
+
+When `## Constraints` is empty or sparse, do not take that at face value — re-read Technical Approach, Requirements, and Overview for boundaries the work must operate within but that were never captured as constraints. Common signals, with examples:
+
+- **Existing system to integrate with or replace** — e.g. Technical Approach says *"replace the current file-based storage (monsters.json, users.txt)"*. That implies a real boundary: the work must migrate from / stay compatible with the existing store and not lose existing data. Surface it as a constraint.
+- **Deployment / runtime boundaries** — e.g. *"no separate server process"*, "single self-contained binary", a fixed runtime or platform. If real, these are constraints.
+- **Compatibility guarantees** — anything phrased as "must not break" or "must stay compatible with".
+
+This is the one place where a *mechanism* and its *underlying requirement* split apart: a "must use X" technology choice (e.g. "use SQLite") stays in Technical Approach as before — but the requirement that drove it (e.g. "must run embedded with no separate server", "must replace the existing file storage without data loss") is a constraint and belongs in `## Constraints`. Surfacing the constraint does **not** mean moving the technology choice out of Technical Approach.
+
+Propose any boundary you find to the user as a constraint to add — do not invent constraints the spec does not support, and still allow a genuine "no constraints" outcome.
+
 For every leak you find, report it to the user in this shape:
 
 > *"In <section>, item N names <specific implementation detail>. I'd like to rephrase it as <behavior-level version> and move the implementation detail to Technical Approach. OK?"*
 
-Do not silently rewrite — the user may have intentionally locked in a design decision. Propose, then wait for confirmation.
+For every missing constraint you find, report it in this shape:
 
-Report any issues to the user and ask for clarification until you are confident the spec is correct, complete, and free of section-hygiene leaks.
+> *"Constraints is empty, but Technical Approach says the work replaces the existing monsters.json/users.txt storage. That reads like a constraint (must migrate existing data / stay compatible with the current store). Add it to Constraints? OK?"*
+
+Do not silently rewrite — the user may have intentionally locked in a design decision, or genuinely have no constraints. Propose, then wait for confirmation.
+
+Report any issues to the user and ask for clarification until you are confident the spec is correct, complete, and free of section-hygiene leaks — implementation leaking up, and real constraints left uncaptured.
 
 Once the user is happy, produce the final complete spec and commit it to the spec store.
 

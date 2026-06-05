@@ -20,7 +20,13 @@ Only the first kind belongs here. The second kind is a design decision and belon
 
 Constraints are usually phrased as "must not break X" or "must stay compatible with Y", not "must use Z". If the user gives you a "must use" item, ask whether removing it would make the feature impossible — if not, park it for Technical Approach.
 
-Capture their response. If blank, note that there are no constraints.
+Capture their response. Before accepting "no constraints", check the most common sources of real boundaries so an empty section is a deliberate choice and not an oversight — ask the user about each that the work might touch:
+
+• An **existing system** the work must integrate with or replace (e.g. an existing datastore, file format, or API whose data or shape must be preserved).
+• A **deployment or runtime** boundary (e.g. must run as a single self-contained binary, no separate server process, a fixed runtime or platform).
+• A **compatibility** guarantee (e.g. must not break a public response shape or an existing deployment contract).
+
+If, after checking these, the user confirms there are genuinely none, note that there are no constraints — a blank section is a valid outcome.
 
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Constraints** content (the body only — no `## ` heading line) to `.spektacular/work/{{spec_name}}/constraints.md`. This working file is git-tracked and is read back on resume and when the spec is assembled, so it must hold the final agreed content for this section. It is **not** a spec store document — write it directly with your file tools and do **not** route it through `{{config.command}} spec file write` (that command is only for the final assembled spec).
 

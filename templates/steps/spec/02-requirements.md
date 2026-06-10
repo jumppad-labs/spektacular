@@ -12,7 +12,7 @@ Each item should be independently verifiable. One behaviour per line.
 
 > *If this were implemented with a completely different mechanism, would the requirement still be true?*
 
-If the answer is no, the requirement is prescribing implementation — rephrase it at the behavior level and park the mechanism for Technical Approach.
+If the answer is no, the requirement is prescribing implementation — rephrase it at the behavior level and park the mechanism elsewhere: in **Constraints** if it is a hard rule the solution must honor (e.g. "must use X"), otherwise in **Technical Approach** as non-binding direction.
 
 Example: the user says *"candidates are appended to `research.md` under a `## Knowledge Candidates` section."* That names a specific file and section — a different implementation (a sidecar file, an in-memory queue) would falsify the requirement. Capture it as *"the workflow surfaces candidate knowledge for review before anything becomes persistent"* and tell the user the `research.md` detail will land in Technical Approach.
 

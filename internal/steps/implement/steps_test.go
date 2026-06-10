@@ -53,6 +53,7 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 		"update_plan",
 		"update_changelog",
 		"update_repo_changelog",
+		"test_plan",
 		"finished",
 	}
 	got := Steps()
@@ -105,6 +106,8 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 
 	require.NoError(t, wf.Goto("update_repo_changelog"))
 	require.Equal(t, "update_repo_changelog", wf.Current())
+	require.NoError(t, wf.Goto("test_plan"))
+	require.Equal(t, "test_plan", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
 }
@@ -134,9 +137,11 @@ func TestFSMLoopFromUpdateChangelogBackToAnalyze(t *testing.T) {
 		require.Equal(t, want, wf.Current())
 	}
 
-	// Second exit: update_changelog → update_repo_changelog → finished.
+	// Second exit: update_changelog → update_repo_changelog → test_plan → finished.
 	require.NoError(t, wf.Goto("update_repo_changelog"))
 	require.Equal(t, "update_repo_changelog", wf.Current())
+	require.NoError(t, wf.Goto("test_plan"))
+	require.Equal(t, "test_plan", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
 }
@@ -257,7 +262,7 @@ func TestUpdateRepoChangelogTemplateContainsDirectives(t *testing.T) {
 	// Mustache substitutes {{plan_name}} with the instance name "test" —
 	// assert the resolved value (the section header "## test") is present.
 	require.Contains(t, out, "## test")
-	require.Contains(t, out, `"step":"finished"`)
+	require.Contains(t, out, `"step":"test_plan"`)
 	require.Contains(t, strings.ToLower(out), "prepend")
 }
 
@@ -271,6 +276,7 @@ func TestStopOnMismatchDirectivePresentInEveryNonTerminalTemplate(t *testing.T) 
 		"update_plan":           updatePlan(),
 		"update_changelog":      updateChangelog(),
 		"update_repo_changelog": updateRepoChangelog(),
+		"test_plan":             testPlan(),
 	}
 	for name, cb := range nonTerminal {
 		out := renderStep(t, cb)

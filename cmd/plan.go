@@ -113,7 +113,7 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 	if dryRun {
 		statePath += ".dryrun-tmp"
 	} else {
-		handled, err := resumeOrClear(cmd, statePath, cfg.Command, force)
+		handled, err := resumeOrClear(cmd, statePath, cfg.Command, "plan", force)
 		if err != nil {
 			return err
 		}
@@ -181,7 +181,15 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	// Refuse to operate on an in-progress workflow of a different kind (e.g. a
+	// spec); resuming it from here would apply plan steps to a spec's state.
+	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "plan"); err != nil {
+		return err
+	} else if handled {
+		return nil
+	}
+
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
@@ -223,6 +231,14 @@ func runPlanStatus(cmd *cobra.Command, _ []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+
+	// Refuse to report on an in-progress workflow of a different kind — its
+	// steps and counts would be meaningless under the plan step list.
+	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "plan"); err != nil {
+		return err
+	} else if handled {
+		return nil
 	}
 
 	steps := plan.Steps()

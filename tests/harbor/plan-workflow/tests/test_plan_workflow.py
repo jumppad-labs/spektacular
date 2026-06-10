@@ -72,6 +72,7 @@ EXPECTED_STEP_ORDER = [
     "phases",
     "open_questions",
     "out_of_scope",
+    "assemble",
     "verification",
     "write_plan",
     "write_context",
@@ -92,7 +93,7 @@ EXPECTED_SKILLS_PER_STEP = {
         }
     ),
     "phases": frozenset({"spawn-implementation-agents"}),
-    "verification": frozenset(
+    "assemble": frozenset(
         {
             "gather-project-metadata",
             "determine-feature-slug",

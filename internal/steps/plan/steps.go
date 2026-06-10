@@ -40,7 +40,8 @@ func Steps() []workflow.StepConfig {
 		{Name: "phases", Src: []string{"milestones"}, Dst: "phases", Callback: phases()},
 		{Name: "open_questions", Src: []string{"phases"}, Dst: "open_questions", Callback: openQuestions()},
 		{Name: "out_of_scope", Src: []string{"open_questions"}, Dst: "out_of_scope", Callback: outOfScope()},
-		{Name: "verification", Src: []string{"out_of_scope"}, Dst: "verification", Callback: verification()},
+		{Name: "assemble", Src: []string{"out_of_scope"}, Dst: "assemble", Callback: assemble()},
+		{Name: "verification", Src: []string{"assemble"}, Dst: "verification", Callback: verification()},
 		{Name: "write_plan", Src: []string{"verification"}, Dst: "write_plan", Callback: writePlan()},
 		{Name: "write_context", Src: []string{"write_plan"}, Dst: "write_context", Callback: writeContext()},
 		{Name: "write_research", Src: []string{"write_context"}, Dst: "write_research", Callback: writeResearch()},
@@ -149,11 +150,15 @@ func openQuestions() workflow.StepCallback {
 
 func outOfScope() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("out_of_scope", "verification", "steps/plan/12-out_of_scope.md", data, out, st, cfg, nil)
+		return "", writeStep("out_of_scope", "assemble", "steps/plan/12-out_of_scope.md", data, out, st, cfg, nil)
 	}
 }
 
-func verification() workflow.StepCallback {
+// assemble renders the three document scaffolds for the agent to fill from the
+// per-section working files and stage to scratch. It writes nothing to the plan
+// store — the verification step checks the staged files and the write steps
+// commit them.
+func assemble() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
 		planName := stepkit.GetString(data, "name")
 		planScaffold, err := stepkit.RenderTemplate("scaffold/plan.md", map[string]any{"name": planName})
@@ -168,11 +173,19 @@ func verification() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		return "", writeStep("verification", "write_plan", "steps/plan/13-verification.md", data, out, st, cfg, map[string]any{
+		return "", writeStep("assemble", "verification", "steps/plan/13-assemble.md", data, out, st, cfg, map[string]any{
 			"plan_template":     planScaffold,
 			"context_template":  contextScaffold,
 			"research_template": researchScaffold,
 		})
+	}
+}
+
+// verification checks the staged documents for correctness only — it writes
+// nothing to the plan store.
+func verification() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("verification", "write_plan", "steps/plan/14-verification.md", data, out, st, cfg, nil)
 	}
 }
 
@@ -235,7 +248,7 @@ func writePlan() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		return "", writeStep("write_plan", "write_context", "steps/plan/14-write_plan.md", data, out, st, cfg, extra)
+		return "", writeStep("write_plan", "write_context", "steps/plan/15-write_plan.md", data, out, st, cfg, extra)
 	}
 }
 
@@ -246,7 +259,7 @@ func writeContext() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		return "", writeStep("write_context", "write_research", "steps/plan/15-write_context.md", data, out, st, cfg, extra)
+		return "", writeStep("write_context", "write_research", "steps/plan/16-write_context.md", data, out, st, cfg, extra)
 	}
 }
 
@@ -257,7 +270,7 @@ func writeResearch() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		return "", writeStep("write_research", "finished", "steps/plan/16-write_research.md", data, out, st, cfg, extra)
+		return "", writeStep("write_research", "finished", "steps/plan/17-write_research.md", data, out, st, cfg, extra)
 	}
 }
 
@@ -281,6 +294,6 @@ func finished() workflow.StepCallback {
 				}
 			}
 		}
-		return "", writeStep("finished", "", "steps/plan/17-finished.md", data, out, st, cfg, extra)
+		return "", writeStep("finished", "", "steps/plan/18-finished.md", data, out, st, cfg, extra)
 	}
 }

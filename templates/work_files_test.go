@@ -76,14 +76,14 @@ func TestImplementStepsHaveNoWorkFiles(t *testing.T) {
 }
 
 // TestAssemblyStepsCleanupWorkDir verifies the working directory is removed only
-// at the final assembly step of each workflow (spec 08, plan 16) and nowhere
+// at the final assembly step of each workflow (spec 08, plan 17) and nowhere
 // else — gathering steps must never clean up, since the work files are the
 // durable source until the document is committed.
 func TestAssemblyStepsCleanupWorkDir(t *testing.T) {
 	require.Contains(t, mustReadTemplate(t, "steps/spec/08-verification.md"),
 		"rm -rf .spektacular/work/{{spec_name}}",
 		"spec assembly step must remove the working dir after the spec is committed")
-	require.Contains(t, mustReadTemplate(t, "steps/plan/16-write_research.md"),
+	require.Contains(t, mustReadTemplate(t, "steps/plan/17-write_research.md"),
 		"rm -rf .spektacular/work/{{plan_name}}",
 		"plan final-gate step must remove the working dir after all three docs are committed")
 
@@ -105,7 +105,7 @@ func TestAssemblyStepsCleanupWorkDir(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{
 		"steps/spec/08-verification.md",
-		"steps/plan/16-write_research.md",
+		"steps/plan/17-write_research.md",
 	}, cleaners, "only the assembly steps may clean up the working dir")
 }
 
@@ -121,12 +121,12 @@ func TestAssemblyStepsMapSectionFiles(t *testing.T) {
 		require.Containsf(t, spec08, f, "spec assembly step must read section file %s", f)
 	}
 
-	plan13 := mustReadTemplate(t, "steps/plan/13-verification.md")
+	planAssemble := mustReadTemplate(t, "steps/plan/13-assemble.md")
 	for _, f := range []string{
 		"architecture.md", "components.md", "data_structures.md", "implementation_detail.md",
 		"dependencies.md", "testing_approach.md", "milestones.md", "open_questions.md",
 		"out_of_scope.md", "research.md", "phases_plan.md", "phases_context.md",
 	} {
-		require.Containsf(t, plan13, f, "plan assembly step must read section file %s", f)
+		require.Containsf(t, planAssemble, f, "plan assembly step must read section file %s", f)
 	}
 }

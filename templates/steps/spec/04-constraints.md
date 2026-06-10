@@ -7,18 +7,21 @@ Examples:
 • Cannot introduce breaking changes to the public API
 • Must support the current minimum supported runtime versions
 
-**Constraints are boundaries, not design decisions.** Apply this test to every constraint before you write it down:
+**Constraints are the hard rules and boundaries the solution MUST honor.** If the user states something as a binding rule — a "must", "must not", or "cannot" about how or within what bounds the solution is built — it is a constraint. This explicitly includes a **mandated technology**: "must use X" is a constraint, not a design decision to be moved elsewhere.
 
-> *If this constraint were removed, would the feature become impossible, or just implemented differently?*
+Apply this test:
 
-Only the first kind belongs here. The second kind is a design decision and belongs in Technical Approach.
+> *Is this a hard rule the solution is required to honor, or just a preferred direction the planner could adapt or replace?*
 
-• Real constraint: *"must not break the shape of the public JSON response"* — removing it lets the feature break downstream consumers.
-• Real constraint: *"must not require new config keys"* — removing it changes the deployment contract.
-• Not a constraint: *"must use the existing FSM engine"* — removing it just lets you pick a different mechanism. That's a design choice; move it to Technical Approach.
-• Not a constraint: *"must use markdown templates with mustache rendering"* — same reason.
+Hard rules belong here. Non-binding direction — "use X if convenient", "prefer Y", "consider Z" — is **not** a constraint; it belongs in Technical Approach, which is guidance the planner may revise. Phrasing is the strongest signal: "must" / "must not" / "cannot" → constraint; "prefer" / "consider" / "use … if" → Technical Approach.
 
-Constraints are usually phrased as "must not break X" or "must stay compatible with Y", not "must use Z". If the user gives you a "must use" item, ask whether removing it would make the feature impossible — if not, park it for Technical Approach.
+• Constraint: *"must use SQLite"* — a binding technology mandate (e.g. the whole point of a migration). It stays a constraint; do **not** move it to Technical Approach.
+• Constraint: *"must integrate with the existing user store"* — a required integration boundary.
+• Constraint: *"must not break the shape of the public JSON response"* — removing it lets the feature break downstream consumers.
+• Constraint: *"must run embedded, with no separate database server"* — a deployment boundary.
+• Not a constraint: *"prefer a table-per-entity schema"* — a non-binding design preference; that's Technical Approach.
+
+(Hard rules about what the feature must *do* — its behaviour — are Requirements, captured in the previous step. Constraints are the hard rules about *how / within what bounds* it is built.)
 
 Capture their response. Before accepting "no constraints", check the most common sources of real boundaries so an empty section is a deliberate choice and not an oversight — ask the user about each that the work might touch:
 

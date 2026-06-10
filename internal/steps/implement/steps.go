@@ -24,7 +24,8 @@ func Steps() []workflow.StepConfig {
 		{Name: "update_plan", Src: []string{"verify"}, Dst: "update_plan", Callback: updatePlan()},
 		{Name: "update_changelog", Src: []string{"update_plan"}, Dst: "update_changelog", Callback: updateChangelog()},
 		{Name: "update_repo_changelog", Src: []string{"update_changelog"}, Dst: "update_repo_changelog", Callback: updateRepoChangelog()},
-		{Name: "finished", Src: []string{"update_repo_changelog"}, Dst: "finished", Callback: finished()},
+		{Name: "test_plan", Src: []string{"update_repo_changelog"}, Dst: "test_plan", Callback: testPlan()},
+		{Name: "finished", Src: []string{"test_plan"}, Dst: "finished", Callback: finished()},
 	}
 }
 
@@ -112,12 +113,23 @@ func updateChangelog() workflow.StepCallback {
 
 func updateRepoChangelog() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("update_repo_changelog", "finished", "steps/implement/08-update_repo_changelog.md", data, out, st, cfg, nil)
+		return "", writeStep("update_repo_changelog", "test_plan", "steps/implement/08-update_repo_changelog.md", data, out, st, cfg, nil)
+	}
+}
+
+// testPlan runs once at the end, after all phases are implemented and the repo
+// changelog is written. By this point the implementation is complete, so the
+// manual test plan it produces can reference real endpoints, commands, and
+// thresholds. It writes `.spektacular/plans/<name>/test-plan.md` for success
+// metrics that cannot be covered by an automated behavioural test.
+func testPlan() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("test_plan", "finished", "steps/implement/09-test_plan.md", data, out, st, cfg, nil)
 	}
 }
 
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("finished", "", "steps/implement/09-finished.md", data, out, st, cfg, nil)
+		return "", writeStep("finished", "", "steps/implement/10-finished.md", data, out, st, cfg, nil)
 	}
 }

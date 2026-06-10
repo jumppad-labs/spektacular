@@ -36,9 +36,22 @@ While you gather each section, write that section's agreed content directly to i
 
 Spec name: $ARGUMENTS
 
-If no spec name was provided, ask the user for one before proceeding.
+**First, check whether a workflow is already in progress — before asking the user for a spec name.** Run the new command with no `--data`:
 
-Start the spec workflow by running:
+```
+{{command}} spec new
+```
+
+This reads the project's single workflow state and changes nothing on disk. One of two things comes back:
+
+- **A resume report** — a JSON object with `"resumable": true` plus the in-progress workflow's `kind`, `name`, and `current_step`, and an `instruction` field. A workflow was interrupted and is still in progress. Do **not** prompt for a spec name — the in-progress workflow already has one. Handle it under "Resuming an in-progress workflow" below. (It may be a *different* kind — a plan or implement run left open.)
+- **An error that a name is required** — no workflow is in progress, so there is nothing to resume. Proceed to "Starting a new spec" below.
+
+## Starting a new spec
+
+Only once you know there is no workflow to resume:
+
+If no spec name was provided in $ARGUMENTS, ask the user for one now. Then run:
 
 ```
 {{command}} spec new --data '{"name": "<spec_name>"}'
@@ -52,20 +65,22 @@ External systems may also supply an identifier with:
 
 The CLI may normalize and prefix the requested name. Always use the returned `spec_name` and `spec_path` as the source of truth for follow-up workflows.
 
-**If a workflow was interrupted and is still in progress**, this command does not start a fresh one. Instead it returns a *resume report* — a JSON object with `"resumable": true` plus the in-progress workflow's `kind`, `name`, and `current_step`, and an `instruction` field — and changes nothing on disk. When you get a resume report:
+The command creates the spec file and state file automatically and returns the first `instruction`. From that point on, follow the loop above: do what the instruction says, then call `{{command}} spec goto --data '{"step":"<next_step>"}'` to get the next one. Do not invent step names — every instruction tells you the exact `goto` command to run next.
 
-1. Ask the user whether to **resume** the in-progress workflow or **start a new one**. (The report's `instruction` field restates both options.)
-2. **To resume**, first read back the previous session's work with your own file tools: for a spec or plan workflow, the per-section working files under `.spektacular/work/<name>/` (sections already completed) **and** `.spektacular/context.md` (learnings + the user's answers); for an implement workflow, just `.spektacular/context.md`. Then run the resume command using the report's `kind` and `current_step`:
+## Resuming an in-progress workflow
+
+When the in-progress check above returns a resume report:
+
+**First check the report's `kind`.** If it is **not** `spec`, a *different* workflow (a plan or implement run) is in progress — you cannot resume it from the spec skill, and the CLI will refuse to. Do **not** run a `spec goto`. Instead follow the report's `instruction`: tell the user a `<kind>` workflow is in progress and let them choose — continue it with that workflow's skill (`{{command}} <kind> goto`), or discard it and start the spec with `{{command}} spec new --force`. Only proceed with the steps below when the report's `kind` is `spec`.
+
+1. Ask the user whether to **resume** the in-progress spec or **start a new one**. (The report's `instruction` field restates both options.)
+2. **To resume**, first read back the previous session's work with your own file tools: the per-section working files under `.spektacular/work/<name>/` (sections already completed) **and** `.spektacular/context.md` (learnings + the user's answers). Then run the resume command using the report's `current_step`:
 
    ```
-   {{command}} <kind> goto --data '{"step":"<current_step>"}'
+   {{command}} spec goto --data '{"step":"<current_step>"}'
    ```
-
-   The in-progress workflow may be a *different* kind (a plan or implement run left open); use the `kind` from the report, not necessarily `spec`.
-3. **To start fresh** (discarding the in-progress workflow — it remains recoverable via git), re-run with `--force`:
+3. **To start fresh instead** (discarding the in-progress workflow — it remains recoverable via git), re-run with `--force` and a name:
 
    ```
    {{command}} spec new --force --data '{"name": "<spec_name>"}'
    ```
-
-Otherwise the command creates the spec file and state file automatically and returns the first `instruction`. From that point on, follow the loop above: do what the instruction says, then call `{{command}} spec goto --data '{"step":"<next_step>"}'` to get the next one. Do not invent step names — every instruction tells you the exact `goto` command to run next.

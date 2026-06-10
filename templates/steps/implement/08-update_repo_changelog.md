@@ -1,6 +1,6 @@
 ## Step {{step}}: {{title}}
 
-This is the final step before `finished`. Append a short, user-facing summary of the overall change to the repo-level `CHANGELOG.md` so downstream users and reviewers can see what shipped in a release note without reading the plan.
+This is the user-facing release-note step, just before the test-plan step. Append a short, user-facing summary of the overall change to the repo-level `CHANGELOG.md` so downstream users and reviewers can see what shipped in a release note without reading the plan.
 
 ### What to write
 
@@ -30,7 +30,7 @@ If `{{plan_name}}` is empty or looks like a placeholder, STOP and ask the user f
 Once `CHANGELOG.md` has been updated:
 
 ```
-{{config.command}} implement goto --data '{"step":"finished"}'
+{{config.command}} implement goto --data '{"step":"{{next_step}}"}'
 ```
 
 ---

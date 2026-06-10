@@ -7,20 +7,29 @@ Examples:
 • Cannot introduce breaking changes to the public API
 • Must support the current minimum supported runtime versions
 
-**Constraints are boundaries, not design decisions.** Apply this test to every constraint before you write it down:
+**Constraints are the hard rules and boundaries the solution MUST honor.** If the user states something as a binding rule — a "must", "must not", or "cannot" about how or within what bounds the solution is built — it is a constraint. This explicitly includes a **mandated technology**: "must use X" is a constraint, not a design decision to be moved elsewhere.
 
-> *If this constraint were removed, would the feature become impossible, or just implemented differently?*
+Apply this test:
 
-Only the first kind belongs here. The second kind is a design decision and belongs in Technical Approach.
+> *Is this a hard rule the solution is required to honor, or just a preferred direction the planner could adapt or replace?*
 
-• Real constraint: *"must not break the shape of the public JSON response"* — removing it lets the feature break downstream consumers.
-• Real constraint: *"must not require new config keys"* — removing it changes the deployment contract.
-• Not a constraint: *"must use the existing FSM engine"* — removing it just lets you pick a different mechanism. That's a design choice; move it to Technical Approach.
-• Not a constraint: *"must use markdown templates with mustache rendering"* — same reason.
+Hard rules belong here. Non-binding direction — "use X if convenient", "prefer Y", "consider Z" — is **not** a constraint; it belongs in Technical Approach, which is guidance the planner may revise. Phrasing is the strongest signal: "must" / "must not" / "cannot" → constraint; "prefer" / "consider" / "use … if" → Technical Approach.
 
-Constraints are usually phrased as "must not break X" or "must stay compatible with Y", not "must use Z". If the user gives you a "must use" item, ask whether removing it would make the feature impossible — if not, park it for Technical Approach.
+• Constraint: *"must use SQLite"* — a binding technology mandate (e.g. the whole point of a migration). It stays a constraint; do **not** move it to Technical Approach.
+• Constraint: *"must integrate with the existing user store"* — a required integration boundary.
+• Constraint: *"must not break the shape of the public JSON response"* — removing it lets the feature break downstream consumers.
+• Constraint: *"must run embedded, with no separate database server"* — a deployment boundary.
+• Not a constraint: *"prefer a table-per-entity schema"* — a non-binding design preference; that's Technical Approach.
 
-Capture their response. If blank, note that there are no constraints.
+(Hard rules about what the feature must *do* — its behaviour — are Requirements, captured in the previous step. Constraints are the hard rules about *how / within what bounds* it is built.)
+
+Capture their response. Before accepting "no constraints", check the most common sources of real boundaries so an empty section is a deliberate choice and not an oversight — ask the user about each that the work might touch:
+
+• An **existing system** the work must integrate with or replace (e.g. an existing datastore, file format, or API whose data or shape must be preserved).
+• A **deployment or runtime** boundary (e.g. must run as a single self-contained binary, no separate server process, a fixed runtime or platform).
+• A **compatibility** guarantee (e.g. must not break a public response shape or an existing deployment contract).
+
+If, after checking these, the user confirms there are genuinely none, note that there are no constraints — a blank section is a valid outcome.
 
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Constraints** content (the body only — no `## ` heading line) to `.spektacular/work/{{spec_name}}/constraints.md`. This working file is git-tracked and is read back on resume and when the spec is assembled, so it must hold the final agreed content for this section. It is **not** a spec store document — write it directly with your file tools and do **not** route it through `{{config.command}} spec file write` (that command is only for the final assembled spec).
 

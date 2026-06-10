@@ -162,10 +162,10 @@ func TestImplementStatus_ReportsUncheckedPhases(t *testing.T) {
 	// Fixture has 2 unchecked phases (1.1, 1.2) and 1 checked (1.3).
 	require.EqualValues(t, 2, status["unchecked_phases"])
 	require.Equal(t, "fixture", status["plan_name"])
-	require.EqualValues(t, 10, status["total_steps"])
+	require.EqualValues(t, 11, status["total_steps"])
 }
 
-func TestImplementSteps_ListsAllTenSteps(t *testing.T) {
+func TestImplementSteps_ListsAllSteps(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular"), 0o755))
@@ -177,7 +177,7 @@ func TestImplementSteps_ListsAllTenSteps(t *testing.T) {
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	steps := result["steps"].([]any)
-	require.Len(t, steps, 10)
+	require.Len(t, steps, 11)
 	expected := []string{
 		"new",
 		"read_plan",
@@ -188,6 +188,7 @@ func TestImplementSteps_ListsAllTenSteps(t *testing.T) {
 		"update_plan",
 		"update_changelog",
 		"update_repo_changelog",
+		"test_plan",
 		"finished",
 	}
 	for i, want := range expected {

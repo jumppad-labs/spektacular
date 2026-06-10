@@ -164,17 +164,6 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	force, _ := cmd.Flags().GetBool("force")
 
-	if dataStr == "" {
-		return fmt.Errorf("--data is required (e.g. --data '{\"name\":\"my-feature\"}')")
-	}
-	var input struct {
-		Name string `json:"name"`
-		ID   string `json:"id"`
-	}
-	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
-		return fmt.Errorf("parsing --data: %w", err)
-	}
-
 	dataDir, err := dataDir()
 	if err != nil {
 		return err
@@ -186,6 +175,35 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+
+	// Check for an in-progress workflow BEFORE requiring a name. The resume
+	// check reads the single state.json and takes the in-progress name from it,
+	// so it needs no name argument — running it first lets the driving agent
+	// offer resume without first prompting the user for a spec name.
+	statePath := stateFilePath(dataDir)
+	if dryRun {
+		statePath += ".dryrun-tmp"
+	} else {
+		handled, err := resumeOrClear(cmd, statePath, cfg.Command, "spec", force)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
+	}
+
+	// No workflow to resume — starting fresh requires a name.
+	if dataStr == "" {
+		return fmt.Errorf("--data is required to start a new spec (e.g. --data '{\"name\":\"my-feature\"}')")
+	}
+	var input struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+		return fmt.Errorf("parsing --data: %w", err)
 	}
 
 	st := store.NewFileStore(root, "project")
@@ -204,19 +222,6 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return err
-	}
-
-	statePath := stateFilePath(dataDir)
-	if dryRun {
-		statePath += ".dryrun-tmp"
-	} else {
-		handled, err := resumeOrClear(cmd, statePath, cfg.Command, force)
-		if err != nil {
-			return err
-		}
-		if handled {
-			return nil
-		}
 	}
 
 	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
@@ -279,7 +284,15 @@ func runSpecGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	// Refuse to operate on an in-progress workflow of a different kind (e.g. a
+	// plan); resuming it from here would apply spec steps to a plan's state.
+	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "spec"); err != nil {
+		return err
+	} else if handled {
+		return nil
+	}
+
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
 	steps := spec.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
@@ -317,6 +330,14 @@ func runSpecStatus(cmd *cobra.Command, _ []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+
+	// Refuse to report on an in-progress workflow of a different kind — its
+	// steps and counts would be meaningless under the spec step list.
+	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "spec"); err != nil {
+		return err
+	} else if handled {
+		return nil
 	}
 
 	steps := spec.Steps()

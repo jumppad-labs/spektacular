@@ -1,5 +1,7 @@
 ## Step {{step}}: {{title}}
 
+**You are writing a spec, not a plan.** A spec captures *what* is being built and the direction the user has *already decided* — requirements, acceptance criteria, constraints, and any high-level technical direction. It does **not** design the *how*, and it does **not** investigate the codebase: do not read source files, run code searches, or ground decisions in specific files, types, or functions. That grounding is the plan workflow's `discovery` step. Stay at spec altitude in every step that follows.
+
 Ask the user to describe this feature in 2-3 sentences:
 • What is being built?
 • What problem does it solve?

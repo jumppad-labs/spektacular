@@ -28,7 +28,7 @@ Path arguments are plan-directory-relative document paths (e.g. `my-feature/plan
 
 # Working files vs. the store documents
 
-While you gather each section, write that section's agreed content directly to its own git-tracked working file under `.spektacular/work/<plan_name>/<section>.md` using your own `Write` tool (the phases step writes two: `phases_plan.md` and `phases_context.md`). These working files are **not** store documents — writing them directly with `Write` is correct and expected, and is the one deliberate exception to the "never use `Write`/`Edit`" rule above. That rule protects only the **final assembled** `plan.md`, `context.md`, and `research.md`, which are written solely through `{{command}} plan file write`. The per-section working files are scratch-but-durable: the verification and write steps read them back to assemble the three documents, and then the working directory is removed once all three store writes succeed.
+While you gather each section, write that section's agreed content directly to its own git-tracked working file under `.spektacular/work/<plan_name>/<section>.md` using your own `Write` tool (the phases step writes two: `phases_plan.md` and `phases_context.md`). These working files are **not** store documents — writing them directly with `Write` is correct and expected, and is the one deliberate exception to the "never use `Write`/`Edit`" rule above. That rule protects only the **final assembled** `plan.md`, `context.md`, and `research.md`, which are written solely through `{{command}} plan file write`. The per-section working files are scratch-but-durable: the assemble step reads them back to build the three documents (staged to `.spektacular/tmp/`), the verification step checks the staged documents, the write steps commit them, and then the working directory is removed once all three store writes succeed.
 
 The working sidecar `.spektacular/context.md` (at the repo's `.spektacular/` root — not the plan's own `context.md` document) has a narrower role: it holds only your cross-cutting learnings and the answers the user gave to your questions — never a copy of section content (that lives in the per-section working files). On resume, read back **both** the section working files in `.spektacular/work/<plan_name>/` and `.spektacular/context.md`, so you continue from the interrupted step without re-asking for sections already completed.
 
@@ -46,14 +46,14 @@ Start the plan workflow by running:
 
 **If a workflow was interrupted and is still in progress**, this command does not start a fresh one. Instead it returns a *resume report* — a JSON object with `"resumable": true` plus the in-progress workflow's `kind`, `name`, and `current_step`, and an `instruction` field — and changes nothing on disk. When you get a resume report:
 
-1. Ask the user whether to **resume** the in-progress workflow or **start a new one**. (The report's `instruction` field restates both options.)
-2. **To resume**, first read back the previous session's work with your own file tools: for a spec or plan workflow, the per-section working files under `.spektacular/work/<name>/` (sections already completed) **and** `.spektacular/context.md` (learnings + the user's answers); for an implement workflow, just `.spektacular/context.md`. Then run the resume command using the report's `kind` and `current_step`:
+**First check the report's `kind`.** If it is **not** `plan`, a *different* workflow (a spec or implement run) is in progress — you cannot resume it from the plan skill, and the CLI will refuse to. Do **not** run a `plan goto`. Instead follow the report's `instruction`: tell the user a `<kind>` workflow is in progress and let them choose — continue it with that workflow's skill (`{{command}} <kind> goto`), or discard it and start the plan with `{{command}} plan new --force`. Only proceed with the steps below when the report's `kind` is `plan`.
+
+1. Ask the user whether to **resume** the in-progress plan or **start a new one**. (The report's `instruction` field restates both options.)
+2. **To resume**, first read back the previous session's work with your own file tools: the per-section working files under `.spektacular/work/<name>/` (sections already completed) **and** `.spektacular/context.md` (learnings + the user's answers). Then run the resume command using the report's `current_step`:
 
    ```
-   {{command}} <kind> goto --data '{"step":"<current_step>"}'
+   {{command}} plan goto --data '{"step":"<current_step>"}'
    ```
-
-   The in-progress workflow may be a *different* kind (a spec or implement run left open); use the `kind` from the report, not necessarily `plan`.
 3. **To start fresh** (discarding the in-progress workflow — it remains recoverable via git), re-run with `--force`:
 
    ```

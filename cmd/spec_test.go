@@ -299,6 +299,44 @@ func TestSpecNew_InProgressReturnsResumeReportAndPreservesState(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(dataDir, "specs"))
 }
 
+// TestSpecNew_InProgressNoDataReturnsResumeReport asserts that the in-progress
+// check runs before the name is required: `spec new` with no --data still
+// surfaces the resume report (rather than erroring on the missing name), so the
+// driving agent can offer resume without first prompting for a spec name.
+func TestSpecNew_InProgressNoDataReturnsResumeReport(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dataDir := filepath.Join(dir, ".spektacular")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		Kind:           "spec",
+		CurrentStep:    "overview",
+		CompletedSteps: []string{"new"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "000024_resume"},
+	})
+
+	before, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+
+	resetSpecCommandFlags(t)
+	stdout, _ := setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"spec", "new"})
+	require.NoError(t, rootCmd.Execute())
+
+	var r ResumeReport
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
+	require.True(t, r.Resumable)
+	require.Equal(t, "spec", r.Kind)
+	require.Equal(t, "000024_resume", r.Name)
+	require.Equal(t, "overview", r.CurrentStep)
+
+	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
+
 func TestSpecNew_ForceStartsFreshOverInProgress(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

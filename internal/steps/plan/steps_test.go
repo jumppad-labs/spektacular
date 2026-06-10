@@ -104,6 +104,7 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 		"phases",
 		"open_questions",
 		"out_of_scope",
+		"assemble",
 		"verification",
 		"write_plan",
 		"write_context",
@@ -141,6 +142,7 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 		"phases",
 		"open_questions",
 		"out_of_scope",
+		"assemble",
 		"verification",
 		"write_plan",
 		"write_context",
@@ -163,26 +165,29 @@ func TestPlanFilePaths_UseConfiguredDirectory(t *testing.T) {
 	require.Equal(t, "my-plans/x/research.md", ResearchFilePath("my-plans", "x"))
 }
 
-// TestWriteStep_WarnsWhenDocumentNotCommitted asserts a write step's callback
-// reads the document back through the store and flags it when the agent has
-// not committed it via `plan file write` (it is missing or still the scaffold).
-func TestWriteStep_WarnsWhenDocumentNotCommitted(t *testing.T) {
+// TestWriteStep_CommitsOwnDocument asserts a write step's callback reads its own
+// document back through the store: when the document is missing it instructs the
+// agent to commit it via `plan file write`; once committed it reports the
+// document is already in the store and drops the commit instruction.
+func TestWriteStep_CommitsOwnDocument(t *testing.T) {
 	tmp := t.TempDir()
 	st := store.NewFileStore(tmp, "project")
 	writer := &captureWriter{}
 	data := &testData{values: map[string]any{"name": "test"}}
 	cfg := workflow.Config{Command: "spektacular", PlanDir: "my-plans", SpecDir: "specs"}
 
-	// plan.md absent from the store — the step must warn the agent.
+	// plan.md absent from the store — the step must instruct the commit.
 	_, err := writePlan()(data, writer, st, cfg)
 	require.NoError(t, err)
-	require.Contains(t, writer.result.Instruction, "still holds the empty scaffold",
-		"write_plan must warn when plan.md was never committed")
+	require.Contains(t, writer.result.Instruction, "--from .spektacular/tmp/plan_template.md",
+		"write_plan must instruct committing plan.md from its scratch file when it is not yet in the store")
 
-	// A committed, filled plan.md — no warning.
+	// A committed, filled plan.md — no commit command, reports done.
 	require.NoError(t, st.Write(PlanFilePath("my-plans", "test"), []byte("# real filled plan")))
 	_, err = writePlan()(data, writer, st, cfg)
 	require.NoError(t, err)
-	require.NotContains(t, writer.result.Instruction, "still holds the empty scaffold",
-		"write_plan must not warn once plan.md is committed")
+	require.Contains(t, writer.result.Instruction, "already been committed",
+		"write_plan must report plan.md is already committed once it is in the store")
+	require.NotContains(t, writer.result.Instruction, "--from .spektacular/tmp/plan_template.md",
+		"write_plan must not re-instruct the commit once plan.md is in the store")
 }

@@ -19,7 +19,7 @@ var knowledgeCmd = &cobra.Command{
 
 var knowledgeSearchCmd = &cobra.Command{
 	Use:   "search <query>",
-	Short: "Search every configured knowledge source for a keyword",
+	Short: "Search every configured knowledge source, returning ranked, one-per-document results",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runKnowledgeSearch,
 }
@@ -55,8 +55,22 @@ var knowledgeConventionsCmd = &cobra.Command{
 }
 
 var knowledgeSearchOutputSchema = &schemaObj{
-	Type:       "object",
-	Properties: map[string]*schemaProp{"hits": {Type: "array"}},
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"hits": {
+			Type: "array",
+			Items: &schemaProp{
+				Type: "object",
+				Properties: map[string]*schemaProp{
+					"scope":    {Type: "string"},
+					"path":     {Type: "string"},
+					"title":    {Type: "string"},
+					"score":    {Type: "number"},
+					"excerpts": {Type: "array", Items: &schemaProp{Type: "string"}},
+				},
+			},
+		},
+	},
 }
 
 var knowledgeReadOutputSchema = &schemaObj{

@@ -25,11 +25,12 @@ var specIdentifierNow = time.Now
 
 // Schema types for --schema output.
 type schemaProp struct {
-	Type    string      `json:"type"`
-	Enum    []string    `json:"enum,omitempty"`
-	Pattern string      `json:"pattern,omitempty"`
-	MaxLen  int         `json:"maxLength,omitempty"`
-	Items   *schemaProp `json:"items,omitempty"`
+	Type       string                 `json:"type"`
+	Enum       []string               `json:"enum,omitempty"`
+	Pattern    string                 `json:"pattern,omitempty"`
+	MaxLen     int                    `json:"maxLength,omitempty"`
+	Items      *schemaProp            `json:"items,omitempty"`
+	Properties map[string]*schemaProp `json:"properties,omitempty"`
 }
 
 type schemaObj struct {

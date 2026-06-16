@@ -329,7 +329,7 @@ better results immediately; users with ripgrep notice nothing yet.
 skip pass; the full existing suite — including the rg-vs-native equivalence test, still
 alive at this point — stays green.
 
-#### - [ ] Phase 1.1: Native relevance scoring
+#### - [x] Phase 1.1: Native relevance scoring
 
 The built-in search path starts computing a relevance score for every hit: the number of
 times the query appears in the matching line, exactly what users with the external tool
@@ -341,14 +341,14 @@ two backends agree on scores too, not just on which lines match.
 
 **Acceptance criteria**:
 
-- [ ] A search hit's score equals the number of non-overlapping, case-insensitive
+- [x] A search hit's score equals the number of non-overlapping, case-insensitive
       occurrences of the query in the matching line (e.g. a line containing the needle
       twice scores 2).
-- [ ] Hits on lines containing the query once score exactly 1, regardless of letter case.
-- [ ] All previously passing search tests still pass, including the backend-equivalence
+- [x] Hits on lines containing the query once score exactly 1, regardless of letter case.
+- [x] All previously passing search tests still pass, including the backend-equivalence
       test, which continues to ignore scores.
 
-#### - [ ] Phase 1.2: Resilient file handling — binary skip and long-line recovery
+#### - [x] Phase 1.2: Resilient file handling — binary skip and long-line recovery
 
 The built-in search becomes robust against awkward store contents. Files that are binary
 (detected the same way git and ripgrep detect them) are quietly skipped instead of being
@@ -361,14 +361,14 @@ documentation promises.
 
 **Acceptance criteria**:
 
-- [ ] A file whose leading bytes contain a NUL byte produces no hits, while text files in
+- [x] A file whose leading bytes contain a NUL byte produces no hits, while text files in
       the same store still match normally.
-- [ ] A store containing one file with an oversized line still returns hits from its other
+- [x] A store containing one file with an oversized line still returns hits from its other
       files, and returns any hits found in the oversized file before the long line; the
       search reports success, not an error.
-- [ ] Genuine failures (an unreadable file or directory) still fail the search with an
+- [x] Genuine failures (an unreadable file or directory) still fail the search with an
       error rather than being skipped.
-- [ ] All previously passing search tests still pass.
+- [x] All previously passing search tests still pass.
 
 ### Milestone 2: Search is fully self-contained; no external tool ever needed
 
@@ -384,7 +384,7 @@ installed.
 package contains no subprocess code; README and doc comments describe only the built-in
 implementation.
 
-#### - [ ] Phase 2.1: Remove the external tool integration
+#### - [x] Phase 2.1: Remove the external tool integration
 
 Spektacular stops looking for or running ripgrep entirely: the external backend, the
 machinery that chose between backends, and the test seam that pinned the two backends
@@ -398,16 +398,16 @@ tool is absent.
 
 **Acceptance criteria**:
 
-- [ ] Searching a populated store on a machine with no external search tool installed
+- [x] Searching a populated store on a machine with no external search tool installed
       returns the same matches, excerpts, and scores as on a machine that has one — there
       is no longer any code that consults the environment for a search tool or starts an
       external process.
-- [ ] Convention files still never appear in search results, at any nesting depth.
-- [ ] An empty query and a no-match query both return an empty result without error.
-- [ ] The test suite contains no tests that skip themselves when the external tool is
+- [x] Convention files still never appear in search results, at any nesting depth.
+- [x] An empty query and a no-match query both return an empty result without error.
+- [x] The test suite contains no tests that skip themselves when the external tool is
       missing, and no test reaches for a backend-selection seam.
 
-#### - [ ] Phase 2.2: Documentation matches the built-in search
+#### - [x] Phase 2.2: Documentation matches the built-in search
 
 Everything a reader encounters — the README's feature description and the code's own
 commentary — describes a single built-in search, with the external-tool preference and the
@@ -419,11 +419,11 @@ an accurate picture of how search works.
 
 **Acceptance criteria**:
 
-- [ ] The README describes search as built-in and self-contained, with no mention of
+- [x] The README describes search as built-in and self-contained, with no mention of
       preferring or falling back from an external tool.
-- [ ] The search code's doc comments describe only the implemented behaviour: in-process
+- [x] The search code's doc comments describe only the implemented behaviour: in-process
       scanning, score semantics, binary-file skipping, and long-line file skipping.
-- [ ] No comment in the store package references ripgrep flags, globs, or backend
+- [x] No comment in the store package references ripgrep flags, globs, or backend
       equivalence.
 
 <!--
@@ -477,3 +477,95 @@ improvising.
 - **No changes to consumers** — the knowledge set fan-out, the `knowledge search` CLI
   envelope, and the agent skill templates are untouched; any envelope evolution is future
   work.
+
+## Changelog
+
+### 2026-06-11 — Phase 1.1: Native relevance scoring
+
+**What was done**: The native search path now computes `Hit.Score` as the per-line count
+of non-overlapping, case-insensitive occurrences of the query. `scanFile` returns
+`[]lineMatch{text, count}` (count via `strings.Count` on the lowered line) instead of
+`[]string`, and `searchNative` populates `Score: float64(m.count)`. The `Hit.Score` doc
+comment now states the new invariant.
+
+**Deviations**: None.
+
+**Files changed**:
+- `internal/store/search.go`
+- `internal/store/store.go`
+- `internal/store/search_test.go`
+
+**Discoveries**: None of note — `rg` is on PATH on this machine, so the still-alive
+backend-equivalence test ran for real (not skipped) and confirmed the two backends still
+agree; its projection continues to exclude Score as planned.
+
+### 2026-06-11 — Phase 1.2: Resilient file handling — binary skip and long-line recovery
+
+**What was done**: `scanFile` now sniffs the first 8000 bytes of each file (new
+`binarySniffBytes` constant) and quietly skips files containing a NUL byte, the
+git/ripgrep binary convention; the sniffed bytes are replayed into the scanner via
+`io.MultiReader` so text files are still scanned from the start. A `bufio.ErrTooLong`
+scan error now returns the matches collected so far with no error — skipping the rest of
+that file while the search continues — and the previously false `scanBufferBytes` comment
+was rewritten to match.
+
+**Deviations**: The "genuine failures still error" criterion has no dedicated unit test —
+`chmod 000` is a no-op as root and unreliable on WSL mounts, so any test would be flaky.
+The fail-fast path is unchanged code (non-`ErrTooLong` scan errors, open errors, and walk
+errors all still propagate), verified by inspection; context.md prescribed only the two
+tests that were written.
+
+**Files changed**:
+- `internal/store/search.go`
+- `internal/store/search_test.go`
+
+**Discoveries**: A `bufio.Scanner` is unrecoverable after `ErrTooLong`, confirming the
+plan's file-granularity skip was the only option. Both new tests force the native path
+via `forceFallback`; Phase 2.1 must remove those two usages along with the seam itself.
+
+### 2026-06-11 — Phase 2.1: Remove the external tool integration
+
+**What was done**: The ripgrep backend is gone end to end: `searchRipgrep`, the `rgEvent`
+JSON decoder, the `exec.LookPath` dispatch, and the `forceFallback` test seam were all
+deleted, and `searchNative` was renamed to `search` — `Search` is now an empty-query
+check plus a direct call to the in-process walk-and-scan. The two rg-conditional tests
+were retired, with their guarantees re-homed in the backend-independent
+`TestSearch_CaseInsensitiveAndExcludesConventions` (case-insensitive matching,
+conventions exclusion, empty-query semantics; no-match was already covered by
+`TestSearch_ScopeAndLocatorRoundTrip`). `internal/` no longer imports `os/exec` anywhere.
+
+**Deviations**: None. (Mechanical test-file deletions — the retired tests and
+`forceFallback` usages — were done alongside the source change rather than in the test
+step, since the package would not compile otherwise.)
+
+**Files changed**:
+- `internal/store/search.go`
+- `internal/store/store.go`
+- `internal/store/search_test.go`
+
+**Discoveries**: For Phase 2.2's comment sweep — beyond the planned targets, the comments
+on `TestSearch_ScoreCountsLineOccurrences`, `TestSearch_SkipsBinaryFiles`, and
+`TestSearch_OversizedLineSkipsFileNotSearch` still say "so the rg/native equivalence
+fixture stays untouched", and `Search`'s doc comment still describes the deleted rg
+preference. The CLI integration test now exercises the native path deterministically.
+
+### 2026-06-11 — Phase 2.2: Documentation matches the built-in search
+
+**What was done**: All reader-facing descriptions of search now match the built-in
+implementation. `Search`'s doc comment documents in-process scanning, score semantics,
+conventions exclusion, binary-file skipping, long-line file skipping, and empty-query
+behaviour; the README's `FileStore` bullet describes a self-contained in-process walk; and
+the last comments referencing the retired rg backend (the `binarySniffBytes` "git and
+ripgrep" citation and three test comments about the equivalence fixture) were reworded.
+
+**Deviations**: None. The `Hit.Score` doc comment needed no further pass — Phase 1.1's
+wording already matched this phase's target.
+
+**Files changed**:
+- `internal/store/search.go`
+- `internal/store/search_test.go`
+- `README.md`
+
+**Discoveries**: A case-insensitive grep for "fallback" still matches README.md:252, but
+that is the Configuration section's config-defaults prose, unrelated to search — left
+as-is deliberately. `grep -rni ripgrep internal/store/ README.md` returns nothing.

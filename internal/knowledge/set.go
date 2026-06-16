@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -81,17 +82,39 @@ func NewSet(cfg config.Config, projectRoot string) (*Set, error) {
 	return set, nil
 }
 
-// Search runs the query against every source in configured order and
-// concatenates the scope-tagged hits. It performs no ranking or dedup. If any
-// source errors, Search returns an error naming that source and no results.
+// Search runs the query against every source and returns the merged,
+// scope-tagged hits ranked globally: score descending, with ties broken by
+// configured source order and then by path, so the returned slice is the
+// display order and is deterministic across runs. If any source errors,
+// Search returns an error naming that source and no results.
 func (s *Set) Search(query string) ([]store.Hit, error) {
-	var hits []store.Hit
-	for _, src := range s.sources {
+	type rankedHit struct {
+		hit    store.Hit
+		source int // index of the originating source, the first tie-break
+	}
+	var merged []rankedHit
+	for i, src := range s.sources {
 		h, err := src.store.Search(query)
 		if err != nil {
 			return nil, fmt.Errorf("searching knowledge source %q: %w", src.scope, err)
 		}
-		hits = append(hits, h...)
+		for _, hit := range h {
+			merged = append(merged, rankedHit{hit: hit, source: i})
+		}
+	}
+	sort.SliceStable(merged, func(a, b int) bool {
+		ra, rb := merged[a], merged[b]
+		if ra.hit.Score != rb.hit.Score {
+			return ra.hit.Score > rb.hit.Score
+		}
+		if ra.source != rb.source {
+			return ra.source < rb.source
+		}
+		return ra.hit.Path < rb.hit.Path
+	})
+	var hits []store.Hit
+	for _, r := range merged {
+		hits = append(hits, r.hit)
 	}
 	return hits, nil
 }

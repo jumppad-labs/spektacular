@@ -23,9 +23,9 @@ One skill handles all three intents. Discriminate by what the user actually said
 
 Triggered when the user wants to read or search existing entries.
 
-1. Run `{{command}} knowledge search <query>` with a concise query derived from the user's question. The output is a list of hits, each tagged with its `scope` field (e.g. `project`, `global`).
+1. Run `{{command}} knowledge search <query>` with a concise query derived from the user's question. The output is a ranked list of results — one per matching document, strongest match first — each carrying its `scope` (e.g. `project`, `global`), `path`, `title`, `score`, and up to three `excerpts` of its strongest matching lines. A document matches when every query word occurs somewhere in it, in any order.
 2. Present results to the user with the **scope label visible** on every hit — never strip it. The user needs to know which configured store the content came from.
-3. If the user asks for the full content of a particular hit, run `{{command}} knowledge read --data '{"scope":"<scope>","path":"<path>"}'` for that entry and present the body.
+3. If the user asks for the full content of a particular hit, run `{{command}} knowledge read --data '{"scope":"<scope>","path":"<path>"}'` with that hit's `scope` and `path` and present the body.
 4. If the query returns no hits, say so plainly. Do not fall back to a write unless the user explicitly asks to add a new entry.
 
 # Intent: contribute

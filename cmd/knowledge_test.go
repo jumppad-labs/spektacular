@@ -11,10 +11,11 @@ import (
 
 // knowledgeHit mirrors the store.Hit JSON envelope emitted inside a search result.
 type knowledgeHit struct {
-	Scope   string  `json:"scope"`
-	Path    string  `json:"path"`
-	Excerpt string  `json:"excerpt"`
-	Score   float64 `json:"score"`
+	Scope    string   `json:"scope"`
+	Path     string   `json:"path"`
+	Title    string   `json:"title"`
+	Excerpts []string `json:"excerpts"`
+	Score    float64  `json:"score"`
 }
 
 // knowledgeEntry mirrors the knowledge.Entry JSON envelope emitted by list.
@@ -133,8 +134,11 @@ func TestKnowledgeList_EnumeratesAllScopesIncludingNested(t *testing.T) {
 	}, result.Entries)
 }
 
-// Criterion 1 & 2: `knowledge search` returns scope-tagged hits carrying a
-// locator and a non-empty excerpt in the {"hits":[...]} envelope.
+// Criterion 1 & 2: `knowledge search` returns scope-tagged, one-per-document
+// hits carrying a locator, title, score, and excerpts in the {"hits":[...]}
+// envelope. Neither fixture file has an ATX heading, so each title falls back
+// to the path; "compass" occurs once per file, so both scores are 1, and the
+// tie is broken by configured source order: project before team.
 func TestKnowledgeSearch_ReturnsScopeTaggedHits(t *testing.T) {
 	twoScopeProject(t)
 
@@ -145,16 +149,40 @@ func TestKnowledgeSearch_ReturnsScopeTaggedHits(t *testing.T) {
 		Hits []knowledgeHit `json:"hits"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	require.Len(t, result.Hits, 2)
+	require.Equal(t, []knowledgeHit{
+		{
+			Scope:    "project",
+			Path:     "readme.md",
+			Title:    "readme.md",
+			Excerpts: []string{"project readme: the compass points north"},
+			Score:    1,
+		},
+		{
+			Scope:    "team",
+			Path:     "guidelines.md",
+			Title:    "guidelines.md",
+			Excerpts: []string{"team guidelines reference the compass too"},
+			Score:    1,
+		},
+	}, result.Hits)
+}
 
-	byScope := map[string]knowledgeHit{}
-	for _, h := range result.Hits {
-		byScope[h.Scope] = h
+// Criterion 3: an empty query and a query matching no document both succeed
+// at the command level with an empty (non-nil) hits array, not an error.
+func TestKnowledgeSearch_EmptyAndNoMatchQueriesReturnEmptyHits(t *testing.T) {
+	twoScopeProject(t)
+
+	for name, query := range map[string]string{
+		"empty query": "",
+		"no match":    "zzz-no-match-zzz",
+	} {
+		t.Run(name, func(t *testing.T) {
+			stdout, stderr, err := runKnowledge(t, "search", query)
+			require.NoError(t, err)
+			require.Empty(t, stderr)
+			require.JSONEq(t, `{"hits": []}`, stdout)
+		})
 	}
-	require.Equal(t, "readme.md", byScope["project"].Path)
-	require.Contains(t, byScope["project"].Excerpt, "compass")
-	require.Equal(t, "guidelines.md", byScope["team"].Path)
-	require.NotEmpty(t, byScope["team"].Excerpt)
 }
 
 // Criterion 1 & 2: `knowledge read` returns the full entry content for a named
@@ -220,6 +248,33 @@ func TestKnowledgeRead_SchemaDocumentsInputAndOutput(t *testing.T) {
 	require.Contains(t, schema.Input.Properties, "path")
 	require.NotNil(t, schema.Output)
 	require.Contains(t, schema.Output.Properties, "content")
+}
+
+// Criterion 2: `search --schema` declares the per-document hit shape that the
+// command emits — hits is an array whose items carry scope, path, title,
+// score, and excerpts with their documented types.
+func TestKnowledgeSearch_SchemaDeclaresPerDocumentHitFields(t *testing.T) {
+	twoScopeProject(t)
+
+	stdout, _, err := runKnowledge(t, "search", "--schema", "ignored")
+	require.NoError(t, err)
+
+	var schema commandSchema
+	require.NoError(t, json.Unmarshal([]byte(stdout), &schema))
+	require.NotNil(t, schema.Output)
+	require.Contains(t, schema.Output.Properties, "hits")
+
+	hits := schema.Output.Properties["hits"]
+	require.Equal(t, "array", hits.Type)
+	require.NotNil(t, hits.Items)
+	require.Equal(t, "object", hits.Items.Type)
+	require.Equal(t, "string", hits.Items.Properties["scope"].Type)
+	require.Equal(t, "string", hits.Items.Properties["path"].Type)
+	require.Equal(t, "string", hits.Items.Properties["title"].Type)
+	require.Equal(t, "number", hits.Items.Properties["score"].Type)
+	require.Equal(t, "array", hits.Items.Properties["excerpts"].Type)
+	require.NotNil(t, hits.Items.Properties["excerpts"].Items)
+	require.Equal(t, "string", hits.Items.Properties["excerpts"].Items.Type)
 }
 
 // Criterion 2: a failing subcommand emits the standard {"error":...} envelope

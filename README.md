@@ -161,7 +161,7 @@ Agents (and you) reach knowledge through the `spektacular knowledge` commands ra
 | Command | What it does |
 |---|---|
 | `spektacular knowledge conventions` | Read every always-apply convention across all scopes, returning each one's full body, scope-tagged |
-| `spektacular knowledge search <query>` | Keyword-search every scope (excludes `conventions/`); results are scope-tagged |
+| `spektacular knowledge search <query>` | Keyword-search every scope (excludes `conventions/`); a document matches when every query word occurs in it, and results come back ranked — one scope-tagged result per matching document, with title, score, and excerpts |
 | `spektacular knowledge read --data '{"scope":"project","path":"architecture/x.md"}'` | Read one entry's full body from a named scope |
 | `spektacular knowledge list` | List every entry across all scopes |
 | `spektacular knowledge write --data '{"scope":"project","path":"gotchas/x.md"}' --file <path>` | Write an entry into a named scope (content from `--file`, or stdin) |
@@ -198,10 +198,11 @@ type DirEntry struct {
 }
 
 type Hit struct {
-    Scope   string  // scope label of the originating store
-    Path    string  // locator relative to the store root — pass to Read
-    Excerpt string  // compact excerpt, capped at the excerpt budget
-    Score   float64 // optional relevance score; 0 when the backend has none
+    Scope    string   // scope label of the originating store
+    Path     string   // locator relative to the store root — pass to Read
+    Title    string   // the document's first heading, or the locator when it has none
+    Excerpts []string // compact excerpts, each capped at the excerpt budget
+    Score    float64  // sum of all query terms' occurrences across the document
 }
 ```
 
@@ -209,7 +210,7 @@ type Hit struct {
 
 - Construct it with `NewFileStore(root, scope string)` — `root` is the directory it is rooted at, `scope` is the label every `Hit` it produces is tagged with.
 - All paths are resolved relative to `root`; the `abs` helper rejects path traversal so a caller cannot escape the root.
-- `Search` prefers the `ripgrep` binary when one is on `PATH` and falls back to a native Go directory walk otherwise — both paths produce equivalent `Hit`s.
+- `Search` is built-in and self-contained: an in-process directory walk matching each query word as a case-insensitive literal substring, returning one hit per document that contains every word, excluding `conventions/` directories and skipping binary files — no external tool is needed.
 
 To add a backend (e.g. a remote or GitHub-hosted store), implement the seven `Store` methods on a new type, then register it as a provider: the `knowledge` layer resolves a configured source's `provider` field to a concrete `Store` in `knowledge.NewSet` (`internal/knowledge/set.go`), where today only the `file` provider is wired. Add a new `case` there for the new provider name.
 

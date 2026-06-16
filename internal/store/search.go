@@ -3,12 +3,11 @@ package store
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -17,96 +16,38 @@ import (
 // maxExcerptBytes caps a Hit excerpt so an agent can scan many hits cheaply.
 const maxExcerptBytes = 256
 
-// scanBufferBytes bounds how long a single matched line may be; lines longer
-// than this are skipped rather than aborting the whole scan.
+// maxExcerptsPerHit caps how many excerpt lines a single Hit carries.
+const maxExcerptsPerHit = 3
+
+// scanBufferBytes bounds how long a single scanned line may be; a file
+// containing a longer line is scanned up to that line and then skipped.
 const scanBufferBytes = 1024 * 1024
 
+// binarySniffBytes is how many leading bytes of a file are checked for a NUL
+// byte to classify it as binary — the same convention git uses.
+const binarySniffBytes = 8000
+
 // Search returns hits for a free-form keyword query, scanning only this store.
-// It prefers the ripgrep binary when one is on PATH — shelling out and decoding
-// rg's JSON event stream — and otherwise falls back to a native Go directory
-// walk. Both paths perform a literal, case-insensitive substring match and
-// produce equivalent scope-tagged hits, so no caller can observe which ran.
-// An empty query, or a query with no matches, returns an empty result, not an
-// error.
+// It walks the store root in process — no external tool is consulted. The
+// query is split into whitespace-separated terms, each matched as a literal,
+// case-insensitive substring; a file matches when every term occurs somewhere
+// in it, and each matching file produces exactly one scope-tagged Hit whose
+// Score is the sum of all terms' occurrence counts across the file.
+// Directories named "conventions" are excluded, binary files are skipped, and
+// a file containing an over-long line is scanned only up to that line. A
+// query with no terms — empty or all whitespace — or one with no matches
+// returns an empty result, not an error.
 func (f *FileStore) Search(query string) ([]Hit, error) {
-	if query == "" {
+	terms := strings.Fields(strings.ToLower(query))
+	if len(terms) == 0 {
 		return nil, nil
 	}
-	if !f.forceFallback {
-		if rgPath, err := exec.LookPath("rg"); err == nil {
-			return f.searchRipgrep(rgPath, query)
-		}
-	}
-	return f.searchNative(query)
+	return f.search(terms)
 }
 
-// rgEvent is the subset of a ripgrep --json event this package decodes. Only
-// "match" events carry the fields below; other event types are ignored.
-type rgEvent struct {
-	Type string `json:"type"`
-	Data struct {
-		Path struct {
-			Text string `json:"text"`
-		} `json:"path"`
-		Lines struct {
-			Text string `json:"text"`
-		} `json:"lines"`
-		Submatches []struct {
-			Match struct {
-				Text string `json:"text"`
-			} `json:"match"`
-		} `json:"submatches"`
-	} `json:"data"`
-}
-
-// searchRipgrep runs `rg` over the store root and decodes its JSON event
-// stream into hits. --fixed-strings and --ignore-case make rg's matching
-// literal and case-insensitive, matching the native fallback exactly.
-func (f *FileStore) searchRipgrep(rgPath, query string) ([]Hit, error) {
-	cmd := exec.Command(rgPath, "--json", "--no-heading", "--fixed-strings", "--ignore-case", "--glob=!**/conventions/**", query, f.root)
-	out, err := cmd.Output()
-	if err != nil {
-		// rg exits 1 when there are simply no matches — not an error.
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("ripgrep search: %w", err)
-	}
-
-	var hits []Hit
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	scanner.Buffer(make([]byte, 0, 64*1024), scanBufferBytes)
-	for scanner.Scan() {
-		var ev rgEvent
-		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
-			// Defensive: skip any line that is not a well-formed event.
-			continue
-		}
-		if ev.Type != "match" {
-			continue
-		}
-		rel, err := filepath.Rel(f.root, ev.Data.Path.Text)
-		if err != nil {
-			rel = ev.Data.Path.Text
-		}
-		hits = append(hits, Hit{
-			Scope:   f.scope,
-			Path:    rel,
-			Excerpt: trimExcerpt(ev.Data.Lines.Text),
-			Score:   float64(len(ev.Data.Submatches)),
-		})
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("ripgrep search: %w", err)
-	}
-	return hits, nil
-}
-
-// searchNative walks the store root and scans every file line by line for a
-// case-insensitive substring match. It is the fallback when rg is unavailable.
-func (f *FileStore) searchNative(query string) ([]Hit, error) {
-	needle := strings.ToLower(query)
+// search walks the store root, scans every file once, and emits one Hit per
+// file that contains every term. Terms must already be lower-cased.
+func (f *FileStore) search(terms []string) ([]Hit, error) {
 	var hits []Hit
 
 	err := filepath.WalkDir(f.root, func(path string, d fs.DirEntry, err error) error {
@@ -116,27 +57,43 @@ func (f *FileStore) searchNative(query string) ([]Hit, error) {
 		if d.IsDir() {
 			// Conventions are read in full via the dedicated conventions
 			// reader; exclude them from search so they are never surfaced
-			// twice. Mirrors the ripgrep --glob=!conventions/** exclusion.
+			// twice.
 			if d.Name() == "conventions" {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		fileHits, err := scanFile(path, needle)
+		agg, err := scanFile(path, terms)
 		if err != nil {
 			return err
 		}
-		for _, line := range fileHits {
-			rel, relErr := filepath.Rel(f.root, path)
-			if relErr != nil {
-				rel = path
+		score := 0
+		for _, count := range agg.counts {
+			if count == 0 {
+				// A document matches only when every term occurs in it.
+				return nil
 			}
-			hits = append(hits, Hit{
-				Scope:   f.scope,
-				Path:    rel,
-				Excerpt: trimExcerpt(line),
-			})
+			score += count
 		}
+		rel, relErr := filepath.Rel(f.root, path)
+		if relErr != nil {
+			rel = path
+		}
+		title := agg.title
+		if title == "" {
+			title = rel
+		}
+		excerpts := make([]string, 0, len(agg.best))
+		for _, c := range agg.best {
+			excerpts = append(excerpts, trimExcerpt(c.text))
+		}
+		hits = append(hits, Hit{
+			Scope:    f.scope,
+			Path:     rel,
+			Title:    title,
+			Excerpts: excerpts,
+			Score:    float64(score),
+		})
 		return nil
 	})
 	if err != nil {
@@ -145,28 +102,121 @@ func (f *FileStore) searchNative(query string) ([]Hit, error) {
 	return hits, nil
 }
 
-// scanFile returns every line of the file at path that contains needle, which
-// must already be lower-cased.
-func scanFile(path, needle string) ([]string, error) {
+// candidateLine is one matching line considered for a Hit's excerpts,
+// together with the strength used to rank it: how many distinct terms occur
+// on it and the total occurrences of all terms on it.
+type candidateLine struct {
+	text     string
+	distinct int
+	total    int
+}
+
+// fileAggregate describes one scanned file as a whole: how often each term
+// occurred across the file, the text of its first ATX heading, and the
+// strongest matching lines, bounded at maxExcerptsPerHit.
+type fileAggregate struct {
+	counts   []int           // total occurrences per term, indexed like the terms slice
+	title    string          // first ATX-heading text, "" when the file has none
+	titleSet bool            // whether a heading line was seen, so later ones never win
+	best     []candidateLine // strongest lines: distinct terms desc, total desc, file order asc
+}
+
+// addCandidate ranks line into the aggregate's bounded excerpt candidates —
+// most distinct terms first, then most total occurrences, then earliest in
+// the file. Inserting after equal entries keeps file order for ties, and the
+// bound keeps memory line-sized however many lines match.
+func (a *fileAggregate) addCandidate(c candidateLine) {
+	pos := len(a.best)
+	for i, b := range a.best {
+		if c.distinct > b.distinct || (c.distinct == b.distinct && c.total > b.total) {
+			pos = i
+			break
+		}
+	}
+	if pos == maxExcerptsPerHit {
+		return
+	}
+	a.best = append(a.best, candidateLine{})
+	copy(a.best[pos+1:], a.best[pos:])
+	a.best[pos] = c
+	if len(a.best) > maxExcerptsPerHit {
+		a.best = a.best[:maxExcerptsPerHit]
+	}
+}
+
+// scanFile reads the file at path once and aggregates, per term, the number
+// of non-overlapping case-insensitive occurrences across the whole file,
+// along with the file's first ATX-heading text and its strongest matching
+// lines. Terms must already be lower-cased. Binary files — a NUL byte within
+// the leading binarySniffBytes — quietly yield an empty aggregate, and once a
+// line exceeds scanBufferBytes the remainder of the file is skipped, keeping
+// the aggregate collected so far.
+func scanFile(path string, terms []string) (fileAggregate, error) {
+	agg := fileAggregate{counts: make([]int, len(terms))}
+
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return agg, err
 	}
 	defer file.Close()
 
-	var matches []string
-	scanner := bufio.NewScanner(file)
+	sniff := make([]byte, binarySniffBytes)
+	n, err := io.ReadFull(file, sniff)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return agg, err
+	}
+	sniff = sniff[:n]
+	if bytes.IndexByte(sniff, 0) >= 0 {
+		return agg, nil
+	}
+
+	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(sniff), file))
 	scanner.Buffer(make([]byte, 0, 64*1024), scanBufferBytes)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(strings.ToLower(line), needle) {
-			matches = append(matches, line)
+		if !agg.titleSet {
+			if text, ok := headingText(line); ok {
+				agg.title = text
+				agg.titleSet = true
+			}
+		}
+		lowered := strings.ToLower(line)
+		cand := candidateLine{text: line}
+		for i, term := range terms {
+			if count := strings.Count(lowered, term); count > 0 {
+				agg.counts[i] += count
+				cand.distinct++
+				cand.total += count
+			}
+		}
+		if cand.total > 0 {
+			agg.addCandidate(cand)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		// A scanner is unrecoverable after an over-long line, so skip the
+		// rest of this file and keep the aggregate collected so far.
+		if !errors.Is(err, bufio.ErrTooLong) {
+			return agg, err
+		}
 	}
-	return matches, nil
+	return agg, nil
+}
+
+// headingText reports whether line is an ATX heading — its trimmed form is
+// one or more '#'s standing alone or followed by whitespace — and returns
+// the heading text with the markers stripped.
+func headingText(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	rest := strings.TrimLeft(trimmed, "#")
+	if rest == trimmed {
+		return "", false
+	}
+	if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+		// A '#' run flush against text (e.g. "#hashtag") is not a heading.
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
 }
 
 // trimExcerpt collapses runs of whitespace in s and caps the result at

@@ -15,7 +15,7 @@ Find all files related to the feature being planned. Organize results by categor
 
 ### Agent 2: Prior Research
 Search for existing research and plans related to this feature:
-- Search the configured knowledge sources with the `knowledge search` command for related notes, conventions, gotchas, or prior learnings — hits are tagged by scope (`project`, `team`, `global`)
+- Search the configured knowledge sources with the `knowledge search` command for related notes, gotchas, or prior learnings — results are ranked one per matching document and tagged by scope (`project`, `team`, `global`)
 - Check `.spektacular/plans/` for related plans
 - Check `.spektacular/specs/` for related specs
 - Look for relevant issues, tickets, or TODOs in the codebase

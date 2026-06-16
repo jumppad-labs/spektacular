@@ -1,184 +1,260 @@
-# Working Context — implement 000025_convention-aware-planning
+# Working context — implement 000027_document-level-search
 
-> This file is the implement-workflow working context. It replaces the
-> earlier plan-workflow notes (preserved in the plan store's context.md).
+IMPLEMENT WORKFLOW in progress (started 2026-06-11). read_plan complete:
+structural validation passed (all 10 sections, 5 phase checkboxes 1.1/1.2/
+2.1/2.2/3.1 with resolving context.md links); drift check clean — every
+path/symbol/line ref in plan.md and context.md verified against the working
+tree. Changelog mode: no `## Changelog` in plan.md → first-phase invocation,
+start at Phase 1.1.
 
-## Validation gate (read_plan) — PASSED
+## User decisions this session
 
-- Structural: all 10 plan.md sections present; 6 phases (1.1, 1.2, 1.3, 2.1, 2.2, 3.1),
-  each with a resolving `*Technical detail:*` link into the plan store context.md.
-- Drift: no mismatches. Every file/symbol/command/template named in the plan exists.
-  Minor line-number drift only (e.g. harbor `find_plan_cli_calls` at :339 not :329,
-  `_bash_command` at :325) — within the plan's stated ranges; map on the fly.
-- Changelog mode: **first-phase invocation** (no `## Changelog` section yet).
-  `update_changelog` will create it on first use. Analyze starts at Phase 1.1.
+- Plan choice: user picked 000027_document-level-search (not 000026) when
+  /spek-implement was invoked without a name.
+- **000026 prerequisite waived**: the plan requires the uncommitted
+  000026_ripgrep-replace work to be committed before Phase 1.1; user chose
+  "proceed without committing" — 000026 and 000027 changes will coexist
+  uncommitted on branch f-ripgrep-replace. Do not commit unless asked.
 
-## Phase order (dependencies)
+## ALL 5 PHASES COMPLETE + test_plan written. Advancing to finished.
 
-1.1 (conventions reader + `knowledge conventions` cmd) → 1.2 (search exclusion) →
-1.3 (init scaffold) → 2.1 (discovery template; depends on 1.1) →
-2.2 (plan `## Conventions` section; depends on 2.1) →
-3.1 (harbor e2e; depends on 2.1–2.2).
+- update_repo_changelog: CHANGELOG.md 000027 entry already present (Phase
+  3.1 wrote it as a spec-mandated lockstep surface) — left as-is, no dup.
+- test_plan: live-KB open-question check done. Findings:
+  - Metric 1 (motivating queries): "workflow steps"/"workflow state" →
+    workflow-steps.md ranked FIRST (scores 38/37). Scoring works; no noise
+    entry outranks the relevant one (open question resolved NO).
+  - The spec's 3rd example "interrupted workflow" → 0 hits because the word
+    "interrupted"/"interrupt" exists NOWHERE in the KB (correct AND-match,
+    not a bug). USER said it was just an illustrative example; replaced with
+    "scope label" → initial-idea.md FIRST, words on disjoint lines
+    (scope 20/214/502/587/731, label 312/315/616/620) — a genuine
+    document-level win (per-line would've returned 0 from it).
+  - Metric 2: "workflow" → 9 ranked results (was 60 line hits).
+  - Metric 3: "workflow" 9 results == 9 distinct non-binary/non-convention
+    files containing the word.
+  - Round trip: read of top hit scope/path returns full body (~38.6KB).
+  All captured in 000027_document-level-search/test-plan.md.
 
-## Key implementation decisions carried from the plan
+## Phase 3.1 verify step — green (all 3 criteria pass; help text, skill
+flow, template/rendered parity, changelog, full suite all verified)
 
-- **NO MIGRATION** (final decision — corrects the stale plan-workflow note that said
-  "migrate on init only"). Project is fresh; breaking change accepted. Init simply
-  STOPS writing the flat `.spektacular/knowledge/conventions.md` and seeds the starter
-  into `knowledge/conventions/` instead. No move-and-guard logic.
-- **No new state-machine step.** Conventions folded into existing steps:
-  discovery loads conventions + surface-targeted searches; architecture selects the
-  relevant subset into a `conventions.md` working file; verification assembles the
-  `## Conventions` plan section. ⇒ `steps.go` / `steps_test.go` UNTOUCHED;
-  harbor `EXPECTED_STEP_ORDER` unchanged.
-- `knowledge conventions` returns **bodies** (`{scope,path,content}`) — new `Convention`
-  struct (Entry has no content field) + `Set.Conventions()` modelled on `List`.
-- A scope with no `conventions/` dir ⇒ zero conventions, NOT an error
-  (`Store.List` returns `ErrNotFound`; absorb with `errors.Is`).
-- Search exclusion in BOTH paths, kept equivalent by the existing equivalence test:
-  ripgrep `--glob=!conventions/**` arg; native walk `filepath.SkipDir` on `conventions` dir.
+## Phase 3.1 implement step — done
 
-## Cross-cutting project conventions (apply during impl)
+- Edited: spek-knowledge SKILL.md template (ranked per-document results,
+  all-words matching note); 02-discovery.md (ranked results wording);
+  skill_spawn-planning-agents.md (ranked per-document; also dropped stale
+  "conventions" from the search-targets list — conventions are excluded
+  from search since 000025; note as deviation); README search row + Hit
+  struct block (Title/Excerpts/score meaning) + built-in Search bullet;
+  CHANGELOG.md new top entry 000027_document-level-search.
+- Rendered .claude/skills/* regenerated via `go run . init claude`
+  (.claude/skills is GITIGNORED — rendered copies are not tracked; init
+  also rewrote AGENTS.md managed section, no diff). Sweep clean; go test
+  ./... exit 0.
+- Per plan testing strategy, 3.1 has no new automated tests — existing
+  rendered-template tests + manual sweep cover it.
 
-- Tests own their filesystem: render via production install path into `t.TempDir`,
-  never walk the repo's real `.spektacular`.
-- Test oracles are independent + hand-maintained, never derived at runtime from the subject.
-- No redundant assertions: one mechanism per bug class (e.g. 1.2 adds a single
-  shared-result-set assertion, not a per-path duplicate).
+## Phase 3.1 analyze — done (Low, main context)
 
-## Phase 1.1 analysis (confirmed shapes)
+- Rendered skill copy is byte-identical to template with {{command}}→
+  "go run ." ; regeneration path = `go run . init claude`
+  (installWorkflowSkills, internal/agent/skills.go).
+- Edit list: spek-knowledge SKILL.md template :26 (hits description);
+  regenerate .claude copy via init; templates/steps/plan/02-discovery.md:9;
+  templates/skills/skill_spawn-planning-agents.md:18 (verify/adjust);
+  README.md:164 (search row) AND README.md:199-205 Hit struct code block
+  (Excerpt→Excerpts/Title/score meaning — found by sweep, not in plan's
+  list) + :214 "literal matching" bullet; CHANGELOG.md new 000027 entry on
+  top. skill_verify-implementation.md "excerpt" hits are failure-output
+  excerpts — unrelated, leave.
 
-- `Set.Conventions()` mirrors `List()` (set.go:111-123): iterate `s.sources`,
-  `listFiles(src.store, "conventions")`, then `src.store.Read(f)` each body.
-  Absorb `store.ErrNotFound` from `listFiles` via `errors.Is` ⇒ zero for that scope.
-  New `Convention{Scope,Path,Content}` struct near `Entry` (set.go:30-33). Add `errors` import.
-- CLI: `knowledgeConventionsCmd` (Use "conventions", no Args, no --data) like
-  `knowledgeSourcesCmd` (cmd/knowledge.go:45-49); `knowledgeConventionsOutputSchema`
-  = `{conventions: array}` like sources schema (:78-81); `runKnowledgeConventions`
-  like `runKnowledgeSources` (:191-201) — schema short-circuit, nil-guard to
-  `[]knowledge.Convention{}`, emit `{"conventions": ...}`; register in AddCommand (:251).
-- Tests: `set_test.go` uses `writeFile(t,dir,name,content)` + `twoScopeSet(t)` +
-  testify `require`. Add `TestSet_Conventions...` covering multi-scope concat in
-  configured order, full bodies, and missing-`conventions/`-dir → empty (no error).
+## Phases 2.1 + 2.2 — COMPLETE (Milestone 2 done). Remaining: 3.1 only.
 
-## Progress
+- 2.2 deviation recorded in plan changelog: schemaProp gained optional
+  Properties map (cmd/spec.go) — needed to express object item schemas.
 
-- **ALL PHASES COMPLETE & VERIFIED.** Live `make harbor-test-plan` PASSES (user confirmed) — the
-  full end-to-end convention-aware planning behaviour is proven against a real agent. Implement
-  workflow reached `finished`; repo CHANGELOG.md entry written. Nothing committed yet.
-- Harbor auth gotcha (fixed in Makefile): the Claude.ai OAuth `accessToken` must be passed as
-  `CLAUDE_CODE_OAUTH_TOKEN`, NOT `ANTHROPIC_AUTH_TOKEN`. Harbor's claude_code agent maps
-  `ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY` (claude_code.py:943-947), and an OAuth token is not a
-  valid API key → 401 authentication_failed before the agent runs any step.
-- **Phase 3.1 — CODE COMPLETE, static checks green; live harbor run is the open verification.**
-  - Seeded convention `environment/auth-audit-logging.md` (distinctive token `AUTH_AUDIT_V2`,
-    clearly JWT/auth-relevant). Dockerfile mkdir+COPY into knowledge/conventions/ (named ≠ init
-    starter `conventions.md`, so init's idempotent re-create won't clobber it).
-  - Python oracles (test_plan_workflow.py): `EXPECTED_PLAN_SECTIONS += "conventions"`;
-    constants `CONVENTIONS_READ_COMMAND`/`SEEDED_CONVENTION_TOKEN`; new
-    `TestConventionAwarePlanning` (discovery-window `knowledge conventions` read + section content
-    assertion); docstring oracle list updated. 84 tests collect; py_compile OK.
-  - DEVIATION (beyond plan's literal file list): also added a discovery hint to
-    `instruction.md` (`spektacular knowledge conventions`) mirroring the existing skill hints, to
-    reduce the open-question flakiness risk. Reliability aid, not the oracle.
-  - Static verify: go build/test/lint pass; pytest --collect-only OK.
-  - USER will run `make harbor-test-plan` themselves (their decision; their API creds).
-  - EXTRA (user-requested) fail-fast: added session-scoped autouse fixture `_abort_on_failed_agent_run`
-    in test_plan_workflow.py — on the 3 fatal preflight conditions (no transcript / auth failure /
-    agent didn't finish) it calls `pytest.exit(..., returncode=1)` so the run reports ONE clear
-    reason instead of ~80 misleading cascade failures. Genuine workflow regressions still run the
-    full suite. Verified locally: aborts fast, pytest exit code 1 (→ reward 0). Works in pytest 8.4.1
-    (Docker) and 9.x (local).
-- **Phase 2.2 — DONE & checked off + changelogged.** 3 template files agree on `## Conventions`
-  (after Overview), working file `conventions.md`. Phases 1.1–2.2 ALL complete.
-- **FINAL: Phase 3.1 — End-to-end harbor coverage** (Medium-High). Touches:
-  1. `tests/harbor/plan-workflow/environment/Dockerfile` — add a step (mirror spec COPY at
-     Dockerfile:17-18) creating `/app/.spektacular/knowledge/conventions/` and copying in a
-     distinctive auth/JWT-relevant convention file. Add the convention source under `environment/`.
-     Choose a DISTINCTIVE anchor token unlikely to appear incidentally in a JWT plan.
-  2. `tests/harbor/plan-workflow/tests/test_plan_workflow.py` — (a) add `"conventions"` to
-     `EXPECTED_PLAN_SECTIONS`; (b) add a hand-maintained conventions-read oracle: within the
-     discovery step window (resolve_step_windows; window keyed on `plan goto` transitions) assert a
-     Bash call's command contains `knowledge conventions` (model on `_bash_command`/
-     `find_plan_cli_calls` + the per-step-window parametrization used for `EXPECTED_SKILLS_PER_STEP`);
-     (c) content assertion that the parsed `conventions` section (parse_sections) contains the
-     seeded convention's distinctive token. Do NOT derive oracles from templates/state machine at
-     runtime (docstring forbids). `EXPECTED_STEP_ORDER` UNCHANGED (no step added).
-  - Open question (from plan): a live harbor run may be flaky about surfacing the seeded convention
-    into the section. If flaky: make the seeded convention more clearly JWT-relevant + more
-    distinctive token; if still failing after instructions are correct, STOP and ask user before
-    weakening the assertion.
-  - Strategy: parallel analysis (Docker seed vs Python oracles), sequential integration, single
-    harbor run. NOTE: running the actual harbor task may be slow/require Docker — check availability.
-- **Phase 2.1 — DONE & checked off + changelogged** (discovery template rewritten).
-- **Next: Phase 2.2 — Plans carry a Conventions section** (Medium; 3 template files must AGREE on
-  section name `## Conventions`, placement = directly after `## Overview`, and working-file name
-  `conventions.md`):
-  1. `templates/steps/plan/03-architecture.md` — add instruction: once design shape is locked,
-     select from the conventions loaded at discovery the subset relevant to the design, annotate
-     each with a one-line rationale (cite inline where they drive a choice), write to
-     `.spektacular/work/{{plan_name}}/conventions.md` via own `Write` tool, with explicit
-     "none apply" fallback. Relevance is PROPOSED and user-confirmed, not auto-decided. Model the
-     write-to-working-file wording on the existing block at end of 03-architecture.md (architecture.md).
-  2. `templates/steps/plan/13-verification.md` — add `## Conventions` to canonical plan.md section
-     list (after `## Overview`, before `## Architecture...`) at the `**plan.md — required ## sections**`
-     list (~line 64-73); add `conventions.md` → `## Conventions` to the section→working-file mapping
-     (~line 19-29).
-  3. `templates/scaffold/plan.md` — add a `## Conventions` comment block after `## Overview`,
-     matching the verification list ordering.
-  No steps.go / steps_test.go change. EXPECTED_STEP_ORDER unchanged.
-- **Milestone 1 COMPLETE** (Phases 1.1, 1.2, 1.3 all done, checked off, changelogged). Plumbing
-  in place: `knowledge conventions` command, search exclusion, init scaffolds `conventions/` dir.
-- **Next: Phase 2.1 — Discovery loads conventions and targets topic searches** (Low; pure template
-  edit, no Go/state-machine change). Edit `templates/steps/plan/02-discovery.md:7` — replace the
-  broad "search for anything about this area … `knowledge search <query>`" instruction with two
-  directives: (a) load ALL conventions in full via `{{config.command}} knowledge conventions`, and
-  (b) run surface-targeted `{{config.command}} knowledge search <surface>` calls keyed on the design
-  surfaces the feature introduces. Keep the existing test-convention guidance and the rest of the
-  step intact. Use the `{{config.command}}` placeholder, never the rendered command.
-- **Phase 1.2 — DONE & checked off + changelogged** (glob deviation `--glob=!**/conventions/**`).
-- **Phase 1.3 test conflict to handle:** existing `TestInit_CreatesConventionsMd`
-  (init_test.go:58-66) asserts the FLAT `knowledge/conventions.md` exists. Since the flat
-  write is being removed, that test must be UPDATED (not just added to) to assert the new
-  `knowledge/conventions/conventions.md` location AND that no flat `conventions.md` exists.
-- Destination chosen for starter: `knowledge/conventions/conventions.md` (embedded source path
-  stays `.spektacular/conventions.md`).
-- **Next: Phase 1.3 — Convention directory scaffolding** (Low). In `internal/project/init.go`:
-  add `filepath.Join(spektacularDir, "knowledge", "conventions")` to the `dirs` slice (init.go:35-45);
-  replace the flat write at init.go:85-91 (reads embedded `.spektacular/conventions.md`, writes
-  `knowledge/conventions.md`) with a write of the starter into `knowledge/conventions/` (e.g.
-  `conventions/conventions.md`); STOP writing the flat `knowledge/conventions.md`. No migration.
-  Keep `templates/.spektacular/conventions.md` as the embedded starter body (content stays, target
-  path changes). Test (init_test.go): render via production `project.Init` into `t.TempDir`; assert
-  `conventions/` dir exists with the starter, and that no flat `conventions.md` is written.
-- **Phase 1.1 — DONE & checked off + changelogged.** `Convention` struct + `Set.Conventions()`
-  in set.go; `knowledge conventions` CLI in cmd/knowledge.go; 4 unit tests in set_test.go.
-  Verified all green (build/test/vet). Changelog section created in plan.md.
-- **Next: Phase 1.2 — Exclude conventions from topic search.** (Low complexity, single agent.)
-  - ripgrep: insert `"--glob=!conventions/**"` into args at search.go:66, between
-    `"--ignore-case"` and `query`.
-  - native fallback: in WalkDir callback, before the `d.IsDir()` skip (search.go:116-118),
-    add `if d.IsDir() && d.Name() == "conventions" { return filepath.SkipDir }`.
-  - test: extend `writeSearchFixture` (search_test.go:22-33) to also write a
-    `conventions/<f>.md` containing the needle; in `TestSearch_RipgrepAndFallbackEquivalent`
-    (:79-97) add ONE assertion on the shared result set that no hit's Path is under
-    `conventions/`. NO per-path duplicate (equivalence check already proves parity).
-- Autonomous mode: per user feedback, loop phases without confirmation prompts; only stop
-  for real design decisions or verification failures.
+## Phase 2.2 test step — done
 
-## Phase 1.2 — DONE (code + tests, all green)
+- cmd/knowledge_test.go: knowledgeHit gained Title; search test now
+  asserts exact ordered hit list incl. title (path-fallback — fixture has
+  no headings; heading titles covered at store level), score, excerpts,
+  and the documented tie order (project before team).
+  New: TestKnowledgeSearch_SchemaDeclaresPerDocumentHitFields (search
+  --schema needs a dummy positional arg — ExactArgs validates before the
+  schema short-circuit) and
+  TestKnowledgeSearch_EmptyAndNoMatchQueriesReturnEmptyHits (JSONEq
+  {"hits": []} pins non-nil array). go test ./... green.
 
-- **DEVIATION from plan glob.** Plan/context specified `--glob=!conventions/**`, but verified
-  empirically that ripgrep does NOT exclude with that form (it leaks `conventions/*`). The
-  working form is **`--glob=!**​/conventions/**`** — excludes a `conventions` dir at any depth
-  AND its full subtree, matching the native fallback's `d.Name()=="conventions"` SkipDir.
-  The equivalence test (`TestSearch_RipgrepAndFallbackEquivalent`) caught the mismatch — it's
-  doing its job. Implemented in search.go searchRipgrep.
-- native fallback: SkipDir on dir named `conventions` (searchNative, inside the `d.IsDir()` block).
-- tests: extended `writeSearchFixture` with `conventions/style.md` (contains "needle"); added one
-  exclusion assertion to the equivalence test on `rgHits` only (parity already proven). All
-  `TestSearch*` pass.
+## Phase 2.2 implement step — done (code only, tests next)
 
-## Substitutions / answers given to the user
+- cmd/spec.go: schemaProp gained Properties map (omitempty) so array items
+  can describe object fields — shared by all --schema output, additive.
+- cmd/knowledge.go: search Short → "returning ranked, one-per-document
+  results"; knowledgeSearchOutputSchema hits.items now object{scope, path,
+  title, score:number, excerpts:array<string>}. Envelope, nil→[] and read
+  command untouched. Build + cmd tests green.
 
-- Plan selected: 000025_convention-aware-planning (only active/untracked plan; user confirmed).
+## Phase 2.2 analyze — done (Low, main context)
+
+- schemaProp (cmd/spec.go:27-33) has Type/Enum/Pattern/MaxLen/Items but NO
+  nested Properties — expressing per-hit object fields requires adding
+  `Properties map[string]*schemaProp json:"properties,omitempty"` to
+  schemaProp (minimal, omitempty, backwards compatible). No test pins the
+  search schema JSON (the --schema CLI test exercises `read` only).
+- Changes: knowledgeSearchOutputSchema hits.items → object{scope, path,
+  title, score(number), excerpts(array of string)}; search cmd Short →
+  ranked per-document wording; envelope + nil→[] untouched.
+
+## Phase 2.1 — COMPLETE (ticked + changelog entry). Remaining: 2.2, 3.1.
+
+## Phase 2.1 verify step — green (build/test/vet pass, 3/3 criteria asserted)
+
+## Phase 2.1 test step — done
+
+- set_test.go gained TestSet_SearchRanksAcrossSourcesByScore (later
+  source's strong match outranks earlier source's weak match, exact
+  order), TestSet_SearchTieBreaksBySourceOrderThenPath (fixture chosen so
+  walk order ≠ path order: notes/zz.md walks before notes.md but sorts
+  after; called twice for determinism), TestSet_SearchHitRoundTripsThroughRead
+  (hit scope/path → set.Read returns full literal content). All green;
+  go test ./... green.
+
+## Phase 2.1 implement step — done (code only, tests next)
+
+- set.go: Set.Search now collects (hit, source index) pairs and
+  sort.SliceStable's them — Score desc, source index asc, Path asc — and
+  returns the flattened slice; doc comment now states the ordering
+  contract ("the returned slice is the display order"). "sort" import
+  added. Build + existing knowledge tests green.
+
+## Phase 2.1 analyze — done (Low, main context)
+
+- Set.Search at set.go:87-97 unchanged since drift gate. set_test.go
+  helpers: writeFile, twoScopeSet (project+team scopes, both contain
+  "compass"). No existing set-level search→read chaining test — criterion
+  3 needs one; store-level round trip covers Store.Read only.
+- Approach: collect (hit, source index) pairs, sort.SliceStable score
+  desc / source idx asc / path asc; rewrite "no ranking" doc comment.
+
+## Phases 1.1 + 1.2 — COMPLETE (Milestone 1 done)
+
+- Both phases ticked in plan.md with changelog entries (2026-06-11).
+  Remaining: 2.1 (Set ranking), 2.2 (CLI schema/help), 3.1 (docs sweep).
+- Phase 1.2 discovery worth keeping: headingText rejects "#hashtag";
+  bare "#" first heading wins the slot with empty text → locator fallback;
+  candidate insertion after equal entries preserves file-order tie-break.
+
+## Phase 1.2 verify step — green
+
+- build/test/vet all pass; 13/13 TestSearch tests green; all 3 criteria
+  mapped to passing tests. Verifier noted "excerpt contains a query word"
+  is only indirectly asserted — accepted: true by construction (candidates
+  are matching lines) and pinned by the exact-string excerpt oracle;
+  adding a direct assertion would breach no-redundant-assertions.
+
+## Phase 1.2 test step — done
+
+- search_test.go gained: TestSearch_TitleFromFirstHeading (first heading
+  wins over later ones), TestSearch_TitleFallsBackToLocator,
+  TestSearch_ExcerptPrefersLineWithMoreTerms (Excerpts[0] is the two-term
+  line even when single-term lines precede it), TestSearch_ExcerptCountCapped
+  (exactly 3). go test ./... fully green.
+
+## Phase 1.2 implement step — done (code only, tests next)
+
+- search.go: maxExcerptsPerHit=3 const added beside maxExcerptBytes;
+  fileAggregate gained title/titleSet/best ([]candidateLine{text,
+  distinct, total}) replacing lines []string; addCandidate keeps a
+  bounded sorted top-3 (distinct desc, total desc, file order asc —
+  insertion after equal entries preserves file order); headingText helper
+  recognises ATX headings (trimmed "#"+space-or-alone; "#hashtag"
+  rejected; first heading wins via titleSet even if its text is empty →
+  locator fallback). Hit.Title = heading text else rel.
+- go build + existing store tests green. Title/excerpt-selection tests to
+  be added in test step.
+
+## Phase 1.1 — COMPLETE (plan checkboxes ticked, changelog entry written)
+
+- update_plan: Phase 1.1 heading + all 4 criteria ticked in plan.md.
+- update_changelog: `## Changelog` section created in plan.md with the
+  2026-06-11 Phase 1.1 entry (deviations: 000026-commit prerequisite
+  waived by user; cmd/knowledge_test.go adapted early). 4 phases remain
+  (1.2, 2.1, 2.2, 3.1).
+- Looping to analyze for Phase 1.2 without prompting, per the user's
+  standing skip-confirmation-on-simple-features preference.
+- Phase 1.2 reminders: hoist inline literal 3 → maxExcerptsPerHit const;
+  extend fileAggregate lines with per-line distinct-term + occurrence
+  counts for best-line selection; capture first ATX heading as Title.
+- Phase 1.2 analyze: done in main context (Low complexity); all changes
+  confined to internal/store/search.go (+ tests), which Phase 1.1 just
+  rewrote — no drift. Selection order: distinct terms desc, total
+  occurrences desc, file order asc; candidate set bounded during scan.
+
+## Phase 1.1 verify step — green
+
+- go build / go test ./... / go vet (= make lint) all pass; all four
+  acceptance criteria mapped to passing tests by the verify sub-agent.
+
+## Phase 1.1 test step — done
+
+- search_test.go adapted (Excerpts iteration, whitespace-only query case,
+  score test renamed TestSearch_ScoreSumsOccurrencesAcrossDocument with
+  spread.txt summed-score fixture + Len pin) and extended: scattered
+  multi-word match, missing-word exclusion, one-hit-per-document with
+  hand-computed score, single-word regression oracle
+  (TestSearch_SingleWordMatchesSameFiles: needle → {top.txt,
+  nested/deep.txt, long.txt}).
+- cmd/knowledge_test.go minimally adapted (local struct excerpt→excerpts
+  array; assertions on Excerpts[0]); CLI title/score/ranking assertions
+  deliberately deferred to Phase 2.2.
+- `go test ./...` fully green.
+
+## Phase 1.1 implement step — done (code only, tests next)
+
+- store.go: Hit reshaped — added Title, Excerpt→Excerpts []string, Score
+  comment now "sum of all query terms' occurrences across the document".
+- search.go: Search tokenizes via strings.Fields(strings.ToLower(query)),
+  zero terms → (nil,nil); search(terms) emits one Hit per file where every
+  term count > 0, Score = summed counts, Title = rel (heading capture is
+  Phase 1.2), Excerpts = first matching lines (≤3, literal cap — the
+  maxExcerptsPerHit const is scheduled for Phase 1.2's best-line
+  selection), each trimExcerpt'd. lineMatch replaced by
+  fileAggregate{counts []int, lines []string}; scanFile(path, terms)
+  keeps binary sniff / 1MiB buffer / ErrTooLong keep-and-skip unchanged
+  (binary → zero aggregate → no match).
+- `go build ./...` passes; internal/store/search_test.go and
+  cmd/knowledge_test.go (:16,:155-157) still reference old Hit shape —
+  both to be adapted in the test step.
+
+## Analyze findings (Phase 1.1 — current phase)
+
+- All Phase 1.1 file:line refs verified current. Only non-test user of
+  Hit.Excerpt is the fan-out loop at internal/store/search.go:73.
+- Cross-phase learning: cmd/knowledge_test.go:16 declares a local hit
+  struct with `excerpt` json field and asserts on it (:155-157). Hit shape
+  change in 1.1 breaks it before Phase 2.2 — adapt it minimally in 1.1
+  (excerpts array) to keep the full suite green; 2.2 owns schema/help/
+  ranking assertions. internal/knowledge/set_test.go does not touch
+  Excerpt.
+
+## Key decisions (from plan workflow, carried forward)
+
+- Design: tokenize query (strings.Fields, lower-cased; zero terms → empty
+  result), single-pass per-file aggregation in scanFile (per-term counts,
+  first-ATX-heading title, bounded best-excerpt candidates), match = all
+  terms present, one Hit per document. Hit = {scope, path, title, score,
+  excerpts[≤3]}; scope/path untouched (read contract preserved). Score =
+  sum of term occurrences. Ranking in Set.Search: score desc, tie-break
+  source order then path.
+- 3 milestones / 5 phases: 1.1 aggregation+matching (Medium, Hit shape
+  changes once), 1.2 titles+excerpts, 2.1 Set ranking, 2.2 CLI
+  schema/help, 3.1 lockstep docs sweep (templates, rendered skill copy via
+  init/render not hand-edit, README:164, CHANGELOG).
+- Sole open question (impl-time): does occurrence-count scoring rank the
+  relevant entry FIRST on the live KB given noisy JSON transcript entries?
+  If not → STOP and ask user.
+- Success metrics: fixture-based behavioural tests for mechanisms; live-KB
+  outcomes are manual — captured in the implementation test plan
+  (tests-own-filesystem convention forbids reading the live KB).
+- No project conventions exist (conventions store empty).

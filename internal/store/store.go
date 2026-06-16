@@ -18,13 +18,15 @@ type DirEntry struct {
 	IsDir bool   // true for a subdirectory — recurse into it via List
 }
 
-// Hit is a generic search result produced by a store's Search. It carries a
-// locator and a compact excerpt, never the full file body.
+// Hit is a generic search result produced by a store's Search. It describes
+// one matching document, carrying a locator and compact excerpts, never the
+// full file body.
 type Hit struct {
-	Scope   string  `json:"scope"`   // scope label of the originating store
-	Path    string  `json:"path"`    // locator, relative to the store root — pass to Read
-	Excerpt string  `json:"excerpt"` // compact excerpt, capped at the excerpt budget
-	Score   float64 `json:"score"`   // optional cheap relevance score; 0 when the backend has none
+	Scope    string   `json:"scope"`    // scope label of the originating store
+	Path     string   `json:"path"`     // locator, relative to the store root — pass to Read
+	Title    string   `json:"title"`    // the document's first heading, or the locator when it has none
+	Excerpts []string `json:"excerpts"` // compact excerpts, each capped at the excerpt budget
+	Score    float64  `json:"score"`    // sum of all query terms' case-insensitive occurrences across the document
 }
 
 // Store provides read/write access to a project's data directory.
@@ -54,10 +56,6 @@ type Store interface {
 type FileStore struct {
 	root  string
 	scope string
-	// forceFallback makes Search skip the ripgrep path and always use the
-	// native Go scan. Set only by tests so the fallback can be exercised
-	// deterministically regardless of whether rg is installed on the host.
-	forceFallback bool
 }
 
 // NewFileStore creates a FileStore rooted at root, labelled with scope.

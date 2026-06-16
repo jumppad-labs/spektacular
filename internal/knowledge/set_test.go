@@ -115,6 +115,95 @@ func TestSet_OverlappingEntriesTaggedPerScope(t *testing.T) {
 	}, entries)
 }
 
+// Phase 2.1 criterion 1: Search ranks hits globally by score, so a strong
+// match in the later-configured "team" source outranks a weak match in the
+// earlier "project" source. Scores are hand-computed from the fixtures: the
+// team file holds three occurrences of "beacon", the project file one.
+func TestSet_SearchRanksAcrossSourcesByScore(t *testing.T) {
+	projectDir := t.TempDir()
+	teamDir := t.TempDir()
+
+	writeFile(t, projectDir, "notes.md", "a single beacon here\n")
+	writeFile(t, teamDir, "signals.md", "beacon beacon\nthe beacon shines\n")
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Scope: "project", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: projectDir}},
+		{Scope: "team", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: teamDir}},
+	}
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+
+	hits, err := set.Search("beacon")
+	require.NoError(t, err)
+
+	order := make([][2]string, len(hits))
+	for i, h := range hits {
+		order[i] = [2]string{h.Scope, h.Path}
+	}
+	require.Equal(t, [][2]string{
+		{"team", "signals.md"},  // score 3 ranks first despite team being configured second
+		{"project", "notes.md"}, // score 1
+	}, order)
+}
+
+// Phase 2.1 criterion 2: equal-score hits order by configured source order then
+// by path ascending, identically on every call. "lantern" occurs exactly once
+// per file, and each scope pairs notes.md with notes/zz.md — names whose
+// walk-discovery order (the notes/ dir is descended before the notes.md file)
+// differs from path-ascending order ("notes.md" sorts before "notes/zz.md").
+func TestSet_SearchTieBreaksBySourceOrderThenPath(t *testing.T) {
+	projectDir := t.TempDir()
+	teamDir := t.TempDir()
+
+	writeFile(t, projectDir, "notes.md", "project lantern\n")
+	writeFile(t, projectDir, "notes/zz.md", "project nested lantern\n")
+	writeFile(t, teamDir, "notes.md", "team lantern\n")
+	writeFile(t, teamDir, "notes/zz.md", "team nested lantern\n")
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Scope: "project", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: projectDir}},
+		{Scope: "team", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: teamDir}},
+	}
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+
+	expected := [][2]string{
+		{"project", "notes.md"},
+		{"project", "notes/zz.md"},
+		{"team", "notes.md"},
+		{"team", "notes/zz.md"},
+	}
+
+	first, err := set.Search("lantern")
+	require.NoError(t, err)
+	second, err := set.Search("lantern")
+	require.NoError(t, err)
+
+	firstOrder := make([][2]string, len(first))
+	for i, h := range first {
+		firstOrder[i] = [2]string{h.Scope, h.Path}
+	}
+	require.Equal(t, expected, firstOrder)
+	require.Equal(t, first, second, "repeated searches must return identical slices")
+}
+
+// Phase 2.1 criterion 3: a hit's Scope and Path feed straight into set.Read,
+// which returns the full original fixture content. "overview" matches only the
+// team scope's nested file, so the round trip crosses into a non-first source.
+func TestSet_SearchHitRoundTripsThroughRead(t *testing.T) {
+	set, _, _ := twoScopeSet(t)
+
+	hits, err := set.Search("overview")
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+
+	data, err := set.Read(hits[0].Scope, hits[0].Path)
+	require.NoError(t, err)
+	require.Equal(t, []byte("team overview of the system\n"), data)
+}
+
 // Criterion 3: a source pointing at an unreachable location fails NewSet with
 // an error that names the offending scope.
 func TestNewSet_UnreachableSourceFailsNamingScope(t *testing.T) {

@@ -202,6 +202,44 @@ func TestInit_CreatesProjectKnowledgeSourceOnly(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "team knowledge source dir should not be created by init")
 }
 
+// TestInit_ScaffoldsCategoriesAtConfiguredLocation asserts that when the project
+// knowledge source is configured at a non-default location, the knowledge base —
+// every category directory and its README definition — is scaffolded there, and
+// not at the hardcoded .spektacular/knowledge path.
+func TestInit_ScaffoldsCategoriesAtConfiguredLocation(t *testing.T) {
+	dir := t.TempDir()
+	spektacularDir := filepath.Join(dir, ".spektacular")
+	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
+
+	cfg := config.NewDefault()
+	cfg.Knowledge = config.KnowledgeConfig{
+		Sources: []config.SourceConfig{
+			{
+				Scope:    "project",
+				Provider: config.ProviderFile,
+				Config:   config.FileKnowledgeConfig{Location: ".spektacular/kb"},
+			},
+		},
+	}
+	require.NoError(t, cfg.ToYAMLFile(filepath.Join(spektacularDir, "config.yaml")))
+
+	// Force is required because .spektacular already exists.
+	require.NoError(t, Init(dir, true))
+
+	// Every category directory and its README definition exist under the
+	// configured location.
+	for _, c := range knowledge.Categories {
+		readme := filepath.Join(dir, ".spektacular", "kb", c.Name, "README.md")
+		data, err := os.ReadFile(readme)
+		require.NoError(t, err, "category %s should be scaffolded at the configured location", c.Name)
+		require.Contains(t, string(data), "**Purpose:**")
+	}
+
+	// The hardcoded default location is not created when config points elsewhere.
+	_, err := os.Stat(filepath.Join(dir, ".spektacular", "knowledge"))
+	require.True(t, os.IsNotExist(err), "default .spektacular/knowledge should not be created when the location is customised")
+}
+
 // TestInit_DefaultConfig_CreatesProjectKnowledgeDir asserts that with no
 // knowledge config the synthesised default project source directory exists.
 func TestInit_DefaultConfig_CreatesProjectKnowledgeDir(t *testing.T) {

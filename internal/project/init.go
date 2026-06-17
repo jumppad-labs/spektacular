@@ -33,27 +33,14 @@ func Init(projectPath string, force bool) error {
 		cfg = loaded
 	}
 
-	dirs := []string{
-		spektacularDir,
-		// Spec and plan directories are configured as project-root-relative
-		// paths (e.g. ".spektacular/plans"), like the knowledge location.
-		filepath.Join(projectPath, cfg.Plan.Config.Directory),
-		filepath.Join(projectPath, cfg.Spec.Config.Directory),
-		filepath.Join(spektacularDir, "knowledge"),
-	}
-
-	// Scaffold a directory for every category in the knowledge registry, which
-	// is the single source of truth for the category model (including the
-	// always-applied glossary and the looked-up decisions category).
-	for _, c := range knowledge.Categories {
-		dirs = append(dirs, filepath.Join(spektacularDir, "knowledge", c.Name))
-	}
-
-	// Create the directory for the project knowledge source so the knowledge
-	// commands can reach it. Only the project scope is created by init; team
-	// and global sources are shared and expected to exist independently.
-	// WithDefaults covers the synthesised default project source, and relative
-	// locations resolve against the project root as knowledge.NewSet resolves them.
+	// Resolve the project knowledge source location(s) from config so the
+	// knowledge base is scaffolded wherever the configuration points it, not at
+	// a hardcoded path. Only the project scope is created by init; team and
+	// global sources are shared and expected to exist independently. WithDefaults
+	// covers the synthesised default project source, and relative locations
+	// resolve against the project root as knowledge.NewSet resolves them. By
+	// default this is .spektacular/knowledge.
+	var knowledgeRoots []string
 	for _, src := range cfg.Knowledge.WithDefaults(projectPath).Sources {
 		if src.Provider != config.ProviderFile || src.Scope != config.DefaultKnowledgeScope {
 			continue
@@ -62,7 +49,28 @@ func Init(projectPath string, force bool) error {
 		if !filepath.IsAbs(location) {
 			location = filepath.Join(projectPath, location)
 		}
-		dirs = append(dirs, location)
+		knowledgeRoots = append(knowledgeRoots, location)
+	}
+
+	dirs := []string{
+		spektacularDir,
+		// Spec and plan directories are configured as project-root-relative
+		// paths (e.g. ".spektacular/plans"), like the knowledge location.
+		filepath.Join(projectPath, cfg.Plan.Config.Directory),
+		filepath.Join(projectPath, cfg.Spec.Config.Directory),
+	}
+
+	// Ensure the knowledge base exists under each configured project source
+	// location: the source root plus a directory for every category in the
+	// knowledge registry, which is the single source of truth for the category
+	// model (including the always-applied glossary and the looked-up decisions
+	// category). MkdirAll is idempotent, so this also tops up any categories a
+	// pre-existing project is missing.
+	for _, root := range knowledgeRoots {
+		dirs = append(dirs, root)
+		for _, c := range knowledge.Categories {
+			dirs = append(dirs, filepath.Join(root, c.Name))
+		}
 	}
 
 	for _, d := range dirs {
@@ -87,18 +95,21 @@ func Init(projectPath string, force bool) error {
 		return fmt.Errorf("writing .gitignore: %w", err)
 	}
 
-	// Write a README for each knowledge category, rendered from its registry
-	// definition so the directory documents its own purpose, boundary, tier,
-	// and entry shape rather than carrying a circular placeholder.
-	for _, c := range knowledge.Categories {
-		title := strings.Title(c.Name) //nolint:staticcheck // simple capitalisation
-		content := fmt.Sprintf(
-			"# %s\n\n**Tier:** %s\n\n**Purpose:** %s\n\n**Belongs elsewhere:** %s\n\n**Entry shape:** %s\n",
-			title, c.Tier, c.Purpose, c.Boundary, c.EntryShape,
-		)
-		readmePath := filepath.Join(spektacularDir, "knowledge", c.Name, "README.md")
-		if err := os.WriteFile(readmePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("writing %s README: %w", c.Name, err)
+	// Write a README for each knowledge category under each configured project
+	// source location, rendered from its registry definition so the directory
+	// documents its own purpose, boundary, tier, and entry shape rather than
+	// carrying a circular placeholder.
+	for _, root := range knowledgeRoots {
+		for _, c := range knowledge.Categories {
+			title := strings.Title(c.Name) //nolint:staticcheck // simple capitalisation
+			content := fmt.Sprintf(
+				"# %s\n\n**Tier:** %s\n\n**Purpose:** %s\n\n**Belongs elsewhere:** %s\n\n**Entry shape:** %s\n",
+				title, c.Tier, c.Purpose, c.Boundary, c.EntryShape,
+			)
+			readmePath := filepath.Join(root, c.Name, "README.md")
+			if err := os.WriteFile(readmePath, []byte(content), 0644); err != nil {
+				return fmt.Errorf("writing %s README: %w", c.Name, err)
+			}
 		}
 	}
 

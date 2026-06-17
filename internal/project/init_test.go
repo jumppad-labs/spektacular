@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/knowledge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,11 +72,33 @@ func TestInit_CreatesKnowledgeREADMEs(t *testing.T) {
 	err := Init(dir, false)
 	require.NoError(t, err)
 
-	for _, sub := range []string{"learnings", "architecture", "gotchas", "conventions"} {
-		readmePath := filepath.Join(dir, ".spektacular", "knowledge", sub, "README.md")
+	for _, c := range knowledge.Categories {
+		readmePath := filepath.Join(dir, ".spektacular", "knowledge", c.Name, "README.md")
 		data, err := os.ReadFile(readmePath)
-		require.NoError(t, err, "README.md should exist in %s", sub)
-		require.Contains(t, string(data), sub)
+		require.NoError(t, err, "README.md should exist in %s", c.Name)
+		require.Contains(t, string(data), "**Purpose:**", "README for %s should be rendered from its registry definition", c.Name)
+	}
+}
+
+// TestInit_CreatesNewCategoryDirsWithoutCircularReadmes asserts the Phase 1.2
+// acceptance criteria: Init creates the two new category directories (glossary
+// and decisions) under .spektacular/knowledge, and no category README carries
+// the old circular placeholder text.
+func TestInit_CreatesNewCategoryDirsWithoutCircularReadmes(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, Init(dir, false))
+
+	for _, name := range []string{"glossary", "decisions"} {
+		info, err := os.Stat(filepath.Join(dir, ".spektacular", "knowledge", name))
+		require.NoError(t, err, "expected new category dir %s to exist", name)
+		require.True(t, info.IsDir(), "%s should be a directory", name)
+	}
+
+	for _, c := range knowledge.Categories {
+		readmePath := filepath.Join(dir, ".spektacular", "knowledge", c.Name, "README.md")
+		data, err := os.ReadFile(readmePath)
+		require.NoError(t, err, "README.md should exist in %s", c.Name)
+		require.NotContains(t, string(data), "This directory contains", "README for %s should not carry the old circular placeholder", c.Name)
 	}
 }
 

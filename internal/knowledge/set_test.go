@@ -333,3 +333,117 @@ func TestSet_ConventionsEmptyWhenNoScopeHasConventions(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, conventions)
 }
+
+// Phase 2.2 criterion: every search hit is tagged with its category, the first
+// segment of its store-relative path. The fixtures live in two looked-up
+// categories so the hits survive search; the expected category per path is
+// hand-written.
+func TestSet_SearchTagsHitsWithCategory(t *testing.T) {
+	set, projectDir, _ := twoScopeSet(t)
+
+	writeFile(t, projectDir, "gotchas/x.md", "watch out for the sextant trap\n")
+	writeFile(t, projectDir, "architecture/y.md", "the sextant module wiring\n")
+
+	hits, err := set.Search("sextant")
+	require.NoError(t, err)
+
+	byPath := map[string]string{}
+	for _, h := range hits {
+		byPath[h.Path] = h.Category
+	}
+	require.Equal(t, "gotchas", byPath["gotchas/x.md"])
+	require.Equal(t, "architecture", byPath["architecture/y.md"])
+}
+
+// Phase 2.2 criterion: always-applied categories are excluded from search while
+// looked-up categories are not. conventions/ and glossary/ entries that match
+// the query never appear; the matching gotchas/ entry does.
+func TestSet_SearchExcludesAlwaysAppliedCategories(t *testing.T) {
+	set, projectDir, _ := twoScopeSet(t)
+
+	writeFile(t, projectDir, "conventions/c.md", "the astrolabe rule\n")
+	writeFile(t, projectDir, "glossary/g.md", "astrolabe: a term\n")
+	writeFile(t, projectDir, "gotchas/h.md", "astrolabe gotcha\n")
+
+	hits, err := set.Search("astrolabe")
+	require.NoError(t, err)
+
+	categories := map[string]bool{}
+	for _, h := range hits {
+		categories[h.Category] = true
+	}
+	require.False(t, categories["conventions"], "conventions must be excluded from search")
+	require.False(t, categories["glossary"], "glossary must be excluded from search")
+	require.True(t, categories["gotchas"], "looked-up gotchas must appear in search")
+}
+
+// Phase 2.2 load-bearing criterion: re-tiering a category in the registry is a
+// single self-consistent action. Flipping gotchas to always-applied
+// simultaneously makes Search exclude it AND makes AlwaysAppliedEntries load it,
+// so the two behaviours can never drift. The mutation is restored in defer so no
+// other test is affected. Not parallel: it mutates package state.
+func TestRetier_FlipsLoadAndSearchExclusionTogether(t *testing.T) {
+	set, projectDir, _ := twoScopeSet(t)
+
+	writeFile(t, projectDir, "gotchas/trap.md", "the binnacle trap\n")
+
+	// Before the flip: gotchas is looked-up — it appears in search and not in
+	// the always-applied reader.
+	hits, err := set.Search("binnacle")
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	require.Equal(t, "gotchas", hits[0].Category)
+
+	entries, err := set.AlwaysAppliedEntries()
+	require.NoError(t, err)
+	for _, e := range entries {
+		require.NotEqual(t, "gotchas", e.Category, "gotchas must not be always-applied before the flip")
+	}
+
+	// Flip gotchas to always-applied via a single registry edit, restoring the
+	// exact original registry afterwards.
+	original := Categories
+	modified := make([]Category, len(original))
+	copy(modified, original)
+	for i := range modified {
+		if modified[i].Name == "gotchas" {
+			modified[i].Tier = TierAlwaysApplied
+		}
+	}
+	Categories = modified
+	defer func() { Categories = original }()
+
+	// After the flip: gotchas is now excluded from search AND now loaded by the
+	// always-applied reader, tagged with its category.
+	hits, err = set.Search("binnacle")
+	require.NoError(t, err)
+	require.Empty(t, hits, "gotchas must be excluded from search after the flip")
+
+	entries, err = set.AlwaysAppliedEntries()
+	require.NoError(t, err)
+	require.Contains(t, entries, AlwaysAppliedEntry{
+		Scope:    "project",
+		Path:     "gotchas/trap.md",
+		Content:  "the binnacle trap\n",
+		Category: "gotchas",
+	})
+}
+
+// Phase 2.2 criterion: AlwaysAppliedEntries returns entries from every
+// always-applied category — conventions AND glossary — across all scopes, each
+// tagged with its category and full content. Expected values are hand-written.
+func TestSet_AlwaysAppliedEntriesReturnsAllAlwaysAppliedCategories(t *testing.T) {
+	set, projectDir, teamDir := twoScopeSet(t)
+
+	writeFile(t, projectDir, "conventions/c.md", "project: use tabs\n")
+	writeFile(t, projectDir, "glossary/g.md", "compass: a navigation term\n")
+	writeFile(t, teamDir, "glossary/term.md", "sextant: another term\n")
+
+	entries, err := set.AlwaysAppliedEntries()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []AlwaysAppliedEntry{
+		{Scope: "project", Path: "conventions/c.md", Content: "project: use tabs\n", Category: "conventions"},
+		{Scope: "project", Path: "glossary/g.md", Content: "compass: a navigation term\n", Category: "glossary"},
+		{Scope: "team", Path: "glossary/term.md", Content: "sextant: another term\n", Category: "glossary"},
+	}, entries)
+}

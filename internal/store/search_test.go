@@ -85,10 +85,10 @@ func TestSearch_ScopeAndLocatorRoundTrip(t *testing.T) {
 	require.Empty(t, noHits)
 }
 
-// Matching is case-insensitive, conventions/ is excluded from search, and a
-// query with no terms — empty or whitespace-only — returns an empty result
-// and no error.
-func TestSearch_CaseInsensitiveAndExcludesConventions(t *testing.T) {
+// Matching is case-insensitive, the store walks every directory (including
+// conventions/), and a query with no terms — empty or whitespace-only —
+// returns an empty result and no error.
+func TestSearch_CaseInsensitiveAndIncludesAllDirectories(t *testing.T) {
 	dir := writeSearchFixture(t)
 	st := NewFileStore(dir, "project")
 
@@ -106,12 +106,12 @@ func TestSearch_CaseInsensitiveAndExcludesConventions(t *testing.T) {
 	require.Contains(t, paths, "nested/deep.txt",
 		"the lowercase query should match the uppercase NEEDLE")
 
-	// The fixture's conventions/style.md DOES contain "needle", so the absence
-	// of any conventions/ path proves the exclusion rather than a non-match.
-	for _, p := range paths {
-		require.False(t, strings.HasPrefix(p, "conventions/"),
-			"hit %q should have been excluded from search", p)
-	}
+	// The store is deliberately category-agnostic: it no longer excludes
+	// conventions/, so its matching file is returned like any other. Skipping
+	// always-applied tiers now lives in the knowledge layer (Set.Search) and is
+	// tested in the knowledge package, not here.
+	require.Contains(t, paths, "conventions/style.md",
+		"the store should no longer exclude conventions/ from search")
 
 	emptyHits, err := st.Search("")
 	require.NoError(t, err)
@@ -122,6 +122,23 @@ func TestSearch_CaseInsensitiveAndExcludesConventions(t *testing.T) {
 	blankHits, err := st.Search(" \t\n ")
 	require.NoError(t, err)
 	require.Empty(t, blankHits)
+}
+
+// The bare store does not populate Hit.Category: deriving a category from the
+// path is the knowledge layer's job, so every hit the store returns carries an
+// empty Category.
+func TestSearch_LeavesCategoryEmpty(t *testing.T) {
+	dir := writeSearchFixture(t)
+	st := NewFileStore(dir, "project")
+
+	hits, err := st.Search("needle")
+	require.NoError(t, err)
+	require.NotEmpty(t, hits)
+
+	for _, h := range hits {
+		require.Empty(t, h.Category,
+			"hit %q should carry an empty Category from the store", h.Path)
+	}
 }
 
 // A hit's Score sums non-overlapping, case-insensitive occurrences of the
@@ -359,9 +376,59 @@ func TestSearch_ExcerptCountCapped(t *testing.T) {
 		"five matching lines must be capped at three excerpts")
 }
 
-// Phase 1.1 regression: a single-word query finds exactly the same files the
-// per-line implementation did. The oracle is the hand-maintained list of
-// shared-fixture files containing "needle" outside conventions/.
+// Phase 3.1: a hit's Checksum is the hex SHA-256 over the file's exact raw
+// bytes. The expected digest is an INDEPENDENT oracle produced by the
+// sha256sum CLI over the exact bytes "# Title\n\nneedle here\n", hard-coded as
+// a literal so the test never re-derives it through the production code.
+func TestSearch_ChecksumMatchesKnownSHA256(t *testing.T) {
+	dir := t.TempDir()
+	fx := NewFileStore(dir, "project")
+	require.NoError(t, fx.Write("doc.md", []byte("# Title\n\nneedle here\n")))
+
+	st := NewFileStore(dir, "project")
+
+	hits, err := st.Search("needle")
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	require.Equal(t,
+		"50aeeec588de4ca1d772e3029bd0dba3522cd186003b38ae3681eecbdff804ec",
+		hits[0].Checksum,
+		"checksum should be the SHA-256 of the file's exact raw bytes")
+}
+
+// Phase 3.1: byte-identical files share a Checksum, while a file differing by
+// exactly one byte gets a different one — the identity property de-dup relies
+// on. Checksums are compared between returned hits, never recomputed in the
+// test.
+func TestSearch_ChecksumIdentityAndDifference(t *testing.T) {
+	dir := t.TempDir()
+	fx := NewFileStore(dir, "project")
+	// Two byte-identical files at different paths, plus a third that differs by
+	// a single byte ("needle." vs "needle,"), all containing the query term.
+	require.NoError(t, fx.Write("a.md", []byte("the needle is here.\n")))
+	require.NoError(t, fx.Write("b.md", []byte("the needle is here.\n")))
+	require.NoError(t, fx.Write("c.md", []byte("the needle is here,\n")))
+
+	st := NewFileStore(dir, "project")
+
+	hits, err := st.Search("needle")
+	require.NoError(t, err)
+
+	sums := make(map[string]string, len(hits))
+	for _, h := range hits {
+		sums[h.Path] = h.Checksum
+	}
+	require.Len(t, sums, 3)
+
+	require.Equal(t, sums["a.md"], sums["b.md"],
+		"byte-identical files must share a checksum")
+	require.NotEqual(t, sums["a.md"], sums["c.md"],
+		"a one-byte difference must change the checksum")
+}
+
+// Phase 1.1 regression: a single-word query finds every shared-fixture file
+// containing "needle". The oracle is the hand-maintained list of those files,
+// which now includes conventions/style.md since the store is category-agnostic.
 func TestSearch_SingleWordMatchesSameFiles(t *testing.T) {
 	dir := writeSearchFixture(t)
 	st := NewFileStore(dir, "project")
@@ -373,5 +440,6 @@ func TestSearch_SingleWordMatchesSameFiles(t *testing.T) {
 	for _, h := range hits {
 		paths = append(paths, h.Path)
 	}
-	require.ElementsMatch(t, []string{"top.txt", "nested/deep.txt", "long.txt"}, paths)
+	require.ElementsMatch(t,
+		[]string{"top.txt", "nested/deep.txt", "long.txt", "conventions/style.md"}, paths)
 }

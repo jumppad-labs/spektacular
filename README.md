@@ -137,6 +137,8 @@ Knowledge feeds context to the planning agent. By default Spektacular reads `.sp
 
 Knowledge is the accumulated know-how a project draws on when planning — conventions, architecture notes, gotchas, and lessons from past work. It is strictly a **planning-time input**: the planning agent reads it while producing a plan, and the relevant parts are written into the plan itself. The implement workflow then consumes only the plan documents, so it never needs to re-read the knowledge base — the plan is the contract.
 
+> For the full model — the six knowledge categories and their definitions, the two retrieval tiers, the per-result category label, de-duplication and consolidation, the exact-checksum rationale, and layered source precedence — see [docs/knowledge-base.md](docs/knowledge-base.md). The summary below is an overview.
+
 ### Two tiers
 
 Knowledge is split into two tiers by *how it is accessed*, not where it is stored:

@@ -37,7 +37,7 @@ Before advancing, save this section to its working file. Using your own `Write` 
 
 ### Step 4: Select the conventions that apply
 
-Now the design shape is locked and you know the surfaces this feature touches, select — from the conventions you loaded in full during discovery (`{{config.command}} knowledge conventions`) — the subset that actually bears on this work. For each one you keep, write a one-line rationale for **why it applies to this feature**, and cite it inline in the Architecture & Design Decisions content above wherever it drives a specific choice. Include only the genuinely relevant conventions — not the whole knowledge base.
+Now the design shape is locked and you know the surfaces this feature touches, select — from the conventions you loaded in full during discovery (the conventions-category entries returned by `{{config.command}} knowledge always-applied`) — the subset that actually bears on this work. For each one you keep, write a one-line rationale for **why it applies to this feature**, and cite it inline in the Architecture & Design Decisions content above wherever it drives a specific choice. Include only the genuinely relevant conventions — not the whole knowledge base.
 
 Relevance is **proposed, not auto-decided**: present the conventions you propose to apply (and any you deliberately dropped) to the user and get their confirmation before saving. If no conventions are relevant, or the project has none, say so plainly rather than padding the list — an empty or generic list is a visible signal the knowledge base was not consulted.
 

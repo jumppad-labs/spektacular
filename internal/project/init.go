@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/knowledge"
 	"github.com/jumppad-labs/spektacular/templates"
 )
 
@@ -39,10 +40,13 @@ func Init(projectPath string, force bool) error {
 		filepath.Join(projectPath, cfg.Plan.Config.Directory),
 		filepath.Join(projectPath, cfg.Spec.Config.Directory),
 		filepath.Join(spektacularDir, "knowledge"),
-		filepath.Join(spektacularDir, "knowledge", "conventions"),
-		filepath.Join(spektacularDir, "knowledge", "learnings"),
-		filepath.Join(spektacularDir, "knowledge", "architecture"),
-		filepath.Join(spektacularDir, "knowledge", "gotchas"),
+	}
+
+	// Scaffold a directory for every category in the knowledge registry, which
+	// is the single source of truth for the category model (including the
+	// always-applied glossary and the looked-up decisions category).
+	for _, c := range knowledge.Categories {
+		dirs = append(dirs, filepath.Join(spektacularDir, "knowledge", c.Name))
 	}
 
 	// Create the directory for the project knowledge source so the knowledge
@@ -83,13 +87,18 @@ func Init(projectPath string, force bool) error {
 		return fmt.Errorf("writing .gitignore: %w", err)
 	}
 
-	// Write README files for knowledge subdirectories
-	for _, sub := range []string{"learnings", "architecture", "gotchas", "conventions"} {
-		title := strings.Title(sub) //nolint:staticcheck // simple capitalisation
-		content := fmt.Sprintf("# %s\n\nThis directory contains %s documentation.\n", title, sub)
-		readmePath := filepath.Join(spektacularDir, "knowledge", sub, "README.md")
+	// Write a README for each knowledge category, rendered from its registry
+	// definition so the directory documents its own purpose, boundary, tier,
+	// and entry shape rather than carrying a circular placeholder.
+	for _, c := range knowledge.Categories {
+		title := strings.Title(c.Name) //nolint:staticcheck // simple capitalisation
+		content := fmt.Sprintf(
+			"# %s\n\n**Tier:** %s\n\n**Purpose:** %s\n\n**Belongs elsewhere:** %s\n\n**Entry shape:** %s\n",
+			title, c.Tier, c.Purpose, c.Boundary, c.EntryShape,
+		)
+		readmePath := filepath.Join(spektacularDir, "knowledge", c.Name, "README.md")
 		if err := os.WriteFile(readmePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("writing %s README: %w", sub, err)
+			return fmt.Errorf("writing %s README: %w", c.Name, err)
 		}
 	}
 

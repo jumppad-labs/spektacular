@@ -27,6 +27,8 @@ type Hit struct {
 	Title    string   `json:"title"`    // the document's first heading, or the locator when it has none
 	Excerpts []string `json:"excerpts"` // compact excerpts, each capped at the excerpt budget
 	Score    float64  `json:"score"`    // sum of all query terms' case-insensitive occurrences across the document
+	Category string   `json:"category"` // the entry's category; left empty by the store and populated by the knowledge layer from the path
+	Checksum string   `json:"checksum"` // hex SHA-256 over the entry's exact raw bytes; the identity key for byte-identical de-dup
 }
 
 // Store provides read/write access to a project's data directory.

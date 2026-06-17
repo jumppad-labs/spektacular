@@ -2,6 +2,8 @@
 
 **You are writing a spec, not a plan.** A spec captures *what* is being built and the direction the user has *already decided* — requirements, acceptance criteria, constraints, and any high-level technical direction. It does **not** design the *how*, and it does **not** investigate the codebase: do not read source files, run code searches, or ground decisions in specific files, types, or functions. That grounding is the plan workflow's `discovery` step. Stay at spec altitude in every step that follows.
 
+**Where the spec ends and the plan begins.** Everything in a spec stays at the level of *what* and *why*. The *how* is designed later by the downstream **plan workflow**, whose steps own discovery, architecture, components, data structures, implementation detail, dependencies, testing approach, milestones, and phases. Whenever your content starts to resemble any of those — a worked design, a numbered pipeline or algorithm, step-by-step processing, data shapes, file/field/function names, the ordering of operations — it belongs to the plan, not the spec. The most a spec should do with a *how* is name it in a sentence as direction (that is what Technical Approach is for) and leave the design to the plan. This boundary holds for every step below.
+
 Ask the user to describe this feature in 2-3 sentences:
 • What is being built?
 • What problem does it solve?

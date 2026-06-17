@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -41,6 +42,17 @@ type Convention struct {
 	Scope   string `json:"scope"`
 	Path    string `json:"path"`
 	Content string `json:"content"`
+}
+
+// AlwaysAppliedEntry is a single entry from an always-applied category, tagged
+// with the scope it lives in, its category, and carrying its full body. The
+// Category field lets a consumer tell a convention from a glossary term when
+// the always-applied reader returns more than one category at once.
+type AlwaysAppliedEntry struct {
+	Scope    string `json:"scope"`
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Category string `json:"category"`
 }
 
 // SourceInfo describes one configured knowledge source.
@@ -112,11 +124,41 @@ func (s *Set) Search(query string) ([]store.Hit, error) {
 		}
 		return ra.hit.Path < rb.hit.Path
 	})
+	alwaysApplied := alwaysAppliedSet()
 	var hits []store.Hit
 	for _, r := range merged {
-		hits = append(hits, r.hit)
+		hit := r.hit
+		hit.Category = categoryOf(hit.Path)
+		if alwaysApplied[hit.Category] {
+			// Always-applied categories are loaded in full on every task via
+			// AlwaysAppliedEntries; exclude them from search so the same
+			// content is never surfaced twice. This is the single registry-driven
+			// place the exclusion lives — the store no longer special-cases it.
+			continue
+		}
+		hits = append(hits, hit)
 	}
 	return hits, nil
+}
+
+// categoryOf returns an entry's category — the first segment of its
+// store-relative path. An entry sitting at the scope root, with no path
+// separator, has no category and yields the empty string.
+func categoryOf(path string) string {
+	if category, _, found := strings.Cut(path, "/"); found {
+		return category
+	}
+	return ""
+}
+
+// alwaysAppliedSet returns the always-applied category names as a set for
+// membership tests, derived from the single registry declaration.
+func alwaysAppliedSet() map[string]bool {
+	set := make(map[string]bool)
+	for _, name := range AlwaysApplied() {
+		set[name] = true
+	}
+	return set
 }
 
 // Read returns the full content of a knowledge entry from a named scope.
@@ -155,31 +197,61 @@ func (s *Set) List() ([]Entry, error) {
 	return entries, nil
 }
 
+// AlwaysAppliedEntries reads the full body of every entry in every
+// always-applied category (conventions, glossary, …) across every configured
+// scope, concatenated in configured scope order then registry category order,
+// each tagged with its scope, path, and category. These categories are loaded
+// in full on every task rather than searched. A scope that lacks a category's
+// directory contributes nothing rather than erroring, so fresh or
+// partially-populated scopes still resolve cleanly.
+func (s *Set) AlwaysAppliedEntries() ([]AlwaysAppliedEntry, error) {
+	return s.readCategories(AlwaysApplied())
+}
+
 // Conventions reads every always-apply convention across every configured
 // scope, concatenated in configured order, and returns each one's full body
 // tagged with its scope and path. Conventions live under each scope's
-// "conventions/" directory. A scope that has no such directory contributes
-// nothing rather than erroring, so fresh or partially-populated scopes still
-// resolve cleanly.
+// "conventions/" directory. It is the backward-compatible, conventions-only
+// view over the generalised always-applied reader, so its JSON shape is
+// unchanged. A scope that has no such directory contributes nothing rather than
+// erroring.
 func (s *Set) Conventions() ([]Convention, error) {
+	entries, err := s.readCategories([]string{"conventions"})
+	if err != nil {
+		return nil, err
+	}
 	var conventions []Convention
-	for _, src := range s.sources {
-		files, err := listFiles(src.store, "conventions")
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue
-			}
-			return nil, fmt.Errorf("listing conventions in knowledge source %q: %w", src.scope, err)
-		}
-		for _, f := range files {
-			content, err := src.store.Read(f)
-			if err != nil {
-				return nil, fmt.Errorf("reading convention %q in knowledge source %q: %w", f, src.scope, err)
-			}
-			conventions = append(conventions, Convention{Scope: src.scope, Path: f, Content: string(content)})
-		}
+	for _, e := range entries {
+		conventions = append(conventions, Convention{Scope: e.Scope, Path: e.Path, Content: e.Content})
 	}
 	return conventions, nil
+}
+
+// readCategories reads the full body of every entry in each named category
+// across every configured scope, in configured scope order then the given
+// category order, tagging each entry with its category. A scope missing a
+// category's directory contributes nothing rather than erroring.
+func (s *Set) readCategories(categories []string) ([]AlwaysAppliedEntry, error) {
+	var entries []AlwaysAppliedEntry
+	for _, src := range s.sources {
+		for _, category := range categories {
+			files, err := listFiles(src.store, category)
+			if err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					continue
+				}
+				return nil, fmt.Errorf("listing %s in knowledge source %q: %w", category, src.scope, err)
+			}
+			for _, f := range files {
+				content, err := src.store.Read(f)
+				if err != nil {
+					return nil, fmt.Errorf("reading %s entry %q in knowledge source %q: %w", category, f, src.scope, err)
+				}
+				entries = append(entries, AlwaysAppliedEntry{Scope: src.scope, Path: f, Content: string(content), Category: category})
+			}
+		}
+	}
+	return entries, nil
 }
 
 // Sources reports the configured scopes and their locations, in order.

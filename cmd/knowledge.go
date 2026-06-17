@@ -54,6 +54,18 @@ var knowledgeConventionsCmd = &cobra.Command{
 	RunE:  runKnowledgeConventions,
 }
 
+var knowledgeCategoriesCmd = &cobra.Command{
+	Use:   "categories",
+	Short: "List the knowledge categories and their definitions, tiers, and entry shapes",
+	RunE:  runKnowledgeCategories,
+}
+
+var knowledgeAlwaysAppliedCmd = &cobra.Command{
+	Use:   "always-applied",
+	Short: "Read every always-applied entry (conventions and glossary) across all configured scopes",
+	RunE:  runKnowledgeAlwaysApplied,
+}
+
 var knowledgeSearchOutputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
@@ -66,6 +78,8 @@ var knowledgeSearchOutputSchema = &schemaObj{
 					"path":     {Type: "string"},
 					"title":    {Type: "string"},
 					"score":    {Type: "number"},
+					"category": {Type: "string"},
+					"checksum": {Type: "string"},
 					"excerpts": {Type: "array", Items: &schemaProp{Type: "string"}},
 				},
 			},
@@ -103,6 +117,16 @@ var knowledgeSourcesOutputSchema = &schemaObj{
 var knowledgeConventionsOutputSchema = &schemaObj{
 	Type:       "object",
 	Properties: map[string]*schemaProp{"conventions": {Type: "array"}},
+}
+
+var knowledgeCategoriesOutputSchema = &schemaObj{
+	Type:       "object",
+	Properties: map[string]*schemaProp{"categories": {Type: "array"}},
+}
+
+var knowledgeAlwaysAppliedOutputSchema = &schemaObj{
+	Type:       "object",
+	Properties: map[string]*schemaProp{"entries": {Type: "array"}},
 }
 
 var knowledgeScopePathInputSchema = &schemaObj{
@@ -244,6 +268,33 @@ func runKnowledgeConventions(cmd *cobra.Command, _ []string) error {
 	return out.WriteResult(map[string]any{"conventions": conventions})
 }
 
+func runKnowledgeCategories(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeCategoriesOutputSchema}, "")
+	}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	return out.WriteResult(map[string]any{"categories": knowledge.Categories})
+}
+
+func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeAlwaysAppliedOutputSchema}, "")
+	}
+	set, err := newKnowledgeSet()
+	if err != nil {
+		return output.WriteError(cmd.ErrOrStderr(), err)
+	}
+	entries, err := set.AlwaysAppliedEntries()
+	if err != nil {
+		return output.WriteError(cmd.ErrOrStderr(), err)
+	}
+	if entries == nil {
+		entries = []knowledge.AlwaysAppliedEntry{}
+	}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	return out.WriteResult(map[string]any{"entries": entries})
+}
+
 // knowledgeScopePathInput is the --data payload for the read and write commands.
 type knowledgeScopePathInput struct {
 	Scope string `json:"scope"`
@@ -292,5 +343,5 @@ func init() {
 	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().String("file", "", "Read entry content from the file at <path> (relative to cwd); stdin is used when omitted")
 
-	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd)
+	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd, knowledgeCategoriesCmd, knowledgeAlwaysAppliedCmd)
 }

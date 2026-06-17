@@ -3,6 +3,8 @@ package store
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -33,7 +35,9 @@ const binarySniffBytes = 8000
 // case-insensitive substring; a file matches when every term occurs somewhere
 // in it, and each matching file produces exactly one scope-tagged Hit whose
 // Score is the sum of all terms' occurrence counts across the file.
-// Directories named "conventions" are excluded, binary files are skipped, and
+// The store is category-agnostic: it scans every directory and never excludes
+// one by name — tier-based exclusion of always-applied categories lives in the
+// knowledge layer. Binary files are skipped, and
 // a file containing an over-long line is scanned only up to that line. A
 // query with no terms — empty or all whitespace — or one with no matches
 // returns an empty result, not an error.
@@ -55,12 +59,6 @@ func (f *FileStore) search(terms []string) ([]Hit, error) {
 			return err
 		}
 		if d.IsDir() {
-			// Conventions are read in full via the dedicated conventions
-			// reader; exclude them from search so they are never surfaced
-			// twice.
-			if d.Name() == "conventions" {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		agg, err := scanFile(path, terms)
@@ -93,6 +91,7 @@ func (f *FileStore) search(terms []string) ([]Hit, error) {
 			Title:    title,
 			Excerpts: excerpts,
 			Score:    float64(score),
+			Checksum: agg.checksum,
 		})
 		return nil
 	})
@@ -119,6 +118,7 @@ type fileAggregate struct {
 	title    string          // first ATX-heading text, "" when the file has none
 	titleSet bool            // whether a heading line was seen, so later ones never win
 	best     []candidateLine // strongest lines: distinct terms desc, total desc, file order asc
+	checksum string          // hex SHA-256 over the file's exact raw bytes, "" for binary files
 }
 
 // addCandidate ranks line into the aggregate's bounded excerpt candidates —
@@ -170,7 +170,15 @@ func scanFile(path string, terms []string) (fileAggregate, error) {
 		return agg, nil
 	}
 
-	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(sniff), file))
+	// Accumulate a SHA-256 over the file's exact raw bytes during this same
+	// read, so the checksum needs no second pass. The sniff bytes were already
+	// read off the file, so feed them to the hasher directly; the remainder is
+	// teed into the hasher as the scanner consumes it.
+	hasher := sha256.New()
+	hasher.Write(sniff)
+	tee := io.TeeReader(file, hasher)
+
+	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(sniff), tee))
 	scanner.Buffer(make([]byte, 0, 64*1024), scanBufferBytes)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -200,6 +208,13 @@ func scanFile(path string, terms []string) (fileAggregate, error) {
 			return agg, err
 		}
 	}
+	// Drain any bytes the scanner did not consume (e.g. after an over-long
+	// line) through the hasher so the checksum covers the file's exact raw
+	// bytes in full, not just the scanned prefix.
+	if _, err := io.Copy(io.Discard, tee); err != nil {
+		return agg, err
+	}
+	agg.checksum = hex.EncodeToString(hasher.Sum(nil))
 	return agg, nil
 }
 

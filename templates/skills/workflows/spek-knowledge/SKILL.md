@@ -21,26 +21,39 @@ One skill handles all three intents. Discriminate by what the user actually said
 
 # Intent: lookup
 
-Triggered when the user wants to read or search existing entries.
+Triggered when the user wants to read or search existing entries. A lookup does **not** dump the raw hit list — it returns a single consolidated, source-cited answer with duplicates removed and the most specific source winning. The flow has a deterministic stage (exact de-dup) and a judgement stage (consolidation), kept strictly separate.
 
-1. Run `{{command}} knowledge search <query>` with a concise query derived from the user's question. The output is a ranked list of results — one per matching document, strongest match first — each carrying its `scope` (e.g. `project`, `global`), `path`, `title`, `score`, and up to three `excerpts` of its strongest matching lines. A document matches when every query word occurs somewhere in it, in any order.
-2. Present results to the user with the **scope label visible** on every hit — never strip it. The user needs to know which configured store the content came from.
-3. If the user asks for the full content of a particular hit, run `{{command}} knowledge read --data '{"scope":"<scope>","path":"<path>"}'` with that hit's `scope` and `path` and present the body.
-4. If the query returns no hits, say so plainly. Do not fall back to a write unless the user explicitly asks to add a new entry.
+1. **Search.** Run `{{command}} knowledge search <query>` with a concise query derived from the user's question. The output is a ranked list of results — one per matching document, strongest match first — each carrying its `scope` (e.g. `project`, `team`, `global`), `path`, `title`, `score`, `category` (the kind of knowledge: e.g. `gotchas`, `architecture`, `learnings`), `checksum` (a content hash), and up to three `excerpts`. A document matches when every query word occurs somewhere in it, in any order. If there are no hits, say so plainly and stop — do not fall back to a write unless the user explicitly asks to add a new entry.
+
+2. **Exact de-dup (deterministic — no judgement).** Group the hits by their `checksum`. Hits sharing a checksum are byte-identical copies of the same entry held in more than one place; collapse each such group to a **single candidate**, unioning the `scope`/`path` citations of every copy in the group. This is pure equality — never merge two entries whose checksums differ at this stage, however similar they look. The result is a list of unique candidates, each with one or more source citations.
+
+3. **Consolidate (judgement — delegated to a sub-agent).** Hand the unique candidates to a consolidation **sub-agent** so the raw bodies never crowd the main context. The sub-agent's contract:
+   - **Input:** the user's question and the list of unique candidates (each with its `scope`(s), `path`(s), and `category`).
+   - **Task:** read each candidate's full body with `{{command}} knowledge read --data '{"scope":"<scope>","path":"<path>"}'`, then classify the *relationship* between candidates and combine them:
+     - **Equivalent** (same point, different words) → merge into one point, citing every source.
+     - **Refinement** (one is a more specific case of another) → apply **layered precedence**: the most-specific scope wins. Specificity runs `project` (most specific) → `team` → `global` (least specific); a project entry overrides a team entry overrides a global one for the same item. State the winning guidance and note what it overrode.
+     - **Genuine contradiction** (sources actually disagree) → **surface it explicitly** as a conflict naming both sources; never silently drop or average it.
+     - **Distinct** (unrelated points) → keep both.
+   - **Output (returned to the main agent):** a single consolidated answer composed of merged points, **each citing the source scope(s)/path(s)** it was drawn from, with any contradictions presented as surfaced conflicts. The raw per-source candidate list is **not** the output.
+
+4. **Present** the sub-agent's consolidated answer to the user, keeping every **citation (scope + path) visible** so the user can see which configured store each point came from. Never present the raw hit list as the result.
+
+**If the executing agent cannot spawn a sub-agent**, run the exact same consolidation inline in the main context instead: read the unique candidates' bodies, apply the identical relationship-classification and layered-precedence rules, and present the same single cited answer. The output is identical; only the context isolation is weaker. Do not block on the absence of sub-agent orchestration.
 
 # Intent: contribute
 
 Triggered when the user wants to record something new.
 
-1. Run `{{command}} knowledge sources` to enumerate configured scopes. The output is the authoritative list of writable destinations.
-2. Decide (or ask the user) which **scope**, **path**, and **body** to write. Path conventions follow the existing store layout — slug-style filenames under the scope's root.
-3. Stage the body on disk under `.spektacular/tmp/<slug>.md` using the `Write` tool. Do not pipe the body via stdin; the only supported invocation is `--file <staged>`.
-4. **Show the user the proposed scope, path, and body before writing.** Wait for **explicit confirmation** ("yes", "go ahead", or equivalent). If the user asks for changes, revise the staged body and re-show — never write on an implicit signal.
-5. Only after explicit confirmation, run:
+1. Run `{{command}} knowledge sources` to enumerate configured scopes (the authoritative list of writable destinations), and `{{command}} knowledge categories` to load the category definitions — each category's purpose, boundary, retrieval tier, and expected entry shape.
+2. **Route the entry to a category.** From the definitions, pick the category whose **Purpose** matches the entry and whose **Boundary** does not push it elsewhere — e.g. a standing rule is a `convention`, a defined term is a `glossary` entry, the reasoning behind a choice is a `decision`, an empirical finding is a `learning`, a structural fact is `architecture`, a sharp edge is a `gotcha`. Honour the **entry shape**: the `glossary` is for a term and a short gloss only — steer over-long or multi-paragraph content to a more fitting category (architecture, learnings, decisions) rather than letting it bloat the always-applied glossary. The entry's path is then `<category>/<slug>.md`, a slug-style filename under the chosen category.
+3. Decide (or ask the user) which **scope** to write to and the entry **body**. The path comes from the category routing in step 2.
+4. Stage the body on disk under `.spektacular/tmp/<slug>.md` using the `Write` tool. Do not pipe the body via stdin; the only supported invocation is `--file <staged>`.
+5. **Show the user the proposed scope, path (category + slug), and body before writing.** Wait for **explicit confirmation** ("yes", "go ahead", or equivalent). If the user asks for changes, revise the staged body and re-show — never write on an implicit signal.
+6. Only after explicit confirmation, run:
    ```
-   {{command}} knowledge write --data '{"scope":"<scope>","path":"<path>"}' --file .spektacular/tmp/<slug>.md
+   {{command}} knowledge write --data '{"scope":"<scope>","path":"<category>/<slug>.md"}' --file .spektacular/tmp/<slug>.md
    ```
-6. Remove the scratch file after a successful write: `rm .spektacular/tmp/<slug>.md`.
+7. Remove the scratch file after a successful write: `rm .spektacular/tmp/<slug>.md`.
 
 # Intent: update
 

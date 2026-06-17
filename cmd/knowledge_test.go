@@ -31,6 +31,24 @@ type knowledgeSource struct {
 	Location string `json:"location"`
 }
 
+// alwaysAppliedEntry mirrors the knowledge.AlwaysAppliedEntry JSON envelope
+// emitted by always-applied.
+type alwaysAppliedEntry struct {
+	Scope    string `json:"scope"`
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Category string `json:"category"`
+}
+
+// knowledgeCategory mirrors the knowledge.Category JSON envelope emitted by categories.
+type knowledgeCategory struct {
+	Name       string `json:"name"`
+	Purpose    string `json:"purpose"`
+	Boundary   string `json:"boundary"`
+	Tier       string `json:"tier"`
+	EntryShape string `json:"entryShape"`
+}
+
 // resetKnowledgeFlags clears the persistent and per-command flags between runs
 // so a flag set by one subtest does not leak into the next.
 func resetKnowledgeFlags(t *testing.T) {
@@ -233,6 +251,49 @@ func TestKnowledgeWrite_PersistsEntry(t *testing.T) {
 	require.Equal(t, "freshly written knowledge\n", string(data))
 }
 
+// Criterion 1 & 2: `knowledge categories` projects the category registry to the
+// {"categories":[...]} envelope — every category carries a purpose, boundary,
+// tier, and entry shape, and the set of names is the full, ordered model.
+func TestKnowledgeCategories_ListsEveryCategoryWithDefinition(t *testing.T) {
+	twoScopeProject(t)
+
+	stdout, _, err := runKnowledge(t, "categories")
+	require.NoError(t, err)
+
+	var result struct {
+		Categories []knowledgeCategory `json:"categories"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.Len(t, result.Categories, 6)
+
+	var names []string
+	for _, c := range result.Categories {
+		require.NotEmpty(t, c.Purpose)
+		require.NotEmpty(t, c.Boundary)
+		require.NotEmpty(t, c.Tier)
+		require.NotEmpty(t, c.EntryShape)
+		names = append(names, c.Name)
+	}
+	require.ElementsMatch(t,
+		[]string{"conventions", "glossary", "architecture", "gotchas", "learnings", "decisions"},
+		names)
+}
+
+// Criterion 2: `categories --schema` declares the output envelope — categories
+// is an array property.
+func TestKnowledgeCategories_SchemaDeclaresCategoriesArray(t *testing.T) {
+	twoScopeProject(t)
+
+	stdout, _, err := runKnowledge(t, "categories", "--schema")
+	require.NoError(t, err)
+
+	var schema commandSchema
+	require.NoError(t, json.Unmarshal([]byte(stdout), &schema))
+	require.NotNil(t, schema.Output)
+	require.Contains(t, schema.Output.Properties, "categories")
+	require.Equal(t, "array", schema.Output.Properties["categories"].Type)
+}
+
 // Criterion 2: the --schema persistent flag prints the documented input/output
 // schema envelope for a subcommand instead of running it.
 func TestKnowledgeRead_SchemaDocumentsInputAndOutput(t *testing.T) {
@@ -275,6 +336,7 @@ func TestKnowledgeSearch_SchemaDeclaresPerDocumentHitFields(t *testing.T) {
 	require.Equal(t, "array", hits.Items.Properties["excerpts"].Type)
 	require.NotNil(t, hits.Items.Properties["excerpts"].Items)
 	require.Equal(t, "string", hits.Items.Properties["excerpts"].Items.Type)
+	require.Equal(t, "string", hits.Items.Properties["category"].Type)
 }
 
 // Criterion 2: a failing subcommand emits the standard {"error":...} envelope
@@ -306,4 +368,82 @@ func TestKnowledgeRead_UnknownScopeEmitsErrorEnvelope(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope))
 	require.Contains(t, envelope.Error, "missing")
+}
+
+// alwaysAppliedProject lays out a temp project with a single file-backed
+// "project" scope seeded with one entry under conventions/ and one under
+// glossary/, then chdirs into it. It returns the project root. This fixture is
+// independent of twoScopeProject so the always-applied tests don't perturb the
+// exact-match expectations of the other suites.
+func alwaysAppliedProject(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Chdir(root)
+
+	dataDir := filepath.Join(root, ".spektacular")
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+
+	loc := filepath.Join(dataDir, "knowledge")
+	seed := func(name, content string) {
+		full := filepath.Join(loc, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+	}
+	seed("conventions/style.md", "always use tabs\n")
+	seed("glossary/compass.md", "compass: a tool that points north\n")
+
+	cfg := "knowledge:\n" +
+		"  sources:\n" +
+		"    - scope: project\n" +
+		"      provider: file\n" +
+		"      config:\n" +
+		"        location: " + loc + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(cfg), 0o644))
+
+	return root
+}
+
+// Phase 2.3: `knowledge always-applied` returns every always-applied entry —
+// both conventions and glossary — across all scopes in the {"entries":[...]}
+// envelope, each tagged with its scope, path, content, and the category it came
+// from so a consumer can tell a convention from a glossary term.
+func TestKnowledgeAlwaysApplied_ReturnsConventionsAndGlossaryTagged(t *testing.T) {
+	alwaysAppliedProject(t)
+
+	stdout, _, err := runKnowledge(t, "always-applied")
+	require.NoError(t, err)
+
+	var result struct {
+		Entries []alwaysAppliedEntry `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.ElementsMatch(t, []alwaysAppliedEntry{
+		{
+			Scope:    "project",
+			Path:     "conventions/style.md",
+			Content:  "always use tabs\n",
+			Category: "conventions",
+		},
+		{
+			Scope:    "project",
+			Path:     "glossary/compass.md",
+			Content:  "compass: a tool that points north\n",
+			Category: "glossary",
+		},
+	}, result.Entries)
+}
+
+// Phase 2.3: `always-applied --schema` declares the output envelope — entries
+// is an array property.
+func TestKnowledgeAlwaysApplied_SchemaDeclaresEntriesArray(t *testing.T) {
+	alwaysAppliedProject(t)
+
+	stdout, _, err := runKnowledge(t, "always-applied", "--schema")
+	require.NoError(t, err)
+
+	var schema commandSchema
+	require.NoError(t, json.Unmarshal([]byte(stdout), &schema))
+	require.NotNil(t, schema.Output)
+	require.Contains(t, schema.Output.Properties, "entries")
+	require.Equal(t, "array", schema.Output.Properties["entries"].Type)
 }

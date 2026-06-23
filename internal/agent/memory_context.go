@@ -115,11 +115,23 @@ func replaceMemoryContextSection(body []byte, startIdx, endIdx int, rendered str
 	return buf.Bytes()
 }
 
-// writeAGENTSAtomic writes content to path via a sibling temp file + rename
-// so a mid-write failure cannot truncate an existing AGENTS.md. Emits one
-// line to out describing the action, matching the format used by
-// installWorkflowSkills.
+// writeAGENTSAtomic writes content to path atomically. Emits one line to out
+// describing the action, matching the format used by installWorkflowSkills.
 func writeAGENTSAtomic(path string, content []byte, out io.Writer, action string) error {
+	if err := writeFileAtomic(path, content); err != nil {
+		return err
+	}
+	if action == "created" {
+		fmt.Fprintf(out, "  AGENTS.md: created %s\n", path)
+	} else {
+		fmt.Fprintf(out, "  AGENTS.md: %s %s\n", action, path)
+	}
+	return nil
+}
+
+// writeFileAtomic writes content to path via a sibling temp file + rename so a
+// mid-write failure cannot truncate an existing file.
+func writeFileAtomic(path string, content []byte) error {
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, content, 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", tmpPath, err)
@@ -127,11 +139,6 @@ func writeAGENTSAtomic(path string, content []byte, out io.Writer, action string
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming %s to %s: %w", tmpPath, path, err)
-	}
-	if action == "created" {
-		fmt.Fprintf(out, "  AGENTS.md: created %s\n", path)
-	} else {
-		fmt.Fprintf(out, "  AGENTS.md: %s %s\n", action, path)
 	}
 	return nil
 }

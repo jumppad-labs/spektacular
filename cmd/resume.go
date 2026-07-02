@@ -5,29 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
-
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 )
 
-// ResumeReport is the output a `new` command emits when it detects an
-// in-progress workflow instead of starting a fresh one. It is the shared shape
-// returned by all three kinds (spec/plan/implement) so the driving agent reacts
-// identically regardless of which kind is in progress — including the cross-kind
-// case, where Kind is read straight from the stored state.
-type ResumeReport struct {
-	Resumable     bool   `json:"resumable"`                // always true when a ResumeReport is emitted
-	Kind          string `json:"kind"`                     // in-progress workflow's kind (from state)
-	RequestedKind string `json:"requested_kind,omitempty"` // kind the user tried to run; set only on a cross-kind mismatch
-	Name          string `json:"name"`                     // in-progress workflow's instance name
-	CurrentStep   string `json:"current_step"`             // step the workflow stopped on
-	Instruction   string `json:"instruction"`              // rendered resume-prompt template
-}
-
 // resumeInstruction renders the shared resume-prompt template into the
-// instruction carried by a ResumeReport. It tells the driving agent to ask the
+// NextAction of an in-progress-workflow ErrorResponse. It tells the driving agent to ask the
 // user resume-vs-new and embeds both follow-up commands: resume via
 // `<command> <kind> goto` on the current step, or start fresh via
 // `<command> <kind> new --force`.
@@ -61,41 +45,38 @@ func mismatchInstruction(command, kind, requestedKind, name, currentStep string)
 	})
 }
 
-// emitResumeReport writes the appropriate ResumeReport for an in-progress
+// emitResumeReport builds the shared ErrorResponse for an in-progress
 // workflow. When the stored kind matches expectedKind it renders the normal
 // same-kind resume prompt; when it differs it renders the cross-kind mismatch
-// prompt and sets RequestedKind so the caller can see the mismatch in the
-// structured output as well as the instruction.
-func emitResumeReport(cmd *cobra.Command, command, expectedKind string, state *workflow.State) error {
+// prompt. Either way the rendered instruction text — unchanged from before
+// this phase — becomes the NextAction, and the workflow's identity and
+// position are carried in Resource/State, so this flows through the same
+// shared error shape and response envelope as any other failure instead of
+// being a separately-shaped success response.
+func emitResumeReport(command, expectedKind string, state *workflow.State) error {
 	name, _ := state.Data["name"].(string)
-	out := output.New(cmd.OutOrStdout(), globalFields)
 
 	if state.Kind != expectedKind {
 		instruction, err := mismatchInstruction(command, state.Kind, expectedKind, name, state.CurrentStep)
 		if err != nil {
 			return err
 		}
-		return out.WriteResult(ResumeReport{
-			Resumable:     true,
-			Kind:          state.Kind,
-			RequestedKind: expectedKind,
-			Name:          name,
-			CurrentStep:   state.CurrentStep,
-			Instruction:   instruction,
-		})
+		return output.NewError("cross_kind_workflow_in_progress",
+			fmt.Sprintf("a %s workflow (%q) is in progress at step %q; cannot start a %s workflow while it is active", state.Kind, name, state.CurrentStep, expectedKind)).
+			WithResource(name).
+			WithState(state.CurrentStep, nil).
+			WithNextAction(instruction)
 	}
 
 	instruction, err := resumeInstruction(command, state.Kind, name, state.CurrentStep)
 	if err != nil {
 		return err
 	}
-	return out.WriteResult(ResumeReport{
-		Resumable:   true,
-		Kind:        state.Kind,
-		Name:        name,
-		CurrentStep: state.CurrentStep,
-		Instruction: instruction,
-	})
+	return output.NewError("workflow_in_progress",
+		fmt.Sprintf("a %s workflow (%q) is already in progress at step %q", state.Kind, name, state.CurrentStep)).
+		WithResource(name).
+		WithState(state.CurrentStep, nil).
+		WithNextAction(instruction)
 }
 
 // detectInProgress loads the persisted workflow state at statePath and returns
@@ -127,11 +108,11 @@ func detectInProgress(statePath string) (*workflow.State, error) {
 //
 //   - force=true        → remove the state file and proceed fresh (handled=false).
 //   - no in-progress    → remove any stale state file and proceed fresh (handled=false).
-//   - in-progress, same kind → write a same-kind resume ResumeReport and return
-//     handled=true; the caller returns immediately, leaving state untouched.
-//   - in-progress, different kind → write a cross-kind mismatch ResumeReport
-//     (continue that kind's workflow with its skill, or overwrite with the
-//     requested kind via --force) and return handled=true. The in-progress
+//   - in-progress, same kind → return a same-kind "workflow_in_progress" error
+//     and handled=true; the caller returns immediately, leaving state untouched.
+//   - in-progress, different kind → return a "cross_kind_workflow_in_progress"
+//     error (continue that kind's workflow with its skill, or overwrite with
+//     the requested kind via --force) and handled=true. The in-progress
 //     workflow is never silently resumed or clobbered.
 //   - in-progress, no kind → return an error; a kind-less (pre-feature) state
 //     is never clobbered or guessed at.
@@ -139,7 +120,7 @@ func detectInProgress(statePath string) (*workflow.State, error) {
 // expectedKind is the kind of the `new` command being run ("spec"/"plan"/
 // "implement"); command is the CLI invocation prefix rendered into the
 // instruction.
-func resumeOrClear(cmd *cobra.Command, statePath, command, expectedKind string, force bool) (handled bool, err error) {
+func resumeOrClear(statePath, command, expectedKind string, force bool) (handled bool, err error) {
 	if force {
 		_ = os.Remove(statePath)
 		return false, nil
@@ -157,19 +138,19 @@ func resumeOrClear(cmd *cobra.Command, statePath, command, expectedKind string, 
 		return false, fmt.Errorf("existing workflow state at %s has no kind marker; run with --force to start fresh, or finish the existing workflow with `goto`", statePath)
 	}
 
-	return true, emitResumeReport(cmd, command, expectedKind, state)
+	return true, emitResumeReport(command, expectedKind, state)
 }
 
 // guardKind is the shared prologue for the `goto` and `status` commands. Those
 // commands operate on the persisted state directly, so they must refuse to act
 // on a workflow whose kind differs from the command's own kind — otherwise a
 // `spec goto` would apply spec steps to a plan's state. It returns handled=true
-// (after writing a cross-kind mismatch ResumeReport) when a different-kind
-// workflow is in progress; the caller must then return immediately. A same-kind
-// in-progress workflow (the normal target), a finished workflow, a kind-less
-// legacy state, or no state at all all return handled=false so the caller
-// proceeds as before.
-func guardKind(cmd *cobra.Command, statePath, command, expectedKind string) (handled bool, err error) {
+// (with a cross-kind mismatch error) when a different-kind workflow is in
+// progress; the caller must then return immediately. A same-kind in-progress
+// workflow (the normal target), a finished workflow, a kind-less legacy
+// state, or no state at all all return handled=false so the caller proceeds
+// as before.
+func guardKind(statePath, command, expectedKind string) (handled bool, err error) {
 	state, err := detectInProgress(statePath)
 	if err != nil {
 		return false, err
@@ -177,5 +158,5 @@ func guardKind(cmd *cobra.Command, statePath, command, expectedKind string) (han
 	if state == nil || state.Kind == "" || state.Kind == expectedKind {
 		return false, nil
 	}
-	return true, emitResumeReport(cmd, command, expectedKind, state)
+	return true, emitResumeReport(command, expectedKind, state)
 }

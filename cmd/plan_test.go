@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -26,14 +27,15 @@ func TestPlanNew_InProgressSpecReportedCrossKind(t *testing.T) {
 		Data:           map[string]any{"name": "000024_resume"},
 	})
 
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"plan", "new", "--data", `{"name":"myplan"}`})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "plan", "new", "--data", `{"name":"myplan"}`)
+	require.Equal(t, 1, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.True(t, r.Resumable)
-	require.Equal(t, "spec", r.Kind)
-	require.Equal(t, "000024_resume", r.Name)
-	require.Equal(t, "overview", r.CurrentStep)
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "cross_kind_workflow_in_progress", er.Code)
+	require.Equal(t, "000024_resume", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "overview", er.State.Current)
+	require.Contains(t, er.Message, "spec", "message must name the in-progress kind")
 }

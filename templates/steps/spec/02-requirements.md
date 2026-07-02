@@ -8,6 +8,15 @@ Use active voice:
 
 Each item should be independently verifiable. One behaviour per line.
 
+**Format each requirement as a checklist item:** a short, bold title on the checkbox line, with the full testable detail indented on the line below —
+
+```
+- [ ] **Short title**
+  Full requirement detail, in active voice, independently verifiable.
+```
+
+Write the working file in this shape from the start. It is assembled into the final spec largely as-is, so getting the shape right now avoids a reformatting pass later.
+
 **Requirements describe WHAT, not HOW.** Apply this test to every requirement before you write it down:
 
 > *If this were implemented with a completely different mechanism, would the requirement still be true?*

@@ -8,6 +8,8 @@ Be specific:
 
 Capture their response. If blank, note that no success metrics have been defined.
 
+**Format each metric as its own bullet point** (`- ...`), one per line, rather than a paragraph running multiple metrics together. Write the working file in this shape from the start — it is assembled into the final spec largely as-is.
+
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Success Metrics** content (the body only — no `## ` heading line) to `.spektacular/work/{{spec_name}}/success_metrics.md`. This working file is git-tracked and is read back on resume and when the spec is assembled, so it must hold the final agreed content for this section. It is **not** a spec store document — write it directly with your file tools and do **not** route it through `{{config.command}} spec file write` (that command is only for the final assembled spec).
 
 Once you are satisfied, move to the next step by running the command:

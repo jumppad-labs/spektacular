@@ -2,10 +2,13 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/looplab/fsm"
 )
@@ -107,7 +110,15 @@ func New(steps []StepConfig, statePath string, cfg Config, st store.Store, out R
 		})
 		if s.Callback != nil {
 			step := s // capture
-			callbacks["after_"+s.Name] = func(_ context.Context, e *fsm.Event) {
+			// Registered as before_<event>, not after_<event>: per
+			// looplab/fsm's callback ordering, before_ callbacks run — and can
+			// Cancel() to genuinely veto — before the library commits the
+			// transition (f.current = dst) or invokes enter_state (which
+			// persists state.json). An after_ callback's Cancel() only sets
+			// the returned error; by then the transition and its persistence
+			// have already happened. See
+			// .spektacular/knowledge/gotchas/fsm-cancel-only-works-before-transition-commits.md.
+			callbacks["before_"+s.Name] = func(_ context.Context, e *fsm.Event) {
 				nextStep, err := step.Callback(w.data, w.out, w.store, w.cfg)
 				if err != nil {
 					e.Cancel(err)
@@ -156,7 +167,7 @@ func (w *Workflow) Next() error {
 	}
 	w.pendingGoto = ""
 	if err := w.FSM.Event(context.Background(), transitions[0]); err != nil {
-		return err
+		return w.translateTransitionError(transitions[0], err)
 	}
 	if w.pendingGoto != "" {
 		return w.Goto(w.pendingGoto)
@@ -175,13 +186,50 @@ func (w *Workflow) Goto(name string) error {
 
 	w.pendingGoto = ""
 	if err := w.FSM.Event(context.Background(), name); err != nil {
-		return err
+		return w.translateTransitionError(name, err)
 	}
 	if w.pendingGoto != "" {
 		return w.Goto(w.pendingGoto)
 	}
 	w.commitTerminal()
 	return nil
+}
+
+// translateTransitionError rewrites a rejected-transition error from the
+// underlying FSM library into the shared ErrorResponse shape, naming the
+// caller's current step and the steps that would currently succeed. Errors
+// from a step's own callback (wrapped by the library as fsm.CanceledError)
+// are not rejected transitions — they pass through unchanged.
+func (w *Workflow) translateTransitionError(event string, err error) error {
+	var invalidErr fsm.InvalidEventError
+	var unknownErr fsm.UnknownEventError
+	if !errors.As(err, &invalidErr) && !errors.As(err, &unknownErr) {
+		return err
+	}
+
+	current := w.Current()
+	valid := w.FSM.AvailableTransitions()
+	return output.NewError("invalid_transition",
+		fmt.Sprintf("cannot run step %q from the current step %q", event, current)).
+		WithState(current, valid).
+		WithNextAction(w.nextActionForSteps(valid))
+}
+
+// nextActionForSteps renders the concrete goto command(s) that would
+// currently succeed, in the same "{{config.command}} {{kind}} goto ..."
+// style used by the resume/cross-kind instruction templates.
+func (w *Workflow) nextActionForSteps(valid []string) string {
+	if len(valid) == 0 {
+		return "the workflow has no valid next step from here"
+	}
+	commands := make([]string, len(valid))
+	for i, step := range valid {
+		commands[i] = fmt.Sprintf(`%s %s goto --data '{"step":"%s"}'`, w.cfg.Command, w.cfg.Kind, step)
+	}
+	if len(commands) == 1 {
+		return "run: " + commands[0]
+	}
+	return "run one of: " + strings.Join(commands, "; ")
 }
 
 // renderStep re-invokes a step's callback to re-emit its instruction without

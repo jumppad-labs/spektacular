@@ -105,3 +105,25 @@ func TestPathTraversal_Rejected(t *testing.T) {
 	_, err = st.List("../escape")
 	require.Error(t, err)
 }
+
+// TestPathTraversal_ErrorNamesAttemptedPath asserts that abs()'s rejection
+// message names the specific offending path (not just the generic "path
+// escapes store root" phrase), across every Store method that resolves a
+// path — so an agent handed the error can see which path it passed.
+func TestPathTraversal_ErrorNamesAttemptedPath(t *testing.T) {
+	st := newTestStore(t)
+	const escapePath = "../../etc/passwd"
+	const wantMsg = `path "../../etc/passwd" escapes store root`
+
+	_, err := st.Read(escapePath)
+	require.EqualError(t, err, wantMsg)
+
+	err = st.Write(escapePath, []byte("x"))
+	require.EqualError(t, err, wantMsg)
+
+	err = st.Delete(escapePath)
+	require.EqualError(t, err, wantMsg)
+
+	_, err = st.List(escapePath)
+	require.EqualError(t, err, wantMsg)
+}

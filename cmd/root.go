@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -21,10 +22,31 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	os.Exit(runRoot())
+}
+
+// runRoot runs the root command and returns the process exit code. It is the
+// single place a command's outcome (result or error) is translated into the
+// response envelope and written to the output stream — extracted from
+// Execute so tests can exercise the full wrapping behavior without an
+// os.Exit call.
+func runRoot() int {
+	err := rootCmd.Execute()
+	if err == nil {
+		return 0
 	}
+	output.WriteFailure(rootCmd.OutOrStdout(), toErrorResponse(err), globalFields)
+	return 1
+}
+
+// toErrorResponse converts any error returned by a command into the shared
+// ErrorResponse shape: an already-built *output.ErrorResponse passes through
+// unchanged, anything else falls back to a generic internal_error.
+func toErrorResponse(err error) *output.ErrorResponse {
+	if er, ok := err.(*output.ErrorResponse); ok {
+		return er
+	}
+	return output.NewError("internal_error", err.Error())
 }
 
 func configFilePath() (string, error) {
@@ -72,6 +94,11 @@ func projectRoot() (string, error) {
 }
 
 func init() {
+	// The response envelope wrapper in runRoot is the only place a command's
+	// outcome is ever printed, so the CLI framework's own default error/usage
+	// printing is turned off to avoid printing a failure a second time.
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
 	rootCmd.PersistentFlags().StringVar(&globalFields, "fields", "", `JSON array of output fields to include (e.g. '["step","instruction"]')`)
 	rootCmd.AddCommand(specCmd)
 	rootCmd.AddCommand(planCmd)

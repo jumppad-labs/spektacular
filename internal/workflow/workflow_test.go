@@ -1,9 +1,13 @@
 package workflow
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/stretchr/testify/require"
 )
@@ -126,8 +130,16 @@ func TestGotoInvalidStepFails(t *testing.T) {
 	sp := filepath.Join(t.TempDir(), "state.json")
 	wf := New(testSteps, sp, Config{}, nil, nil)
 
+	// Fresh workflow: current step is "new" (testSteps[0].Src[0]), and the
+	// only step reachable from "new" is "one" (testSteps[0].Src == ["new"]).
 	err := wf.Goto("nonexistent")
 	require.Error(t, err)
+
+	var errResp *output.ErrorResponse
+	require.True(t, errors.As(err, &errResp), "expected *output.ErrorResponse, got %T: %v", err, err)
+	require.NotNil(t, errResp.State)
+	require.Equal(t, "new", errResp.State.Current)
+	require.Equal(t, []string{"one"}, errResp.State.ValidActions)
 }
 
 func TestAutoSaveOnTransition(t *testing.T) {
@@ -165,8 +177,112 @@ func TestGotoBackwardFails(t *testing.T) {
 	wf.Next() // → two
 	wf.Next() // → three
 
+	// Current step is "three". The event "one" exists (Src == ["new"]) but
+	// "three" isn't a valid source for it, so this is a rejected transition,
+	// not an unknown event. The only step reachable from "three" is the
+	// implicit "done" transition (Src == [testSteps[2].Dst] == ["three"]).
 	err := wf.Goto("one")
 	require.Error(t, err)
+
+	var errResp *output.ErrorResponse
+	require.True(t, errors.As(err, &errResp), "expected *output.ErrorResponse, got %T: %v", err, err)
+	require.NotNil(t, errResp.State)
+	require.Equal(t, "three", errResp.State.Current)
+	require.Equal(t, []string{"done"}, errResp.State.ValidActions)
+}
+
+// TestNextCallbackErrorNotTranslated proves that an error returned by a
+// step's own callback (surfaced via the "before_" callback's e.Cancel(err))
+// is not a rejected-transition error and must pass through
+// translateTransitionError unchanged: not rewritten into an
+// *output.ErrorResponse. looplab/fsm wraps a before_ callback's Cancel(err)
+// as fsm.CanceledError{Err: err} (unlike after_, which returns err
+// unwrapped), so the original error is checked via errors.Is (which follows
+// CanceledError's Unwrap) rather than exact string equality.
+func TestNextCallbackErrorNotTranslated(t *testing.T) {
+	callbackErr := errors.New("callback exploded: disk full")
+	steps := []StepConfig{
+		{
+			Name: "one",
+			Src:  []string{"new"},
+			Dst:  "one",
+			Callback: func(data Data, out ResultWriter, st store.Store, cfg Config) (string, error) {
+				return "", callbackErr
+			},
+		},
+		{Name: "two", Src: []string{"one"}, Dst: "two"},
+	}
+	sp := filepath.Join(t.TempDir(), "state.json")
+	wf := New(steps, sp, Config{}, nil, nil)
+
+	err := wf.Next() // new → one; "one" callback fails
+
+	require.Error(t, err)
+
+	var errResp *output.ErrorResponse
+	require.False(t, errors.As(err, &errResp), "callback error must not be translated into an *output.ErrorResponse, got: %v", err)
+	require.ErrorIs(t, err, callbackErr, "the original callback error must survive, however the FSM library wraps it")
+	require.NotContains(t, err.Error(), "invalid_transition")
+	require.NotContains(t, err.Error(), "cannot run step")
+}
+
+// TestFailedStepDoesNotAdvancePersistedState is the Phase 3.1 regression
+// test: it proves that when a step's own callback fails, the FSM's before_
+// callback Cancel(err) genuinely vetoes the transition, so neither the
+// in-memory Workflow nor the persisted state.json file on disk advances past
+// the source step. Before the before_/after_ registration fix, enter_state
+// (which persists state.json) ran ahead of the step's own after_ callback,
+// so a failing step's Cancel(err) came too late — the transition had already
+// committed and been written to disk.
+func TestFailedStepDoesNotAdvancePersistedState(t *testing.T) {
+	callbackErr := errors.New("callback exploded: disk full")
+	steps := []StepConfig{
+		// "one" has no callback and succeeds trivially, so there is a
+		// persisted state.json on disk (CurrentStep "one") before the
+		// failing step ever runs.
+		{Name: "one", Src: []string{"new"}, Dst: "one"},
+		{
+			Name: "two",
+			Src:  []string{"one"},
+			Dst:  "two",
+			Callback: func(data Data, out ResultWriter, st store.Store, cfg Config) (string, error) {
+				return "", callbackErr
+			},
+		},
+		{Name: "three", Src: []string{"two"}, Dst: "three"},
+	}
+	sp := filepath.Join(t.TempDir(), "state.json")
+	wf := New(steps, sp, Config{}, nil, nil)
+
+	require.NoError(t, wf.Next()) // new → one (succeeds, persists state.json)
+	require.Equal(t, "one", wf.Current())
+
+	err := wf.Next() // one → two; "two" callback fails
+
+	// The error surfaces to the caller and is the original callback error,
+	// not rewritten into an *output.ErrorResponse (same guarantee as
+	// TestNextCallbackErrorNotTranslated).
+	require.Error(t, err)
+	require.ErrorIs(t, err, callbackErr)
+	var errResp *output.ErrorResponse
+	require.False(t, errors.As(err, &errResp), "callback error must not be translated into an *output.ErrorResponse, got: %v", err)
+
+	// Criterion 1: the in-memory Workflow still shows the source step "one",
+	// not the would-be destination "two", and "one" is not recorded as
+	// completed.
+	require.Equal(t, "one", wf.Current())
+	require.Equal(t, "one", wf.State().CurrentStep)
+	require.NotContains(t, wf.State().CompletedSteps, "one")
+
+	// Criterion 1 (independent check): read state.json directly off disk
+	// rather than trusting the in-memory struct, since the whole point of
+	// this test is proving the ON-DISK file was not advanced either.
+	raw, readErr := os.ReadFile(sp)
+	require.NoError(t, readErr)
+	var persisted State
+	require.NoError(t, json.Unmarshal(raw, &persisted))
+	require.Equal(t, "one", persisted.CurrentStep)
+	require.NotContains(t, persisted.CompletedSteps, "one")
 }
 
 func TestNextStepName(t *testing.T) {

@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,4 +129,25 @@ func TestSpecFileRead_ResolvesConfiguredDirectory(t *testing.T) {
 
 	require.NoError(t, rootCmd.Execute())
 	require.Equal(t, "stored body", stdout.String())
+}
+
+// TestSpecFileRead_MissingFileNamesResourceInError asserts that `spec file
+// read` on a nonexistent file fails through the standard response envelope
+// (exit code 1, "error": true, code "not_found") and that both the message
+// and the resource field name the specific requested file — not just a
+// generic "not found" — so an agent can tell which file it asked for.
+func TestSpecFileRead_MissingFileNamesResourceInError(t *testing.T) {
+	writeSpecFileFixture(t)
+
+	stdout, stderr, code := runRootCmd(t, "spec", "file", "read", "missing.md")
+
+	require.Equal(t, 1, code)
+	require.Empty(t, stderr)
+
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "not_found", er.Code)
+	require.Contains(t, er.Message, "missing.md")
+	require.Equal(t, "missing.md", er.Resource)
 }

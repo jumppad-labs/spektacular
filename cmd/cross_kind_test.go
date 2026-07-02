@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -20,11 +21,12 @@ func resetSpecGotoFlags(t *testing.T) {
 	t.Cleanup(reset)
 }
 
-// TestSpecNew_CrossKindReturnsMismatchReport asserts that running `spec new`
+// TestSpecNew_CrossKindReturnsMismatchError asserts that running `spec new`
 // while a *plan* workflow is in progress does not resume the plan as a spec:
-// it returns a cross-kind mismatch ResumeReport (RequestedKind=spec, Kind=plan)
-// and leaves the plan's state untouched.
-func TestSpecNew_CrossKindReturnsMismatchReport(t *testing.T) {
+// it fails with the shared cross_kind_workflow_in_progress error (naming both
+// the in-progress kind and the requested kind) and leaves the plan's state
+// untouched.
+func TestSpecNew_CrossKindReturnsMismatchError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
@@ -42,18 +44,20 @@ func TestSpecNew_CrossKindReturnsMismatchReport(t *testing.T) {
 	require.NoError(t, err)
 
 	resetSpecCommandFlags(t)
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"whatever"}`})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"whatever"}`)
+	require.Equal(t, 1, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.True(t, r.Resumable)
-	require.Equal(t, "plan", r.Kind, "report must carry the in-progress workflow's kind")
-	require.Equal(t, "spec", r.RequestedKind, "report must carry the kind the user tried to run")
-	require.Equal(t, "discovery", r.CurrentStep)
-	require.Contains(t, r.Instruction, "plan", "instruction must name the in-progress kind")
-	require.Contains(t, r.Instruction, "spec new --force", "instruction must offer overwriting with the requested kind")
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "cross_kind_workflow_in_progress", er.Code, "must be reported as a cross-kind mismatch, not a same-kind resume")
+	require.Equal(t, "000024_resume", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "discovery", er.State.Current)
+	require.Contains(t, er.Message, "plan", "message must name the in-progress kind")
+	require.Contains(t, er.Message, "spec", "message must name the requested kind")
+	require.Contains(t, er.NextAction, "plan", "instruction must name the in-progress kind")
+	require.Contains(t, er.NextAction, "spec new --force", "instruction must offer overwriting with the requested kind")
 
 	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
 	require.NoError(t, err)
@@ -81,15 +85,18 @@ func TestSpecGoto_CrossKindRefusesAndPreservesState(t *testing.T) {
 	require.NoError(t, err)
 
 	resetSpecGotoFlags(t)
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"spec", "goto", "--data", `{"step":"overview"}`})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "spec", "goto", "--data", `{"step":"overview"}`)
+	require.Equal(t, 1, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.True(t, r.Resumable)
-	require.Equal(t, "plan", r.Kind)
-	require.Equal(t, "spec", r.RequestedKind)
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "cross_kind_workflow_in_progress", er.Code)
+	require.Equal(t, "000024_resume", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "discovery", er.State.Current)
+	require.Contains(t, er.Message, "plan")
+	require.Contains(t, er.Message, "spec")
 
 	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
 	require.NoError(t, err)

@@ -186,12 +186,12 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	if dryRun {
 		statePath += ".dryrun-tmp"
 	} else {
-		handled, err := resumeOrClear(cmd, statePath, cfg.Command, "spec", force)
+		handled, err := resumeOrClear(statePath, cfg.Command, "spec", force)
 		if err != nil {
 			return err
 		}
 		if handled {
-			return nil
+			return err
 		}
 	}
 
@@ -237,7 +237,7 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 	wf.SetData("name", resolved.Name)
 
 	if err := wf.Next(); err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	return nil
 }
@@ -287,10 +287,10 @@ func runSpecGoto(cmd *cobra.Command, _ []string) error {
 
 	// Refuse to operate on an in-progress workflow of a different kind (e.g. a
 	// plan); resuming it from here would apply spec steps to a plan's state.
-	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "spec"); err != nil {
+	if handled, err := guardKind(stateFilePath(dataDir), cfg.Command, "spec"); err != nil {
 		return err
 	} else if handled {
-		return nil
+		return err
 	}
 
 	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
@@ -309,7 +309,7 @@ func runSpecGoto(cmd *cobra.Command, _ []string) error {
 	}
 
 	if err := wf.Goto(stepVal); err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	return nil
 }
@@ -335,10 +335,10 @@ func runSpecStatus(cmd *cobra.Command, _ []string) error {
 
 	// Refuse to report on an in-progress workflow of a different kind — its
 	// steps and counts would be meaningless under the spec step list.
-	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "spec"); err != nil {
+	if handled, err := guardKind(stateFilePath(dataDir), cfg.Command, "spec"); err != nil {
 		return err
 	} else if handled {
-		return nil
+		return err
 	}
 
 	steps := spec.Steps()

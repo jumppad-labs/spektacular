@@ -158,11 +158,11 @@ func runKnowledgeSearch(cmd *cobra.Command, args []string) error {
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	hits, err := set.Search(args[0])
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	if hits == nil {
 		hits = []store.Hit{}
@@ -177,15 +177,15 @@ func runKnowledgeRead(cmd *cobra.Command, _ []string) error {
 	}
 	input, err := knowledgeScopePathData(cmd)
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	content, err := set.Read(input.Scope, input.Path)
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(map[string]any{
@@ -201,11 +201,11 @@ func runKnowledgeList(cmd *cobra.Command, _ []string) error {
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	entries, err := set.List()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	if entries == nil {
 		entries = []knowledge.Entry{}
@@ -220,18 +220,18 @@ func runKnowledgeWrite(cmd *cobra.Command, _ []string) error {
 	}
 	input, err := knowledgeScopePathData(cmd)
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	content, err := readKnowledgeContent(cmd)
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	if err := set.Write(input.Scope, input.Path, content); err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(map[string]any{"scope": input.Scope, "path": input.Path})
@@ -243,7 +243,7 @@ func runKnowledgeSources(cmd *cobra.Command, _ []string) error {
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(map[string]any{"sources": set.Sources()})
@@ -255,11 +255,11 @@ func runKnowledgeConventions(cmd *cobra.Command, _ []string) error {
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	conventions, err := set.Conventions()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	if conventions == nil {
 		conventions = []knowledge.Convention{}
@@ -282,11 +282,11 @@ func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	entries, err := set.AlwaysAppliedEntries()
 	if err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	if entries == nil {
 		entries = []knowledge.AlwaysAppliedEntry{}

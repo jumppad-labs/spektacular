@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/steps/spec"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -262,7 +263,7 @@ func TestSpecNew_RejectsUnknownConfiguredIDMethod(t *testing.T) {
 // byte-for-byte oracles never depend on time.Now().
 var fixedResumeTime = time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 
-func TestSpecNew_InProgressReturnsResumeReportAndPreservesState(t *testing.T) {
+func TestSpecNew_InProgressReturnsWorkflowInProgressErrorAndPreservesState(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
@@ -280,17 +281,17 @@ func TestSpecNew_InProgressReturnsResumeReportAndPreservesState(t *testing.T) {
 	require.NoError(t, err)
 
 	resetSpecCommandFlags(t)
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"whatever"}`})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"whatever"}`)
+	require.Equal(t, 1, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.True(t, r.Resumable)
-	require.Equal(t, "spec", r.Kind)
-	require.Equal(t, "000024_resume", r.Name)
-	require.Equal(t, "overview", r.CurrentStep)
-	require.NotEmpty(t, r.Instruction)
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "workflow_in_progress", er.Code)
+	require.Equal(t, "000024_resume", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "overview", er.State.Current)
+	require.NotEmpty(t, er.NextAction)
 
 	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
 	require.NoError(t, err)
@@ -299,11 +300,12 @@ func TestSpecNew_InProgressReturnsResumeReportAndPreservesState(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(dataDir, "specs"))
 }
 
-// TestSpecNew_InProgressNoDataReturnsResumeReport asserts that the in-progress
-// check runs before the name is required: `spec new` with no --data still
-// surfaces the resume report (rather than erroring on the missing name), so the
-// driving agent can offer resume without first prompting for a spec name.
-func TestSpecNew_InProgressNoDataReturnsResumeReport(t *testing.T) {
+// TestSpecNew_InProgressNoDataReturnsWorkflowInProgressError asserts that the
+// in-progress check runs before the name is required: `spec new` with no
+// --data still fails with the shared workflow_in_progress error (rather than
+// erroring on the missing name), so the driving agent can offer resume
+// without first prompting for a spec name.
+func TestSpecNew_InProgressNoDataReturnsWorkflowInProgressError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
@@ -321,16 +323,16 @@ func TestSpecNew_InProgressNoDataReturnsResumeReport(t *testing.T) {
 	require.NoError(t, err)
 
 	resetSpecCommandFlags(t)
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"spec", "new"})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "spec", "new")
+	require.Equal(t, 1, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.True(t, r.Resumable)
-	require.Equal(t, "spec", r.Kind)
-	require.Equal(t, "000024_resume", r.Name)
-	require.Equal(t, "overview", r.CurrentStep)
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "workflow_in_progress", er.Code)
+	require.Equal(t, "000024_resume", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "overview", er.State.Current)
 
 	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
 	require.NoError(t, err)
@@ -362,18 +364,20 @@ func TestSpecNew_ForceStartsFreshOverInProgress(t *testing.T) {
 	require.FileExists(t, result.SpecPath)
 }
 
-func TestSpecNew_CleanDirHasNoResumeReport(t *testing.T) {
+// TestSpecNew_CleanDirSucceedsWithoutError asserts that `spec new` in a clean
+// directory (no in-progress state) succeeds normally through the standard
+// success envelope, rather than being reported as an in-progress workflow.
+func TestSpecNew_CleanDirSucceedsWithoutError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
 	resetSpecCommandFlags(t)
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"billing"}`})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
+	require.Equal(t, 0, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.False(t, r.Resumable)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &m))
+	require.Equal(t, false, m["error"])
 }
 
 func TestSpecNew_KindlessInProgressStateErrorsWithoutClobber(t *testing.T) {

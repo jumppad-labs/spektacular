@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -196,10 +197,11 @@ func TestImplementSteps_ListsAllSteps(t *testing.T) {
 	}
 }
 
-// TestImplementNew_InProgressReturnsResumeReport proves `implement new` runs the
-// shared resume prologue and emits a ResumeReport for an in-progress implement
-// workflow instead of starting fresh.
-func TestImplementNew_InProgressReturnsResumeReport(t *testing.T) {
+// TestImplementNew_InProgressReturnsWorkflowInProgressError proves `implement
+// new` runs the shared resume prologue and fails with the shared
+// workflow_in_progress error for an in-progress implement workflow instead of
+// starting fresh.
+func TestImplementNew_InProgressReturnsWorkflowInProgressError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
@@ -214,16 +216,16 @@ func TestImplementNew_InProgressReturnsResumeReport(t *testing.T) {
 		Data:           map[string]any{"name": "fixture"},
 	})
 
-	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"implement", "new", "--data", `{"name":"fixture"}`})
-	require.NoError(t, rootCmd.Execute())
+	stdout, _, code := runRootCmd(t, "implement", "new", "--data", `{"name":"fixture"}`)
+	require.Equal(t, 1, code)
 
-	var r ResumeReport
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &r))
-	require.True(t, r.Resumable)
-	require.Equal(t, "implement", r.Kind)
-	require.Equal(t, "fixture", r.Name)
-	require.Equal(t, "analyze", r.CurrentStep)
+	var er output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+	require.True(t, er.IsError)
+	require.Equal(t, "workflow_in_progress", er.Code)
+	require.Equal(t, "fixture", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "analyze", er.State.Current)
 }
 
 func TestImplementNew_SchemaOutput(t *testing.T) {

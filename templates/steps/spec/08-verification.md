@@ -2,7 +2,9 @@
 
 ### 1. Assemble the spec
 
-Assemble the final spec from the per-section working files you wrote during the earlier steps. Read each section's working file under `.spektacular/work/{{spec_name}}/` and drop its content under the matching `## ` heading in the scaffold below. The working files hold body content only — this scaffold owns the headings and their order:
+Assemble the final spec from the per-section working files you wrote during the earlier steps. Read each section's working file under `.spektacular/work/{{spec_name}}/` and drop its content under the matching `## ` heading in the scaffold below. The working files hold body content only — this scaffold owns the headings and their order.
+
+Each section's HTML comment in the scaffold below also states that section's required format (e.g. Requirements and Acceptance Criteria are checklist items with a bold title and indented detail; Constraints, Technical Approach, Success Metrics, and Non-Goals are one bullet per item). The earlier steps should have already produced working files in this shape — but check each working file against its comment now, as a last check, and reformat before staging if any section drifted into plain paragraphs. Do not change the content or meaning, only its shape.
 
 - `.spektacular/work/{{spec_name}}/overview.md` → `## Overview`
 - `.spektacular/work/{{spec_name}}/requirements.md` → `## Requirements`
@@ -29,7 +31,7 @@ Spawn a subagent with a **fresh context** (use your Task/Agent tool). Give it ex
 - the path to the staged spec, `.spektacular/tmp/spec_template.md`, to read; and
 - the reviewer brief below, pasted verbatim.
 
-Tell the subagent explicitly: **review only what is written in that file.** Do not read the working files, `.spektacular/context.md`, the conversation, or any other source; do not ask the caller for intent. Judge the spec purely as a naive reader would. Return a flat list of findings — for each: `section`, `quote` (the offending text), `issue_type` (leak / misplaced-hard-rule / duplication / missing-constraint / unclear / incomplete), and `suggested_fix`. If nothing is wrong, return an empty list.
+Tell the subagent explicitly: **review only what is written in that file.** Do not read the working files, `.spektacular/context.md`, the conversation, or any other source; do not ask the caller for intent. Judge the spec purely as a naive reader would. Return a flat list of findings — for each: `section`, `quote` (the offending text), `issue_type` (leak / misplaced-hard-rule / duplication / missing-constraint / format / unclear / incomplete), and `suggested_fix`. If nothing is wrong, return an empty list.
 
 > If you have no way to spawn a subagent, fall back to reviewing the staged file yourself — but read **only** `.spektacular/tmp/spec_template.md`, ignore everything you remember from the interview, and apply the brief as strictly as a stranger would.
 
@@ -42,6 +44,7 @@ You are reviewing an assembled feature specification. You have only the file. Ju
 - **Clarity** — requirements are specific and testable.
 - **Consistency** — sections reference each other appropriately and do not contradict.
 - **Section hygiene** — each section stays within its brief, with no implementation mechanism leaking into sections that must stay implementation-free.
+- **Format** — Requirements and Acceptance Criteria items are each a checklist line (`- [ ] **Title**`) with detail indented below, not a plain paragraph. Constraints, Technical Approach, Success Metrics, and Non-Goals items are each their own bullet point (`- ...`), not run together as prose. Flag any section written as flowing paragraphs instead of the required list/checklist shape as `issue_type: format`, quoting the offending paragraph, with a suggested fix of splitting it into the correct shape without changing its meaning.
 
 Run the hygiene review in **both directions**:
 

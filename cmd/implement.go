@@ -125,12 +125,12 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 	if dryRun {
 		statePath += ".dryrun-tmp"
 	} else {
-		handled, err := resumeOrClear(cmd, statePath, cfg.Command, "implement", force)
+		handled, err := resumeOrClear(statePath, cfg.Command, "implement", force)
 		if err != nil {
 			return err
 		}
 		if handled {
-			return nil
+			return err
 		}
 	}
 
@@ -145,7 +145,7 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 	}
 
 	if err := wf.Next(); err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	return nil
 }
@@ -195,10 +195,10 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 
 	// Refuse to operate on an in-progress workflow of a different kind (e.g. a
 	// spec or plan); resuming it from here would apply implement steps to it.
-	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "implement"); err != nil {
+	if handled, err := guardKind(stateFilePath(dataDir), cfg.Command, "implement"); err != nil {
 		return err
 	} else if handled {
-		return nil
+		return err
 	}
 
 	wfCfg := workflow.Config{Command: cfg.Command, Kind: "implement", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
@@ -221,7 +221,7 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 	}
 
 	if err := wf.Goto(stepVal); err != nil {
-		return output.WriteError(cmd.ErrOrStderr(), err)
+		return err
 	}
 	return nil
 }
@@ -247,10 +247,10 @@ func runImplementStatus(cmd *cobra.Command, _ []string) error {
 
 	// Refuse to report on an in-progress workflow of a different kind — its
 	// steps and counts would be meaningless under the implement step list.
-	if handled, err := guardKind(cmd, stateFilePath(dataDir), cfg.Command, "implement"); err != nil {
+	if handled, err := guardKind(stateFilePath(dataDir), cfg.Command, "implement"); err != nil {
 		return err
 	} else if handled {
-		return nil
+		return err
 	}
 
 	steps := implement.Steps()

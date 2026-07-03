@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -81,7 +82,7 @@ func (f *FileStore) abs(path string) (string, error) {
 	joined := filepath.Join(f.root, path)
 	rel, err := filepath.Rel(f.root, joined)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", errors.New("path escapes store root")
+		return "", fmt.Errorf("path %q escapes store root", path)
 	}
 	return joined, nil
 }

@@ -29,6 +29,7 @@
 <!--
   CONSTRAINTS
   Hard boundaries the solution must operate within. These are non-negotiable.
+  Format: one bullet point per constraint.
   Examples:
     - Must integrate with the existing authentication system
     - Cannot introduce breaking changes to the public API
@@ -58,6 +59,7 @@
     - Preferred patterns or technologies if known
     - Integration points with existing systems
     - Known risks or areas of uncertainty
+  Format: one bullet point per direction/steer.
   Leave blank if you want the planner to propose the approach.
 -->
 ## Technical Approach
@@ -68,6 +70,7 @@
   How you will know the feature is working well after delivery. Be specific:
     - Quantitative: "p99 latency < 200ms", "error rate < 0.1%"
     - Behavioural: "users complete the flow without support intervention"
+  Format: one bullet point per metric.
   Leave blank if not applicable.
 -->
 ## Success Metrics
@@ -77,6 +80,7 @@
   NON-GOALS
   Explicitly state what this spec does NOT cover. This is as important as
   the requirements — it prevents scope creep and sets clear expectations.
+  Format: one bullet point per exclusion.
   Examples:
     - "Mobile support is out of scope (tracked in #456)"
     - "Internationalisation will be addressed in a follow-up spec"

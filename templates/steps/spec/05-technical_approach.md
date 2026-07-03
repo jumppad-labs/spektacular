@@ -18,6 +18,8 @@ Technical Approach is **non-binding direction** — preferences and suggestions 
 
 Capture their response. If blank, note that no technical direction has been decided.
 
+**Format each direction or steer as its own bullet point** (`- ...`), one per line, rather than a paragraph running multiple points together. Write the working file in this shape from the start — it is assembled into the final spec largely as-is.
+
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Technical Approach** content (the body only — no `## ` heading line) to `.spektacular/work/{{spec_name}}/technical_approach.md`. This working file is git-tracked and is read back on resume and when the spec is assembled, so it must hold the final agreed content for this section. It is **not** a spec store document — write it directly with your file tools and do **not** route it through `{{config.command}} spec file write` (that command is only for the final assembled spec).
 
 Once you are satisfied, move to the next step by running the command:

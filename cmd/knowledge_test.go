@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,15 +104,22 @@ func twoScopeProject(t *testing.T) (root, projectLoc, teamLoc string) {
 	return root, projectLoc, teamLoc
 }
 
-// runKnowledge invokes the knowledge command tree via rootCmd and returns the
-// captured stdout and stderr buffers, reusing the setupImplementCmd harness
-// from implement_test.go and the t.Chdir working-dir pattern from spec_test.go.
+// runKnowledge invokes the knowledge command tree via runRoot (the same
+// wrapper Execute uses) and returns the captured stdout and stderr buffers,
+// reusing the setupImplementCmd harness from implement_test.go and the
+// t.Chdir working-dir pattern from spec_test.go. On failure, err is the
+// *output.ErrorResponse unmarshaled from stdout, matching what a real
+// invocation of the CLI returns.
 func runKnowledge(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	resetKnowledgeFlags(t)
 	out, errBuf := setupImplementCmd(t)
 	rootCmd.SetArgs(append([]string{"knowledge"}, args...))
-	err = rootCmd.Execute()
+	if code := runRoot(); code != 0 {
+		var er output.ErrorResponse
+		require.NoError(t, json.Unmarshal(out.Bytes(), &er))
+		err = &er
+	}
 	return out.String(), errBuf.String(), err
 }
 
@@ -198,7 +206,7 @@ func TestKnowledgeSearch_EmptyAndNoMatchQueriesReturnEmptyHits(t *testing.T) {
 			stdout, stderr, err := runKnowledge(t, "search", query)
 			require.NoError(t, err)
 			require.Empty(t, stderr)
-			require.JSONEq(t, `{"hits": []}`, stdout)
+			require.JSONEq(t, `{"error": false, "hits": []}`, stdout)
 		})
 	}
 }
@@ -339,35 +347,34 @@ func TestKnowledgeSearch_SchemaDeclaresPerDocumentHitFields(t *testing.T) {
 	require.Equal(t, "string", hits.Items.Properties["category"].Type)
 }
 
-// Criterion 2: a failing subcommand emits the standard {"error":...} envelope
-// on stderr and the command itself returns nil.
+// Criterion 2: a failing subcommand emits the standard ErrorResponse envelope
+// on stdout (the same stream success uses) and the command reports failure.
 func TestKnowledgeRead_MissingDataEmitsErrorEnvelope(t *testing.T) {
 	twoScopeProject(t)
 
 	stdout, stderr, err := runKnowledge(t, "read")
-	require.NoError(t, err)
-	require.Empty(t, stdout)
+	require.Error(t, err)
+	require.Empty(t, stderr)
 
-	var envelope struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope))
-	require.Contains(t, envelope.Error, "--data is required")
+	var envelope output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+	require.True(t, envelope.IsError)
+	require.Contains(t, envelope.Message, "--data is required")
 }
 
 // Criterion 2: reading from an unconfigured scope surfaces through the same
-// {"error":...} envelope.
+// ErrorResponse envelope.
 func TestKnowledgeRead_UnknownScopeEmitsErrorEnvelope(t *testing.T) {
 	twoScopeProject(t)
 
-	_, stderr, err := runKnowledge(t, "read", "--data", `{"scope":"missing","path":"readme.md"}`)
-	require.NoError(t, err)
+	stdout, stderr, err := runKnowledge(t, "read", "--data", `{"scope":"missing","path":"readme.md"}`)
+	require.Error(t, err)
+	require.Empty(t, stderr)
 
-	var envelope struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope))
-	require.Contains(t, envelope.Error, "missing")
+	var envelope output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+	require.True(t, envelope.IsError)
+	require.Contains(t, envelope.Message, "missing")
 }
 
 // alwaysAppliedProject lays out a temp project with a single file-backed

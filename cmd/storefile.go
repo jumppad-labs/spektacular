@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,6 +70,10 @@ func newStoreFileCmd(short string, dir storeDirFunc) *cobra.Command {
 			}
 			content, err := st.Read(filepath.Join(storeDir, args[0]))
 			if err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					return output.NewError("not_found", fmt.Sprintf("file %q not found", args[0])).
+						WithResource(args[0])
+				}
 				return err
 			}
 			_, err = cmd.OutOrStdout().Write(content)

@@ -4,35 +4,53 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
-func TestResumeReport_JSONCarriesWorkflowIdentityAndInstruction(t *testing.T) {
+// TestEmitResumeReport_JSONCarriesWorkflowIdentityAndInstruction asserts that
+// a same-kind in-progress workflow produces the shared ErrorResponse shape
+// (error=true, workflow_in_progress code, the workflow's name as Resource,
+// its current step as State.Current, and the rendered resume instruction as
+// NextAction) and that this shape round-trips through JSON, since it flows
+// all the way to stdout via that encoding in production.
+func TestEmitResumeReport_JSONCarriesWorkflowIdentityAndInstruction(t *testing.T) {
 	instruction, err := resumeInstruction("spektacular", "spec", "000024_resume", "overview")
 	require.NoError(t, err)
 	require.NotEmpty(t, instruction)
 
-	report := ResumeReport{
-		Resumable:   true,
+	state := &workflow.State{
 		Kind:        "spec",
-		Name:        "000024_resume",
 		CurrentStep: "overview",
-		Instruction: instruction,
+		Data:        map[string]any{"name": "000024_resume"},
 	}
 
-	encoded, err := json.Marshal(report)
+	reportErr := emitResumeReport("spektacular", "spec", state)
+	require.Error(t, reportErr)
+	er, ok := reportErr.(*output.ErrorResponse)
+	require.True(t, ok, "emitResumeReport must return an *output.ErrorResponse")
+
+	require.True(t, er.IsError)
+	require.Equal(t, "workflow_in_progress", er.Code)
+	require.Equal(t, "000024_resume", er.Resource)
+	require.NotNil(t, er.State)
+	require.Equal(t, "overview", er.State.Current)
+	require.Equal(t, instruction, er.NextAction)
+
+	encoded, err := json.Marshal(er)
 	require.NoError(t, err)
 	out := string(encoded)
 
-	require.Contains(t, out, `"resumable":true`)
-	require.Contains(t, out, `"kind":"spec"`)
-	require.Contains(t, out, `"name":"000024_resume"`)
-	require.Contains(t, out, `"current_step":"overview"`)
-	require.Contains(t, out, `"instruction":`)
+	require.Contains(t, out, `"error":true`)
+	require.Contains(t, out, `"code":"workflow_in_progress"`)
+	require.Contains(t, out, `"resource":"000024_resume"`)
+	require.Contains(t, out, `"current":"overview"`)
+	require.Contains(t, out, `"next_action":`)
 
-	var roundTrip ResumeReport
+	var roundTrip output.ErrorResponse
 	require.NoError(t, json.Unmarshal(encoded, &roundTrip))
-	require.NotEmpty(t, roundTrip.Instruction)
+	require.NotEmpty(t, roundTrip.NextAction)
 }
 
 func TestResumeInstruction_AsksResumeVsNewWithBothCommands(t *testing.T) {

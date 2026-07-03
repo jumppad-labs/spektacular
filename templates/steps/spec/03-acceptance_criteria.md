@@ -11,6 +11,15 @@ A good criterion:
 
 Example: "When X happens, Y is visible / saved / returned."
 
+**Format each criterion as a checklist item:** a short, bold title on the checkbox line, with the observable pass/fail detail indented on the line below, matching Requirements' shape —
+
+```
+- [ ] **Short title**
+  Observable, pass/fail detail, traceable to a requirement above.
+```
+
+Write the working file in this shape from the start. It is assembled into the final spec largely as-is, so getting the shape right now avoids a reformatting pass later.
+
 **Stay at the blackbox level.** A criterion should be something a tester who has never read the source could verify by observing inputs and outputs — files on disk, API responses, UI state, log lines. Avoid criteria that inspect internal plumbing:
 
 • Good: *"After the user accepts a candidate, a file exists under the knowledge directory containing the candidate's title and content."*

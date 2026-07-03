@@ -31,6 +31,8 @@ Capture their response. Before accepting "no constraints", check the most common
 
 If, after checking these, the user confirms there are genuinely none, note that there are no constraints — a blank section is a valid outcome.
 
+**Format each constraint as its own bullet point** (`- ...`), one hard rule per line, rather than a paragraph running multiple rules together. Write the working file in this shape from the start — it is assembled into the final spec largely as-is.
+
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Constraints** content (the body only — no `## ` heading line) to `.spektacular/work/{{spec_name}}/constraints.md`. This working file is git-tracked and is read back on resume and when the spec is assembled, so it must hold the final agreed content for this section. It is **not** a spec store document — write it directly with your file tools and do **not** route it through `{{config.command}} spec file write` (that command is only for the final assembled spec).
 
 Once you are satisfied, move to the next step by running the command:

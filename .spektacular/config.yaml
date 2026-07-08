@@ -11,6 +11,10 @@ plan:
     provider: file
     config:
         directory: .spektacular/plans
+changelog:
+    provider: file
+    config:
+        directory: .spektacular/changelog
 knowledge:
     sources:
         - scope: project

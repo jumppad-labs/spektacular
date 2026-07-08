@@ -54,6 +54,7 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 		"update_changelog",
 		"update_repo_changelog",
 		"test_plan",
+		"update_feature_changelog",
 		"finished",
 	}
 	got := Steps()
@@ -108,6 +109,8 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 	require.Equal(t, "update_repo_changelog", wf.Current())
 	require.NoError(t, wf.Goto("test_plan"))
 	require.Equal(t, "test_plan", wf.Current())
+	require.NoError(t, wf.Goto("update_feature_changelog"))
+	require.Equal(t, "update_feature_changelog", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
 }
@@ -137,11 +140,13 @@ func TestFSMLoopFromUpdateChangelogBackToAnalyze(t *testing.T) {
 		require.Equal(t, want, wf.Current())
 	}
 
-	// Second exit: update_changelog → update_repo_changelog → test_plan → finished.
+	// Second exit: update_changelog → update_repo_changelog → test_plan → update_feature_changelog → finished.
 	require.NoError(t, wf.Goto("update_repo_changelog"))
 	require.Equal(t, "update_repo_changelog", wf.Current())
 	require.NoError(t, wf.Goto("test_plan"))
 	require.Equal(t, "test_plan", wf.Current())
+	require.NoError(t, wf.Goto("update_feature_changelog"))
+	require.Equal(t, "update_feature_changelog", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
 }
@@ -268,15 +273,16 @@ func TestUpdateRepoChangelogTemplateContainsDirectives(t *testing.T) {
 
 func TestStopOnMismatchDirectivePresentInEveryNonTerminalTemplate(t *testing.T) {
 	nonTerminal := map[string]workflow.StepCallback{
-		"read_plan":             readPlan(),
-		"analyze":               analyze(),
-		"implement":             implementStep(),
-		"test":                  testStep(),
-		"verify":                verify(),
-		"update_plan":           updatePlan(),
-		"update_changelog":      updateChangelog(),
-		"update_repo_changelog": updateRepoChangelog(),
-		"test_plan":             testPlan(),
+		"read_plan":                readPlan(),
+		"analyze":                  analyze(),
+		"implement":                implementStep(),
+		"test":                     testStep(),
+		"verify":                   verify(),
+		"update_plan":              updatePlan(),
+		"update_changelog":         updateChangelog(),
+		"update_repo_changelog":    updateRepoChangelog(),
+		"test_plan":                testPlan(),
+		"update_feature_changelog": updateFeatureChangelog(),
 	}
 	for name, cb := range nonTerminal {
 		out := renderStep(t, cb)
@@ -297,4 +303,17 @@ func TestFinishedStepEmitsNoGoto(t *testing.T) {
 	out := renderStep(t, finished())
 	require.NotContains(t, out, "implement goto", "finished template must not emit a goto command")
 	require.Contains(t, strings.ToLower(out), "terminal")
+}
+
+func TestFinishedStepMentionsChangelogPath(t *testing.T) {
+	out := renderStep(t, finished())
+	require.Contains(t, out, "test.md", "finished template must mention the resolved changelog record path")
+}
+
+func TestUpdateFeatureChangelogStepMentionsSourcesAndCommitCommand(t *testing.T) {
+	out := renderStep(t, updateFeatureChangelog())
+	require.Contains(t, out, "spec file read test.md", "update_feature_changelog must read the feature's spec via `spec file read`")
+	require.Contains(t, out, "plan file read test/plan.md", "update_feature_changelog must read the plan's implementation history via `plan file read`")
+	require.Contains(t, out, ".spektacular/tmp/changelog_record.md", "update_feature_changelog must stage its record at the scratch path")
+	require.Contains(t, out, "changelog file write test.md --from .spektacular/tmp/changelog_record.md", "update_feature_changelog must commit the record via `changelog file write`")
 }

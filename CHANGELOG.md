@@ -1,3 +1,7 @@
+## spec-workflow-output-changelog
+
+Every feature Spektacular finishes building now gets its own durable, self-contained changelog record automatically — no extra step required. When an implementation wraps up, the assistant writes a plain-language summary of what was actually built, why it matters, and where it diverged from the original plan, and stores it under a name you can retrieve later without hunting through the original spec, plan, or conversation. The workflow's final summary now tells you exactly where that record lives, alongside the other artifacts it already reports.
+
 ## 000031_agent-session-debug-log
 
 Spektacular can now keep a local, opt-in record of everything an agent does during a session, so a different agent (or a person) can later reconstruct what happened without needing the original agent's memory of it. Turn it on with the existing `debug.enabled` setting in a project's config file — no new flag or environment variable — and every command issued and every response received, including rejected and failed commands, gets appended to a plain local file that's never committed to version control. Each entry also states whether the command actually moved the work forward, catching cases like re-running a step that's already current, which look successful but silently made no progress; and entries are automatically grouped by the piece of work they belong to, so unrelated sessions in the same project never get tangled together. Turning this on has no effect on the tool's normal behavior or output — it stays off by default.

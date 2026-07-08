@@ -20,10 +20,12 @@ type Config struct {
 	// drives. It is stamped onto freshly-created State by New().
 	Kind   string
 	DryRun bool
-	// SpecDir and PlanDir are the store-relative directories the spec and plan
-	// workflows write into, sourced from the project configuration.
-	SpecDir string
-	PlanDir string
+	// SpecDir, PlanDir, and ChangelogDir are the store-relative directories the
+	// spec, plan, and changelog workflows write into, sourced from the project
+	// configuration.
+	SpecDir      string
+	PlanDir      string
+	ChangelogDir string
 }
 
 // ResultWriter is implemented by the output writer and passed into step callbacks.

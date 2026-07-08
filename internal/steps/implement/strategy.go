@@ -26,10 +26,20 @@ func ResearchFilePath(dir, name string) string {
 	return dir + "/" + name + "/research.md"
 }
 
+// ChangelogFilePath returns the store-relative path for a feature's changelog
+// record under the configured changelog directory. Unlike PlanFilePath, this
+// is a flat file per feature, not a per-feature subdirectory.
+func ChangelogFilePath(dir, name string) string {
+	return dir + "/" + name + ".md"
+}
+
 // strategy implements stepkit.PathStrategy for the implement workflow. planDir
-// is the configured plan directory.
+// is the configured plan directory; changelogDir and specDir are the
+// configured changelog and spec directories.
 type strategy struct {
-	planDir string
+	planDir      string
+	changelogDir string
+	specDir      string
 }
 
 func (strategy) PrimaryPathField() string { return "plan_path" }
@@ -38,6 +48,8 @@ func (s strategy) PathVars(instanceName, storeRoot string) map[string]any {
 	planPath := filepath.Join(storeRoot, PlanFilePath(s.planDir, instanceName))
 	contextPath := filepath.Join(storeRoot, ContextFilePath(s.planDir, instanceName))
 	researchPath := filepath.Join(storeRoot, ResearchFilePath(s.planDir, instanceName))
+	changelogPath := filepath.Join(storeRoot, ChangelogFilePath(s.changelogDir, instanceName))
+	specPath := filepath.Join(storeRoot, s.specDir, instanceName+".md")
 	return map[string]any{
 		"plan_path":              planPath,
 		"context_path":           contextPath,
@@ -45,6 +57,8 @@ func (s strategy) PathVars(instanceName, storeRoot string) map[string]any {
 		"plan_dir":               filepath.Dir(planPath),
 		"plan_name":              instanceName,
 		"changelog_section_name": "## Changelog",
+		"changelog_path":         changelogPath,
+		"spec_path":              specPath,
 	}
 }
 

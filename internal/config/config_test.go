@@ -96,6 +96,10 @@ func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 		Provider: ProviderFile,
 		Config:   FilePlanConfig{Directory: "docs/plans"},
 	}
+	cfg.Changelog = ChangelogConfig{
+		Provider: ProviderFile,
+		Config:   FileChangelogConfig{Directory: "docs/changelog"},
+	}
 	cfg.Knowledge = KnowledgeConfig{
 		Sources: []SourceConfig{
 			{
@@ -122,6 +126,7 @@ func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 
 	require.Equal(t, cfg.Spec, loaded.Spec)
 	require.Equal(t, cfg.Plan, loaded.Plan)
+	require.Equal(t, cfg.Changelog, loaded.Changelog)
 	require.Equal(t, cfg.Knowledge, loaded.Knowledge)
 }
 
@@ -141,6 +146,8 @@ func TestFromYAMLFile_AbsentProviderSectionsUseDefaults(t *testing.T) {
 	require.Equal(t, SpecIDMethodTimestamp, cfg.Spec.IDMethod)
 	require.Equal(t, ProviderFile, cfg.Plan.Provider)
 	require.Equal(t, DefaultPlanDir, cfg.Plan.Config.Directory)
+	require.Equal(t, ProviderFile, cfg.Changelog.Provider)
+	require.Equal(t, DefaultChangelogDir, cfg.Changelog.Config.Directory)
 	require.Len(t, cfg.Knowledge.Sources, 1)
 	require.Equal(t, DefaultKnowledgeScope, cfg.Knowledge.Sources[0].Scope)
 	require.Equal(t, ProviderFile, cfg.Knowledge.Sources[0].Provider)
@@ -206,6 +213,39 @@ func TestFromYAMLFile_EmptySpecDirectoryReturnsError(t *testing.T) {
 	_, err = FromYAMLFile(path)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "spec.config.directory")
+}
+
+// Criterion 3: an unknown changelog provider is rejected with a clear
+// validation error.
+func TestFromYAMLFile_UnknownChangelogProviderReturnsError(t *testing.T) {
+	yaml := `changelog:
+  provider: bogus
+  config:
+    directory: changelog`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(path, []byte(yaml), 0644)
+	require.NoError(t, err)
+
+	_, err = FromYAMLFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "changelog.provider")
+}
+
+// Criterion 3: an empty required changelog config field is rejected.
+func TestFromYAMLFile_EmptyChangelogDirectoryReturnsError(t *testing.T) {
+	yaml := `changelog:
+  provider: file
+  config:
+    directory: ""`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(path, []byte(yaml), 0644)
+	require.NoError(t, err)
+
+	_, err = FromYAMLFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "changelog.config.directory")
 }
 
 // Criterion 3: a knowledge source missing its required location is rejected.

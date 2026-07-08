@@ -29,6 +29,10 @@ const (
 	// DefaultPlanDir is the plan output directory used when none is configured.
 	// It is resolved relative to the project root, like the knowledge location.
 	DefaultPlanDir = ".spektacular/plans"
+	// DefaultChangelogDir is the changelog output directory used when none is
+	// configured. It is resolved relative to the project root, like the
+	// knowledge location.
+	DefaultChangelogDir = ".spektacular/changelog"
 	// DefaultKnowledgeScope is the scope of the synthesised default knowledge source.
 	DefaultKnowledgeScope = "project"
 	// DefaultKnowledgeLocation is the project-relative location of the
@@ -67,6 +71,18 @@ type FilePlanConfig struct {
 	Directory string `yaml:"directory"`
 }
 
+// ChangelogConfig holds configuration for changelog record storage. It names
+// a storage provider and carries that provider's settings.
+type ChangelogConfig struct {
+	Provider string              `yaml:"provider"`
+	Config   FileChangelogConfig `yaml:"config"`
+}
+
+// FileChangelogConfig is the file-provider configuration for the changelog section.
+type FileChangelogConfig struct {
+	Directory string `yaml:"directory"`
+}
+
 // KnowledgeConfig holds the ordered list of configured knowledge sources.
 type KnowledgeConfig struct {
 	Sources []SourceConfig `yaml:"sources"`
@@ -92,6 +108,7 @@ type Config struct {
 	Debug     DebugConfig     `yaml:"debug"`
 	Spec      SpecConfig      `yaml:"spec"`
 	Plan      PlanConfig      `yaml:"plan"`
+	Changelog ChangelogConfig `yaml:"changelog"`
 	Knowledge KnowledgeConfig `yaml:"knowledge"`
 }
 
@@ -113,6 +130,12 @@ func NewDefault() Config {
 			Provider: ProviderFile,
 			Config: FilePlanConfig{
 				Directory: DefaultPlanDir,
+			},
+		},
+		Changelog: ChangelogConfig{
+			Provider: ProviderFile,
+			Config: FileChangelogConfig{
+				Directory: DefaultChangelogDir,
 			},
 		},
 		Knowledge: KnowledgeConfig{
@@ -159,6 +182,9 @@ func (c Config) Validate() error {
 	if err := c.Plan.Validate(); err != nil {
 		return err
 	}
+	if err := c.Changelog.Validate(); err != nil {
+		return err
+	}
 	if err := c.Knowledge.Validate(); err != nil {
 		return err
 	}
@@ -190,6 +216,18 @@ func (c PlanConfig) Validate() error {
 	}
 	if c.Config.Directory == "" {
 		return fmt.Errorf("plan.config.directory must not be empty")
+	}
+	return nil
+}
+
+// Validate checks whether the changelog config names a supported provider
+// and carries valid provider settings.
+func (c ChangelogConfig) Validate() error {
+	if c.Provider != ProviderFile {
+		return fmt.Errorf("changelog.provider %q is not supported (only %q)", c.Provider, ProviderFile)
+	}
+	if c.Config.Directory == "" {
+		return fmt.Errorf("changelog.config.directory must not be empty")
 	}
 	return nil
 }

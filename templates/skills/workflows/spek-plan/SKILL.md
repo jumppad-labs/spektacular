@@ -39,9 +39,7 @@ The working sidecar `.spektacular/context.md` (at the repo's `.spektacular/` roo
 
 # How to start
 
-Spec name: $ARGUMENTS
-
-If no spec name was provided, ask the user which spec to plan against before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
+Ask the user which spec to plan against before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 Start the plan workflow by running:
 

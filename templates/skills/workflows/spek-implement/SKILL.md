@@ -32,9 +32,7 @@ This includes the edits the implement workflow makes to `plan.md` — ticking ph
 
 # How to start
 
-Plan name: $ARGUMENTS
-
-If no plan name was provided, ask the user which plan to implement before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
+Ask the user which plan to implement before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 The plan file must already exist at `.spektacular/plans/<plan_name>/plan.md`. If it does not, stop and tell the user to run `{{command}} plan` first.
 

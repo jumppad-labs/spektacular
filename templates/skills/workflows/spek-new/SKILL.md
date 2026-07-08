@@ -39,8 +39,6 @@ While you gather each section, write that section's agreed content directly to i
 
 # How to start
 
-Spec name: $ARGUMENTS
-
 **First, check whether a workflow is already in progress — before asking the user for a spec name.** Run the new command with no `--data`:
 
 ```
@@ -56,7 +54,7 @@ This reads the project's single workflow state and changes nothing on disk. One 
 
 Only once you know there is no workflow to resume:
 
-If no spec name was provided in $ARGUMENTS, ask the user for one now. Then run:
+Ask the user for a spec name now. Then run:
 
 ```
 {{command}} spec new --data '{"name": "<spec_name>"}'

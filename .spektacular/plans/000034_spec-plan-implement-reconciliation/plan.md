@@ -116,51 +116,51 @@ This feature's core logic — FSM step registration, path/variable plumbing, and
 
 **What changes**: When `implement` starts against a plan, it now checks that every requirement and acceptance criterion in the originating specification has corresponding coverage somewhere in the plan's milestones and phases. If something is missing — whether the plan never covered it or someone edited the plan afterward and dropped it — the user is shown exactly what's missing and asked to either update the plan or explicitly accept the gap as descoped, before any implementation work begins. A plan that already covers everything proceeds exactly as it does today, with no extra interruption. Once a gap has been accepted as descoped, re-running or resuming `implement` against that plan does not ask about it again.
 
-#### - [ ] Phase 1.1: Extend the implement workflow's read_plan gate with a spec coverage check
+#### - [x] Phase 1.1: Extend the implement workflow's read_plan gate with a spec coverage check
 
 The implement workflow's existing validation step — the one that already checks the plan's structure and looks for drift against the codebase before any implementation work starts — gains a new check: it reads the specification the plan was created from and confirms every requirement and acceptance criterion has corresponding coverage in the plan's milestones and phases. If something is missing, the workflow stops and asks the user to either update the plan or explicitly accept the gap as an intentional descope, the same way it already stops and asks about other kinds of mismatches. A plan that already covers everything is unaffected — implementation proceeds exactly as before.
 
 *Technical detail:* [context.md#phase-11](./context.md#phase-11-extend-read_plan-with-spec-coverage-check)
 
 **Acceptance criteria**:
-- [ ] Running `implement` against a plan whose milestones/phases do not cover one or more spec requirements stops before implementation begins and shows the user which requirements are missing.
-- [ ] Running `implement` against a plan that covers every spec requirement proceeds without any extra interruption.
-- [ ] The user is offered a choice between updating the plan and accepting the gap as descoped, and the workflow does not decide unilaterally.
+- [x] Running `implement` against a plan whose milestones/phases do not cover one or more spec requirements stops before implementation begins and shows the user which requirements are missing.
+- [x] Running `implement` against a plan that covers every spec requirement proceeds without any extra interruption.
+- [x] The user is offered a choice between updating the plan and accepting the gap as descoped, and the workflow does not decide unilaterally.
 
-#### - [ ] Phase 1.2: Make an accepted gap durable so it isn't re-flagged
+#### - [x] Phase 1.2: Make an accepted gap durable so it isn't re-flagged
 
 When the user accepts a coverage gap as an intentional descope, that decision is recorded directly in the plan document itself, so that resuming or re-running `implement` against the same plan later recognizes the gap as already resolved instead of asking again.
 
 *Technical detail:* [context.md#phase-12](./context.md#phase-12-durable-descope-marker)
 
 **Acceptance criteria**:
-- [ ] After a gap is accepted as descoped, resuming the implement workflow (or restarting it against the same plan) does not re-prompt about that same gap.
-- [ ] The accepted-gap decision is visible in the plan document itself, not hidden in workflow state that a human reading the plan would never see.
+- [x] After a gap is accepted as descoped, resuming the implement workflow (or restarting it against the same plan) does not re-prompt about that same gap.
+- [x] The accepted-gap decision is visible in the plan document itself, not hidden in workflow state that a human reading the plan would never see.
 
 ### Milestone 2: Completion reports tell the user what the specification says is done
 
 **What changes**: When `implement` finishes, the specification's own Requirements and Acceptance Criteria checkboxes are checked off for everything the completed work genuinely satisfies, and the specification file is updated to reflect that. The final report the user sees — the same report that already summarizes the changelog and completed phases — now also states plainly which specification items are satisfied and, for anything still open, why (deferred, descoped, or not yet done). Nobody has to separately open the specification file to find this out.
 
-#### - [ ] Phase 2.1: Add the reconcile_spec step and wire it into the implement workflow
+#### - [x] Phase 2.1: Add the reconcile_spec step and wire it into the implement workflow
 
 A new step is added to the implement workflow, running after the feature's changelog record is written and before the workflow's final report. This step reads the specification and the plan's accumulated phase-by-phase implementation record, judges which specification requirements and acceptance criteria are genuinely satisfied by what was built, and updates the specification file to check off the ones that are.
 
 *Technical detail:* [context.md#phase-21](./context.md#phase-21-add-reconcile_spec-step)
 
 **Acceptance criteria**:
-- [ ] After `implement` completes, specification checklist items that the completed work satisfies are marked checked in the specification file.
-- [ ] No specification checklist item is marked checked unless the completed work, as recorded in the plan's implementation history, actually satisfies it.
-- [ ] The step correctly handles a specification that cannot be found or a plan with no recorded implementation history, by stopping and asking the user how to proceed rather than guessing.
+- [x] After `implement` completes, specification checklist items that the completed work satisfies are marked checked in the specification file.
+- [x] No specification checklist item is marked checked unless the completed work, as recorded in the plan's implementation history, actually satisfies it.
+- [x] The step correctly handles a specification that cannot be found or a plan with no recorded implementation history, by stopping and asking the user how to proceed rather than guessing.
 
-#### - [ ] Phase 2.2: Report specification completion status in the final summary
+#### - [x] Phase 2.2: Report specification completion status in the final summary
 
 The implement workflow's final report — the same report that already summarizes the changelog and the phases completed — is extended to also state which specification requirements and acceptance criteria are satisfied, and for anything still open, why (deferred, descoped, or not yet done). The user does not need to separately open the specification file to learn this.
 
 *Technical detail:* [context.md#phase-22](./context.md#phase-22-extend-finished-report)
 
 **Acceptance criteria**:
-- [ ] The final report presented at the end of a completed implement run names both the specification items that are satisfied and any that remain unsatisfied, together with a reason for each unsatisfied item.
-- [ ] This information appears in the same report as the existing changelog summary, without the user needing to open a separate file.
+- [x] The final report presented at the end of a completed implement run names both the specification items that are satisfied and any that remain unsatisfied, together with a reason for each unsatisfied item.
+- [x] This information appears in the same report as the existing changelog summary, without the user needing to open a separate file.
 
 ## Open Questions
 
@@ -176,3 +176,54 @@ None. Every design decision in this plan was resolved during discovery and the a
 - **Folding `reconcile_spec` into the existing `update_feature_changelog` step** — decided during the architecture step. A dedicated new step was chosen instead, to keep the changelog-record-authoring and spec-checkbox-judgment failure modes and artifacts cleanly separated. Revisiting this merge is not part of this plan.
 - **A new Go-level branching or state-passing primitive for the "update plan vs. accept gap as descoped" choice, or for threading the coverage-check outcome between steps** — the existing multi-source-FSM-edge-plus-template-prose pattern and plan-document-as-durable-record approach are used throughout instead; no new mechanism is introduced in `internal/workflow/`.
 - **Fixing the `.spektacular/context.md`-not-cleared-on-`plan new`/`implement new` gap** noticed mid-planning-session — the user explicitly deferred this to a follow-up after this plan lands; it is unrelated to spec 000034's scope and is not addressed by this plan.
+
+## Changelog
+
+### 2026-07-09 — Phase 1.1: Extend the implement workflow's read_plan gate with a spec coverage check
+
+**What was done**: Added a new "Step 3.5: Spec coverage check" to `templates/steps/implement/01-read_plan.md`, between the existing drift check (Step 3) and changelog-mode detection (Step 4). It directs the agent to read the plan's originating spec via `spec file read`, enumerate every Requirements/Acceptance-Criteria checkbox, confirm each has coverage in the plan's Milestones & Phases, and STOP with a 2-option prompt (fix the plan / accept as descoped) on any gap.
+
+**Deviations**: None.
+
+**Files changed**:
+- `templates/steps/implement/01-read_plan.md`
+
+**Discoveries**: The step's intro line ("STOP and report... with a three-option prompt") describes Step 3's own drift-check prompt, not Step 3.5's — Step 3.5 deliberately uses a 2-option prompt instead (no "abandon" option), consistent with the spec's non-goal ruling out hard-blocking.
+
+### 2026-07-09 — Phase 1.2: Make an accepted gap durable so it isn't re-flagged
+
+**What was done**: Folded into the same Step 3.5 edit as Phase 1.1 (same file, same editing pass, per the plan's own stated agent strategy). Specifies the `**Descoped requirements**:` marker format — a list appended near the end of the plan's `## Milestones & Phases` section — and directs the coverage check to skip any gap already recorded there before flagging it, using the standard stage-to-`.spektacular/tmp/`-then-`plan file write` commit pattern.
+
+**Deviations**: None.
+
+**Files changed**:
+- `templates/steps/implement/01-read_plan.md` (same edit as Phase 1.1)
+
+**Discoveries**: None beyond what Phase 1.1 already surfaced.
+
+### 2026-07-09 — Phase 2.1: Add the reconcile_spec step and wire it into the implement workflow
+
+**What was done**: Inserted a new `reconcile_spec` FSM step into `internal/steps/implement/steps.go` between `update_feature_changelog` and `finished` (`finished`'s `Src` retargeted to `["reconcile_spec"]`), with a `reconcileSpec()` callback following the existing one-liner pattern. Renamed `templates/steps/implement/11-finished.md` to `12-finished.md` via `git mv` and updated `finished()`'s template path accordingly. Authored a new `templates/steps/implement/11-reconcile_spec.md`, modeled on `10-update_feature_changelog.md`'s four-part shape: gather the spec and the plan's `## Changelog` section, judge each spec Requirements/Acceptance-Criteria checkbox against the changelog evidence (satisfied/unsatisfied, erring unchecked when in doubt), stage and commit the updated spec via `spec file write`, and STOP-on-mismatch (3 options) for a missing spec or empty changelog section.
+
+**Deviations**: None from the plan's design. One incidental fix needed beyond the plan's own file list: two existing tests in `cmd/implement_test.go` (`TestImplementSteps_ListsAllSteps`, `TestImplementStatus_ReportsUncheckedPhases`) hardcoded the implement workflow's total step count as 12 and its step-name list without `reconcile_spec` — both updated to reflect the new 13-step FSM.
+
+**Files changed**:
+- `internal/steps/implement/steps.go`
+- `internal/steps/implement/steps_test.go`
+- `templates/steps/implement/11-reconcile_spec.md` (new)
+- `templates/steps/implement/11-finished.md` → `templates/steps/implement/12-finished.md` (renamed)
+- `cmd/implement_test.go`
+
+**Discoveries**: Adding a new FSM step can break hardcoded step-count/step-list assertions in packages *outside* the step's own package (here, `cmd`) — worth checking `cmd/*_test.go` for similar assertions whenever a future plan adds or removes an implement/plan/spec FSM step.
+
+### 2026-07-09 — Phase 2.2: Report specification completion status in the final summary
+
+**What was done**: Extended `templates/steps/implement/12-finished.md` with a new Summary bullet noting the specification has been reconciled against the completed work (pointing to `{{spec_path}}`), and a new What-to-do-next instruction directing the agent to read the spec via `spec file read {{plan_name}}.md` and report which Requirements/Acceptance-Criteria items are checked, plus the recorded reason (deferred, descoped, or not attempted) for any left unchecked. No Go changes were needed — `spec_path`/`plan_name` were already available as template variables.
+
+**Deviations**: None.
+
+**Files changed**:
+- `templates/steps/implement/12-finished.md`
+- `internal/steps/implement/steps_test.go`
+
+**Discoveries**: None beyond what Phase 2.1 already surfaced.

@@ -8,25 +8,25 @@ This feature closes that gap by having the assistant check the plan against the 
 
 ## Requirements
 
-- [ ] **Plans are checked against their specification before implementation proceeds**
+- [x] **Plans are checked against their specification before implementation proceeds**
   Before implementation work begins in earnest, the assistant must verify that the plan addresses every requirement and acceptance criterion in the specification it was created from.
 
-- [ ] **Coverage gaps are surfaced to the user, not silently accepted**
+- [x] **Coverage gaps are surfaced to the user, not silently accepted**
   If a requirement or acceptance criterion from the specification has no corresponding coverage in the plan, the assistant must surface this to the user before proceeding, rather than continuing implementation on an incomplete plan.
 
-- [ ] **The user can decide how to resolve a coverage gap**
+- [x] **The user can decide how to resolve a coverage gap**
   When a coverage gap is surfaced, the user must be able to choose how to proceed — for example, updating the plan to add the missing coverage, or explicitly accepting the gap as an intentional descope — rather than the assistant unilaterally deciding.
 
-- [ ] **Completed work is checked against the specification after implementation finishes**
+- [x] **Completed work is checked against the specification after implementation finishes**
   After implementation work is complete, the assistant must compare what was actually built against the specification's requirements and acceptance criteria.
 
-- [ ] **Satisfied requirements and acceptance criteria are marked complete in the specification**
+- [x] **Satisfied requirements and acceptance criteria are marked complete in the specification**
   Requirements and acceptance criteria that the completed work genuinely satisfies must be marked as complete in the specification, so the specification's own record reflects reality.
 
-- [ ] **Unsatisfied requirements and acceptance criteria are reported, not left silently unresolved**
+- [x] **Unsatisfied requirements and acceptance criteria are reported, not left silently unresolved**
   Requirements and acceptance criteria that remain unsatisfied after implementation must be explicitly reported to the user, along with why — for example, deferred, descoped, or simply not yet done — rather than being left unmentioned.
 
-- [ ] **Specification completion status is part of the standard completion report**
+- [x] **Specification completion status is part of the standard completion report**
   When implementation work concludes, the summary presented to the user must include the specification's completion status alongside the usual summary of changes made, so the user does not have to separately go looking for it.
 
 ## Constraints
@@ -37,31 +37,31 @@ This feature closes that gap by having the assistant check the plan against the 
 
 ## Acceptance Criteria
 
-- [ ] **Plan coverage check runs before implementation proceeds**
+- [x] **Plan coverage check runs before implementation proceeds**
   For a plan created from a specification, before implementation work proceeds, a coverage comparison between the plan and the specification's Requirements and Acceptance Criteria has occurred and its outcome is visible to the user.
 
-- [ ] **Every specification requirement and acceptance criterion is accounted for in the coverage check**
+- [x] **Every specification requirement and acceptance criterion is accounted for in the coverage check**
   The coverage comparison addresses every checklist item under the specification's Requirements and Acceptance Criteria sections — none are silently skipped.
 
-- [ ] **A plan missing coverage for a requirement is flagged before implementation proceeds**
+- [x] **A plan missing coverage for a requirement is flagged before implementation proceeds**
   Given a plan whose milestones/phases do not address one or more of the specification's requirements or acceptance criteria, the user is shown which ones are missing before implementation work begins.
 
-- [ ] **A fully-covered plan proceeds without requiring extra user action**
+- [x] **A fully-covered plan proceeds without requiring extra user action**
   Given a plan that addresses every requirement and acceptance criterion in the specification, implementation proceeds without the user having to resolve any flagged gaps.
 
-- [ ] **The user's resolution of a flagged gap is honored**
+- [x] **The user's resolution of a flagged gap is honored**
   Given a flagged coverage gap, after the user chooses to either update the plan or explicitly accept the gap as descoped, implementation proceeds consistent with that choice — an accepted gap is not flagged again for the same plan.
 
-- [ ] **Specification checkboxes reflect satisfied requirements and acceptance criteria after implementation**
+- [x] **Specification checkboxes reflect satisfied requirements and acceptance criteria after implementation**
   After implementation work concludes, checklist items under the specification's Requirements and Acceptance Criteria sections that the completed work satisfies are marked checked (`- [x]`) in the specification file.
 
-- [ ] **Specification checkboxes are not marked complete without justification**
+- [x] **Specification checkboxes are not marked complete without justification**
   After implementation work concludes, no checklist item in the specification is marked checked unless the completed work (as reflected in the plan's implementation record) actually satisfies it.
 
-- [ ] **Unsatisfied specification items are named with a reason in the completion report**
+- [x] **Unsatisfied specification items are named with a reason in the completion report**
   The completion report presented to the user at the end of implementation lists any specification requirement or acceptance criterion that remains unchecked, together with a stated reason (e.g. deferred, descoped, not yet done).
 
-- [ ] **Specification status appears in the same report as the changelog summary**
+- [x] **Specification status appears in the same report as the changelog summary**
   The completion report presented to the user contains both the summary of changes made and the specification's completion status, without requiring the user to open a separate file to find either.
 
 ## Technical Approach

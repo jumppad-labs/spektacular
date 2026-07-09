@@ -1,3 +1,7 @@
+## 000034_spec-plan-implement-reconciliation
+
+Spektacular now checks a plan against its own specification before implementation starts, and reconciles the specification's checklist against the finished work when it's done. Before any code gets written, the assistant compares the plan against the specification's Requirements and Acceptance Criteria; if something the spec asked for isn't covered by the plan, you're shown exactly what's missing and asked to either update the plan or explicitly accept the gap — and once you accept a gap, you won't be asked about it again on a later run. When implementation finishes, the specification's own checkboxes are updated to reflect what was actually built, and the final summary now tells you plainly which requirements are satisfied and, for anything left open, why — so you no longer have to open the specification yourself to find out.
+
 ## 000032_spec-workflow-pair-programming-enhancements
 
 When you start a spec workflow, Spektacular now captures the conversation context that led to it. The spec's `new` step clears `.spektacular/context.md` and instructs the agent to write detailed discussion context — the problem identified, requirements and constraints discussed, alternatives considered, and the user's exact phrasing for key requirements — so that context persists for resumption if the workflow is interrupted. If no meaningful context exists, the agent skips the write, keeping the file empty.

@@ -201,7 +201,7 @@ func TestImplementStatus_ReportsUncheckedPhases(t *testing.T) {
 	// Fixture has 2 unchecked phases (1.1, 1.2) and 1 checked (1.3).
 	require.EqualValues(t, 2, status["unchecked_phases"])
 	require.Equal(t, "fixture", status["plan_name"])
-	require.EqualValues(t, 12, status["total_steps"])
+	require.EqualValues(t, 13, status["total_steps"])
 }
 
 func TestImplementSteps_ListsAllSteps(t *testing.T) {
@@ -216,7 +216,7 @@ func TestImplementSteps_ListsAllSteps(t *testing.T) {
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	steps := result["steps"].([]any)
-	require.Len(t, steps, 12)
+	require.Len(t, steps, 13)
 	expected := []string{
 		"new",
 		"read_plan",
@@ -229,6 +229,7 @@ func TestImplementSteps_ListsAllSteps(t *testing.T) {
 		"update_repo_changelog",
 		"test_plan",
 		"update_feature_changelog",
+		"reconcile_spec",
 		"finished",
 	}
 	for i, want := range expected {

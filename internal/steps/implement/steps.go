@@ -26,7 +26,8 @@ func Steps() []workflow.StepConfig {
 		{Name: "update_repo_changelog", Src: []string{"update_changelog"}, Dst: "update_repo_changelog", Callback: updateRepoChangelog()},
 		{Name: "test_plan", Src: []string{"update_repo_changelog"}, Dst: "test_plan", Callback: testPlan()},
 		{Name: "update_feature_changelog", Src: []string{"test_plan"}, Dst: "update_feature_changelog", Callback: updateFeatureChangelog()},
-		{Name: "finished", Src: []string{"update_feature_changelog"}, Dst: "finished", Callback: finished()},
+		{Name: "reconcile_spec", Src: []string{"update_feature_changelog"}, Dst: "reconcile_spec", Callback: reconcileSpec()},
+		{Name: "finished", Src: []string{"reconcile_spec"}, Dst: "finished", Callback: finished()},
 	}
 }
 
@@ -139,8 +140,18 @@ func updateFeatureChangelog() workflow.StepCallback {
 	}
 }
 
+// reconcileSpec runs after the feature changelog record is written. It
+// compares the specification's Requirements and Acceptance Criteria against
+// the plan's accumulated changelog record and commits an updated spec with
+// satisfied items checked off, so the finished report can read it back.
+func reconcileSpec() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("reconcile_spec", "finished", "steps/implement/11-reconcile_spec.md", data, out, st, cfg, nil)
+	}
+}
+
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("finished", "", "steps/implement/11-finished.md", data, out, st, cfg, nil)
+		return "", writeStep("finished", "", "steps/implement/12-finished.md", data, out, st, cfg, nil)
 	}
 }

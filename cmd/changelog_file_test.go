@@ -18,12 +18,12 @@ func TestChangelogFileWriteRead_RoundTrips(t *testing.T) {
 	require.NoError(t, os.WriteFile(srcPath, []byte("changelog body"), 0o644))
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"changelog", "file", "write", "release/notes.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"changelog", "file", "write", "20260709000000-release-notes.md", "--from", srcPath})
 
 	require.NoError(t, rootCmd.Execute())
 
 	stdout, _ := setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"changelog", "file", "read", "release/notes.md"})
+	rootCmd.SetArgs([]string{"changelog", "file", "read", "20260709000000-release-notes.md"})
 
 	require.NoError(t, rootCmd.Execute())
 	require.Equal(t, "changelog body", stdout.String())
@@ -38,11 +38,11 @@ func TestChangelogFileList_ShowsAllWrittenRecords(t *testing.T) {
 	require.NoError(t, os.WriteFile(srcPath, []byte("entry body"), 0o644))
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"changelog", "file", "write", "alpha.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"changelog", "file", "write", "20260709000000-alpha.md", "--from", srcPath})
 	require.NoError(t, rootCmd.Execute())
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"changelog", "file", "write", "beta.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"changelog", "file", "write", "20260709000001-beta.md", "--from", srcPath})
 	require.NoError(t, rootCmd.Execute())
 
 	stdout, _ := setupImplementCmd(t)
@@ -54,5 +54,5 @@ func TestChangelogFileList_ShowsAllWrittenRecords(t *testing.T) {
 		Files []string `json:"files"`
 	}
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-	require.ElementsMatch(t, []string{"alpha.md", "beta.md"}, result.Files)
+	require.ElementsMatch(t, []string{"20260709000000-alpha.md", "20260709000001-beta.md"}, result.Files)
 }

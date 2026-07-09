@@ -20,11 +20,11 @@ func TestPlanFileWrite_ResolvesConfiguredDirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(srcPath, []byte("plan body"), 0o644))
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"plan", "file", "write", "feature/plan.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"plan", "file", "write", "20260709000000-feature/plan.md", "--from", srcPath})
 
 	require.NoError(t, rootCmd.Execute())
 
-	content, err := os.ReadFile(filepath.Join(dir, "docs", "plans", "feature", "plan.md"))
+	content, err := os.ReadFile(filepath.Join(dir, "docs", "plans", "20260709000000-feature", "plan.md"))
 	require.NoError(t, err)
 	require.Equal(t, "plan body", string(content))
 }
@@ -42,11 +42,11 @@ func TestPlanFileWrite_PreservesProblematicCharacters(t *testing.T) {
 	require.NoError(t, os.WriteFile(srcPath, body, 0o644))
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"plan", "file", "write", "feature/plan.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"plan", "file", "write", "20260709000000-feature/plan.md", "--from", srcPath})
 
 	require.NoError(t, rootCmd.Execute())
 
-	dstPath := filepath.Join(dir, "docs", "plans", "feature", "plan.md")
+	dstPath := filepath.Join(dir, "docs", "plans", "20260709000000-feature", "plan.md")
 	content, err := os.ReadFile(dstPath)
 	require.NoError(t, err)
 	require.Equal(t, body, content)
@@ -63,12 +63,12 @@ func TestPlanFileWrite_MissingSourceErrors(t *testing.T) {
 	srcPath := filepath.Join(t.TempDir(), "missing.md")
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"plan", "file", "write", "feature/plan.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"plan", "file", "write", "20260709000000-feature/plan.md", "--from", srcPath})
 
 	err := rootCmd.Execute()
 	require.Error(t, err)
 	require.ErrorContains(t, err, srcPath)
-	require.NoFileExists(t, filepath.Join(dir, "docs", "plans", "feature", "plan.md"))
+	require.NoFileExists(t, filepath.Join(dir, "docs", "plans", "20260709000000-feature", "plan.md"))
 }
 
 // TestPlanFileWrite_PreservesSourceFile asserts that a successful write leaves
@@ -83,7 +83,7 @@ func TestPlanFileWrite_PreservesSourceFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(srcPath, body, 0o644))
 
 	setupImplementCmd(t)
-	rootCmd.SetArgs([]string{"plan", "file", "write", "feature/plan.md", "--from", srcPath})
+	rootCmd.SetArgs([]string{"plan", "file", "write", "20260709000000-feature/plan.md", "--from", srcPath})
 
 	require.NoError(t, rootCmd.Execute())
 
@@ -126,4 +126,67 @@ func TestPlanFileRead_ResolvesConfiguredDirectory(t *testing.T) {
 
 	require.NoError(t, rootCmd.Execute())
 	require.Equal(t, "stored context", stdout.String())
+}
+
+// TestPlanFileWrite_RejectsNameWithoutIDPrefix asserts `plan file write`
+// rejects a plan name that has no ID prefix matching the configured
+// spec.id_method, with an error that points the agent at reusing the
+// originating spec's ID rather than inventing a new one. It does not create
+// the destination file.
+func TestPlanFileWrite_RejectsNameWithoutIDPrefix(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "plan:\n  config:\n    directory: docs/plans\n")
+
+	srcPath := filepath.Join(t.TempDir(), "source.md")
+	require.NoError(t, os.WriteFile(srcPath, []byte("plan body"), 0o644))
+
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"plan", "file", "write", "feature/plan.md", "--from", srcPath})
+
+	err := rootCmd.Execute()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "feature/plan.md")
+	require.ErrorContains(t, err, "spec.id_method")
+	require.NoFileExists(t, filepath.Join(dir, "docs", "plans", "feature", "plan.md"))
+}
+
+// TestPlanFileWrite_AcceptsCounterIDPrefix asserts `plan file write` accepts
+// a plan name carrying a counter-style ID prefix (six digits + underscore)
+// when spec.id_method is "counter".
+func TestPlanFileWrite_AcceptsCounterIDPrefix(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "spec:\n  id_method: counter\nplan:\n  config:\n    directory: docs/plans\n")
+
+	srcPath := filepath.Join(t.TempDir(), "source.md")
+	require.NoError(t, os.WriteFile(srcPath, []byte("plan body"), 0o644))
+
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"plan", "file", "write", "000034_feature/plan.md", "--from", srcPath})
+
+	require.NoError(t, rootCmd.Execute())
+
+	content, err := os.ReadFile(filepath.Join(dir, "docs", "plans", "000034_feature", "plan.md"))
+	require.NoError(t, err)
+	require.Equal(t, "plan body", string(content))
+}
+
+// TestPlanFileWrite_RejectsTimestampIDWhenCounterConfigured asserts that a
+// name matching the wrong id_method scheme (timestamp-shaped, but counter is
+// configured) is still rejected.
+func TestPlanFileWrite_RejectsTimestampIDWhenCounterConfigured(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "spec:\n  id_method: counter\nplan:\n  config:\n    directory: docs/plans\n")
+
+	srcPath := filepath.Join(t.TempDir(), "source.md")
+	require.NoError(t, os.WriteFile(srcPath, []byte("plan body"), 0o644))
+
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"plan", "file", "write", "20260709000000-feature/plan.md", "--from", srcPath})
+
+	err := rootCmd.Execute()
+	require.Error(t, err)
+	require.NoFileExists(t, filepath.Join(dir, "docs", "plans", "20260709000000-feature", "plan.md"))
 }

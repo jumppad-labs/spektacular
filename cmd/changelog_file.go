@@ -9,5 +9,6 @@ func init() {
 	changelogCmd.AddCommand(newStoreFileCmd(
 		"Read and write files in the changelog store",
 		func(c config.Config) string { return c.Changelog.Config.Directory },
+		true,
 	))
 }

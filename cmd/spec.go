@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/identifier"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/steps/spec"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -151,8 +152,8 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 			Input: &schemaObj{
 				Type: "object",
 				Properties: map[string]*schemaProp{
-					"name": {Type: "string", Pattern: identifierInputPattern, MaxLen: spec.MaxIdentifierPartLength},
-					"id":   {Type: "string", Pattern: identifierInputPattern, MaxLen: spec.MaxIdentifierPartLength},
+					"name": {Type: "string", Pattern: identifierInputPattern, MaxLen: identifier.MaxPartLength},
+					"id":   {Type: "string", Pattern: identifierInputPattern, MaxLen: identifier.MaxPartLength},
 				},
 				Required: []string{"name"},
 			},

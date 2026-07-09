@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/identifier"
 	"github.com/jumppad-labs/spektacular/internal/output"
-	"github.com/jumppad-labs/spektacular/internal/steps/spec"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -93,8 +93,8 @@ func TestSpecNewSchemaDocumentsNameAndOptionalID(t *testing.T) {
 	require.Contains(t, schema.Input.Properties, "name")
 	require.Contains(t, schema.Input.Properties, "id")
 	require.Equal(t, []string{"name"}, schema.Input.Required)
-	require.Equal(t, spec.MaxIdentifierPartLength, schema.Input.Properties["name"].MaxLen)
-	require.Equal(t, spec.MaxIdentifierPartLength, schema.Input.Properties["id"].MaxLen)
+	require.Equal(t, identifier.MaxPartLength, schema.Input.Properties["name"].MaxLen)
+	require.Equal(t, identifier.MaxPartLength, schema.Input.Properties["id"].MaxLen)
 }
 
 func TestSpecNew_DefaultUsesTimestampPrefix(t *testing.T) {

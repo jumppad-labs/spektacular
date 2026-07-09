@@ -24,10 +24,24 @@ var stepDirs = []string{
 	"steps/implement",
 }
 
+// exemptFromContextDirective lists non-terminal templates that intentionally
+// do not carry the generic refresh-context directive because they already
+// carry their own, purpose-built instruction for capturing context.md.
+// steps/spec/00-new.md is the spec workflow's first step: it stops there
+// (rather than auto-advancing) specifically so the agent writes fresh
+// conversation context to context.md before proceeding to overview — a
+// different job from the generic directive's "refresh what's already there"
+// framing used by every later step.
+var exemptFromContextDirective = map[string]bool{
+	"steps/spec/00-new.md": true,
+}
+
 // TestContextDirectivePresent verifies the acceptance criteria for Phase 3.1:
 //
 //  1. Every spec, plan, and implement non-terminal step instruction asks the
-//     agent to refresh .spektacular/context.md before advancing.
+//     agent to refresh .spektacular/context.md before advancing, except the
+//     templates listed in exemptFromContextDirective that already carry an
+//     equivalent, purpose-built instruction of their own.
 //  2. The directive wording is identical across all three workflows (enforced
 //     by matching the single hand-written marker everywhere).
 //  3. Terminal *-finished.md templates are unchanged and do NOT contain the
@@ -61,6 +75,10 @@ func TestContextDirectivePresent(t *testing.T) {
 				return nil
 			}
 
+			if exemptFromContextDirective[p] {
+				return nil
+			}
+
 			// Non-terminal templates must carry the directive exactly once.
 			require.Equalf(t, 1, count,
 				"non-terminal template %s must contain the refresh-context directive exactly once (found %d)", p, count)
@@ -71,8 +89,9 @@ func TestContextDirectivePresent(t *testing.T) {
 	}
 
 	// Floor, not an exact match: spec (8) + plan (16) + implement (8) = 32
-	// non-terminal templates today. Kept as a lower bound so adding a step
-	// does not break the test, while still catching a walk that finds nothing.
-	require.GreaterOrEqual(t, directiveBearing, 30,
-		"expected at least 30 directive-bearing step templates across the three workflows")
+	// non-terminal templates today, minus 1 exempted (steps/spec/00-new.md).
+	// Kept as a lower bound so adding a step does not break the test, while
+	// still catching a walk that finds nothing.
+	require.GreaterOrEqual(t, directiveBearing, 29,
+		"expected at least 29 directive-bearing step templates across the three workflows")
 }

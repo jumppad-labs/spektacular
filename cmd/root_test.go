@@ -676,7 +676,7 @@ func TestSessionLog_AdvancedTrueWhenStateChanges(t *testing.T) {
 		require.Nil(t, ev.StateBefore, "no state.json exists before the founding call")
 		require.NotNil(t, ev.StateAfter)
 		require.Equal(t, "spec", ev.StateAfter.Kind)
-		require.Equal(t, "overview", ev.StateAfter.CurrentStep)
+		require.Equal(t, "new", ev.StateAfter.CurrentStep)
 		require.True(t, ev.Advanced)
 	})
 
@@ -689,12 +689,15 @@ func TestSessionLog_AdvancedTrueWhenStateChanges(t *testing.T) {
 		_, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 		require.Equal(t, 0, code)
 
+		_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"overview"}`)
+		require.Equal(t, 0, code)
+
 		_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"requirements"}`)
 		require.Equal(t, 0, code)
 
 		events := readSessionLogEvents(t, dir)
-		require.Len(t, events, 2)
-		ev := events[1]
+		require.Len(t, events, 3)
+		ev := events[2]
 		require.NotNil(t, ev.StateBefore)
 		require.Equal(t, "overview", ev.StateBefore.CurrentStep)
 		require.NotNil(t, ev.StateAfter)
@@ -717,7 +720,7 @@ func TestSessionLog_AdvancedFalseWhenGotoRepeatsCurrentStep(t *testing.T) {
 	_, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 	require.Equal(t, 0, code)
 
-	stdout, _, code := runRootCmd(t, "spec", "goto", "--data", `{"step":"overview"}`)
+	stdout, _, code := runRootCmd(t, "spec", "goto", "--data", `{"step":"new"}`)
 	require.Equal(t, 0, code, "goto to the already-current step returns success, not an error")
 
 	events := readSessionLogEvents(t, dir)
@@ -776,7 +779,7 @@ func TestSessionLog_SameSessionIDAcrossFoundingAndResumedCalls(t *testing.T) {
 	_, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 	require.Equal(t, 0, code)
 
-	_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"requirements"}`)
+	_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"overview"}`)
 	require.Equal(t, 0, code)
 
 	events := readSessionLogEvents(t, dir)

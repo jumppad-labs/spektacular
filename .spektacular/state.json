@@ -16,9 +16,9 @@
     "reconcile_spec",
     "finished"
   ],
-  "created_at": "2026-07-09T06:57:14.46946357Z",
-  "updated_at": "2026-07-09T07:16:46.740108574Z",
+  "created_at": "2026-07-09T10:11:49.126309514Z",
+  "updated_at": "2026-07-09T10:46:06.408591851Z",
   "data": {
-    "name": "000034_spec-plan-implement-reconciliation"
+    "name": "000032_spec-workflow-pair-programming-enhancements"
   }
 }

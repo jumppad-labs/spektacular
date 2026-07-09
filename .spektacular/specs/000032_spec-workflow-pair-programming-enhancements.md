@@ -8,25 +8,25 @@ This change gives the assistant standing instructions to recognize when an in-pr
 
 ## Requirements
 
-- [ ] **Assistant recognizes when a discussion warrants a spec**
+- [x] **Assistant recognizes when a discussion warrants a spec**
   During an open-ended conversation (diagnostics, brainstorming, exploratory discussion), the assistant must be able to recognize when the conversation has produced a decision or scope substantial enough to be worth capturing as a specification, rather than only doing so when the user explicitly invokes the spec workflow.
 
-- [ ] **Assistant proactively offers to capture the conversation as a spec**
+- [x] **Assistant proactively offers to capture the conversation as a spec**
   When the assistant recognizes that threshold has been crossed, it must proactively offer to start the spec process, rather than silently proceeding to implementation or waiting to be asked.
 
-- [ ] **Threshold for triggering a spec is configurable, not fixed**
+- [x] **Threshold for triggering a spec is configurable, not fixed**
   Users/organizations can configure how readily the assistant proposes creating a spec — ranging from "only for substantial new features" to "even small bug fixes should go through a lightweight spec" — and the assistant must honor that configured strictness when deciding whether to offer.
 
-- [ ] **A sensible default applies when no configuration is present**
+- [x] **A sensible default applies when no configuration is present**
   If no explicit configuration exists, the assistant must still apply a reasonable default threshold rather than either never triggering or always triggering.
 
-- [ ] **Starting the spec from a recognized moment carries forward already-established context**
+- [x] **Starting the spec from a recognized moment carries forward already-established context**
   When the user accepts the offer to create a spec, the assistant must carry forward the relevant decisions, constraints, and information already established in the conversation, so the user is not forced to re-answer questions (e.g. overview) that the conversation has already effectively answered.
 
-- [ ] **The user can defer the offer while investigation continues**
+- [x] **The user can defer the offer while investigation continues**
   If the user responds that they're not ready yet (still investigating, not done exploring), the assistant must continue the conversation without a spec and may raise the offer again later in the same conversation as the discussion develops further, rather than treating a "not yet" as a permanent decline.
 
-- [ ] **The user can decline the offer outright**
+- [x] **The user can decline the offer outright**
   If the user declines spec creation for this discussion entirely, the assistant must drop the offer for the remainder of that discussion and not repeatedly re-prompt for the same topic.
 
 ## Constraints
@@ -39,25 +39,25 @@ This change gives the assistant standing instructions to recognize when an in-pr
 
 ## Acceptance Criteria
 
-- [ ] **Recognition of spec-worthy discussion**
+- [x] **Recognition of spec-worthy discussion**
   Given a conversation that has produced a scoped decision or feature description substantial enough to meet the configured threshold, the assistant's next response includes an offer to capture it as a spec, without the user having invoked the spec workflow themselves.
 
-- [ ] **Proactive offer, not silent progression**
+- [x] **Proactive offer, not silent progression**
   In that situation, the assistant does not proceed straight into implementation or further open-ended work without first surfacing the offer to the user.
 
-- [ ] **Threshold is configurable**
+- [x] **Threshold is configurable**
   A user can set the trigger sensitivity to a stricter or looser value than the default, and the assistant's offer behavior changes accordingly for the same conversation shape (e.g. a small bug-fix-sized discussion triggers an offer under a strict setting but not under a lenient one).
 
-- [ ] **Default threshold applies out of the box**
+- [x] **Default threshold applies out of the box**
   With no configuration present, a conversation that reaches a substantial, multi-decision scope still results in an offer; a trivial one-line fix does not.
 
-- [ ] **Context carries into the spec**
+- [x] **Context carries into the spec**
   When the user accepts, the resulting spec's Overview (and other sections, where the conversation already established them) is pre-populated from the conversation, and the assistant does not re-ask questions the conversation already answered without first proposing its own draft based on that context.
 
-- [ ] **Deferral keeps the conversation open and allows re-offering**
+- [x] **Deferral keeps the conversation open and allows re-offering**
   When the user defers, no spec workflow is started, the conversation continues normally, and the assistant may raise the offer again later in the same conversation if the discussion grows further.
 
-- [ ] **Decline suppresses further offers for that discussion**
+- [x] **Decline suppresses further offers for that discussion**
   When the user declines, no spec workflow is started, and the assistant does not raise the offer again for the same discussion topic within that conversation.
 
 ## Technical Approach

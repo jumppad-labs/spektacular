@@ -14,6 +14,7 @@ func TestNewDefault_HasExpectedDefaults(t *testing.T) {
 	require.Equal(t, "spektacular", cfg.Command)
 	require.False(t, cfg.Debug.Enabled)
 	require.Equal(t, "timestamp", cfg.Spec.IDMethod)
+	require.Equal(t, SpecTriggerThresholdModerate, cfg.SpecTriggerThreshold)
 }
 
 func TestFromYAMLFile_LoadsAndExpandsEnvVars(t *testing.T) {
@@ -58,6 +59,18 @@ func TestFromYAMLFile_UnknownSpecIDMethodReturnsError(t *testing.T) {
 	_, err = FromYAMLFile(path)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "spec.id_method")
+}
+
+func TestFromYAMLFile_UnknownSpecTriggerThresholdReturnsError(t *testing.T) {
+	yaml := `spec_trigger_threshold: unsupported`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(path, []byte(yaml), 0644)
+	require.NoError(t, err)
+
+	_, err = FromYAMLFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "spec_trigger_threshold")
 }
 
 func TestFromYAMLFile_MissingFile_ReturnsError(t *testing.T) {

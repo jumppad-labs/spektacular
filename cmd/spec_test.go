@@ -104,7 +104,7 @@ func TestSpecNew_DefaultUsesTimestampPrefix(t *testing.T) {
 	result, err := runSpecNewForTest(t, "--data", `{"name":"Billing.Export"}`)
 	require.NoError(t, err)
 
-	require.Equal(t, "overview", result.Step)
+	require.Equal(t, "new", result.Step)
 	require.Regexp(t, regexp.MustCompile(`^\d{14}-billing-export$`), result.SpecName)
 	require.Equal(t, filepath.Join(dir, ".spektacular", "specs", result.SpecName+".md"), result.SpecPath)
 	require.FileExists(t, result.SpecPath)
@@ -360,7 +360,7 @@ func TestSpecNew_ForceStartsFreshOverInProgress(t *testing.T) {
 
 	var result specCommandResult
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-	require.Equal(t, "overview", result.Step)
+	require.Equal(t, "new", result.Step)
 	require.FileExists(t, result.SpecPath)
 }
 

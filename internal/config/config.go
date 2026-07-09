@@ -17,6 +17,12 @@ const (
 	SpecIDMethodExternal  = "external"
 )
 
+const (
+	SpecTriggerThresholdStrict   = "strict"
+	SpecTriggerThresholdModerate = "moderate"
+	SpecTriggerThresholdLenient  = "lenient"
+)
+
 // ProviderFile is the only storage provider this release ships. The provider
 // field on the spec, plan, and knowledge sections names a backend; today it
 // must always be this value.
@@ -103,19 +109,21 @@ type FileKnowledgeConfig struct {
 
 // Config is the top-level Spektacular configuration.
 type Config struct {
-	Command   string          `yaml:"command"`
-	Agent     string          `yaml:"agent"`
-	Debug     DebugConfig     `yaml:"debug"`
-	Spec      SpecConfig      `yaml:"spec"`
-	Plan      PlanConfig      `yaml:"plan"`
-	Changelog ChangelogConfig `yaml:"changelog"`
-	Knowledge KnowledgeConfig `yaml:"knowledge"`
+	Command              string          `yaml:"command"`
+	Agent                string          `yaml:"agent"`
+	SpecTriggerThreshold string          `yaml:"spec_trigger_threshold"`
+	Debug                DebugConfig     `yaml:"debug"`
+	Spec                 SpecConfig      `yaml:"spec"`
+	Plan                 PlanConfig      `yaml:"plan"`
+	Changelog            ChangelogConfig `yaml:"changelog"`
+	Knowledge            KnowledgeConfig `yaml:"knowledge"`
 }
 
 // NewDefault returns a Config populated with default values.
 func NewDefault() Config {
 	return Config{
-		Command: "spektacular",
+		Command:              "spektacular",
+		SpecTriggerThreshold: SpecTriggerThresholdModerate,
 		Debug: DebugConfig{
 			Enabled: false,
 		},
@@ -176,6 +184,11 @@ func FromYAMLFile(path string) (Config, error) {
 
 // Validate checks whether the config contains supported values.
 func (c Config) Validate() error {
+	switch c.SpecTriggerThreshold {
+	case "", SpecTriggerThresholdStrict, SpecTriggerThresholdModerate, SpecTriggerThresholdLenient:
+	default:
+		return fmt.Errorf("spec_trigger_threshold must be one of %q, %q, or %q", SpecTriggerThresholdStrict, SpecTriggerThresholdModerate, SpecTriggerThresholdLenient)
+	}
 	if err := c.Spec.Validate(); err != nil {
 		return err
 	}

@@ -1,62 +1,60 @@
 # Plan: 000032_spec-workflow-pair-programming-enhancements
 
 <!-- Metadata -->
-<!-- Created: 2026-07-08T15:38:50Z -->
-<!-- Commit: c6e4796 -->
+<!-- Created: 2026-07-09T10:01:07Z -->
+<!-- Commit: bde4136 -->
 <!-- Branch: f-conversational -->
 <!-- Repository: git@github.com:jumppad-labs/spektacular.git -->
 
 ## Overview
 
-Spektacular currently captures specifications only when a user deliberately starts the spec workflow. This plan adds proactive spec-creation offers during open-ended discussions: when a conversation produces something substantial enough to warrant a specification, the assistant recognizes the moment and offers to capture it, carrying forward what's already been decided so the user isn't forced to re-explain from scratch. The threshold for "substantial enough" is configurable per-project through a new `spec_trigger_threshold` field in `.spektacular/config.yaml` (values: `"strict"`, `"moderate"`, `"lenient"`), with a sensible default (`"moderate"`) that works out-of-the-box. The feature is delivered through two coordinated mechanisms: the configuration field that sets the threshold, and a managed instruction section in `AGENTS.md` that tells coding agents when and how to offer spec creation.
+Spektacular currently captures specifications only when a user deliberately starts the spec workflow. This plan adds proactive spec-creation offers during open-ended discussions: when a conversation produces something substantial enough to warrant a specification, the assistant recognizes the moment and offers to capture it, carrying forward what's already been decided so the user isn't forced to re-explain from scratch. The threshold for "substantial enough" is configurable per-project through a new `spec_trigger_threshold` field in `.spektacular/config.yaml` (values: `"strict"`, `"moderate"`, `"lenient"`), read live by the agent so a config change takes effect immediately, with a sensible default (`"moderate"`) that works out-of-the-box. The entire feature is delivered through two coordinated mechanisms: the configuration field, and a single managed instruction section in `AGENTS.md` that tells coding agents when and how to recognize, offer, and carry conversation context forward.
 
 ## Conventions
 
 No project conventions apply to this feature.
 
-The always-applied knowledge loaded during discovery contained only the category definitions for conventions and glossary (from `.spektacular/knowledge/conventions/README.md` and `glossary/README.md`), not actual project-specific conventions. The feature touches agent instructions (AGENTS.md), configuration (config.yaml), and the spec workflow's data-passing mechanism, but no coding standards, naming schemes, or required patterns were found in the knowledge base that bear on these surfaces.
+The always-applied knowledge loaded during discovery contained only the category definitions for conventions and glossary (from `.spektacular/knowledge/conventions/README.md` and `glossary/README.md`), not actual project-specific conventions. The feature touches agent instructions (AGENTS.md), configuration (config.yaml), and reuses the existing spec-workflow step templates unchanged, but no coding standards, naming schemes, or required patterns were found in the knowledge base that bear on these surfaces.
 
 ## Architecture & Design Decisions
 
-The feature is delivered through two coordinated mechanisms: a configuration field in `config.yaml` that sets the project's spec-trigger threshold, and a managed instruction section in `AGENTS.md` that tells coding agents when and how to offer spec creation during open-ended discussions.
+The feature is delivered through two coordinated mechanisms, both landing in existing, proven extension points: a new `spec_trigger_threshold` field in `.spektacular/config.yaml`, and a single new managed instruction section in `AGENTS.md` that tells agents when and how to offer spec creation, how to carry conversation context forward, and how to handle defer/decline. There is no third mechanism for context carry-forward — that is the central correction from an earlier, abandoned attempt at this plan (see below).
 
-The threshold configuration lives as a new top-level `spec_trigger_threshold` field in `.spektacular/config.yaml`, accepting string values like `"strict"`, `"moderate"`, or `"lenient"`. This follows the project's established configuration pattern (all project settings live in `config.yaml`, loaded via `config.FromYAMLFile`) and satisfies the spec's constraint that the threshold must be stored in the existing configuration mechanism. When no value is configured, a sensible default (`"moderate"`) applies, allowing the feature to work out-of-the-box while remaining adjustable for teams with different process requirements.
+The threshold configuration follows the exact shape of every other enum-like field in `internal/config/config.go`: a top-level `SpecTriggerThreshold string` field (yaml `spec_trigger_threshold`), defaulted to `"moderate"` in `NewDefault()`, and validated with the same `switch`-with-empty-case-and-`default:`-error pattern used by `SpecConfig.IDMethod` (`internal/config/config.go:203-207`). This satisfies the spec's constraint that the threshold "must be stored in the project's existing configuration mechanism" with zero new machinery — no new file, no new loader, no new validation style for the agent or a future maintainer to learn.
 
-The agent instruction is delivered as a new managed section in `AGENTS.md` — identified by its `## Spec-Worthy Discussion Recognition` markdown heading — following the same pattern established by the memory-redirect feature (spec 000023). The section is written by `spektacular init`, updated idempotently on re-init, and loaded natively by all three supported agents (Claude via `@AGENTS.md` in `CLAUDE.md`, Codex and Bob directly). The instruction tells agents to recognize when an ongoing discussion has crossed the configured threshold (e.g., multiple requirements mentioned, scoped decision reached, substantial feature described) and proactively offer to capture it as a spec rather than proceeding silently to implementation. The offer is always propose-then-confirm: the agent presents the option, waits for the user's decision (accept, defer, or decline), and only starts the spec workflow on explicit acceptance.
+The agent instruction is delivered as a new managed section in `AGENTS.md`, identified by its `## Spec-Worthy Discussion Recognition` heading, installed by a new `installSpecTriggerSection(projectPath, cfg, out)` function that is a structural clone of `installMemoryContextSection` (`internal/agent/memory_context.go:25-144`): read an embedded template, render it with mustache, locate the heading, replace/append/create exactly as the existing function does, write atomically. Each agent's `Install()` (`claude.go`, `codex.go`, `bob.go`) gains one call to it, mirroring the existing `installMemoryContextSection` call sites. The threshold is read dynamically by the agent from `.spektacular/config.yaml` at the moment it is deciding whether to offer, rather than being baked into the rendered instruction at `init` time — chosen over the init-time-bake alternative (which mirrors how `command` is handled in `memory-context.md` today) because a config change should take effect immediately without requiring the user to remember to re-run `spektacular init <agent>`. The trade-off is that the instruction must tell the agent to read a file at decision time — a new kind of behavior no existing managed section asks for — but this is a one-line addition to the instruction prose, not new code, and keeps the feature responsive to its own configuration.
 
-Context carry-forward is handled through the spec workflow's existing `--data`, `--stdin`, and `--file` flags. When the user accepts the offer, the agent invokes `spec new` with pre-populated data (e.g., `--data '{"name":"...", "overview":"<already-discussed-content>"}'` or `--stdin overview` for longer bodies), and the spec workflow receives that context before the first step runs. The step templates are modified to detect pre-populated content and skip re-prompting when present, so the user is not forced to re-answer questions the conversation already covered. This mechanism requires no new workflow state — it uses the existing data map that every step already receives.
+Context carry-forward — originally planned as a second milestone with its own Go and template changes (a `spec new --data` payload, mustache conditionals in `templates/steps/spec/01-overview.md`) — turned out to need neither. Tracing the render path confirmed `stepkit.WriteStepResult` never merges `workflow.Data` into the templates it renders (`internal/stepkit/stepkit.go:78-85`), so that design would not have worked as specified even before considering whether it was the right approach. More importantly, it solved a problem that doesn't exist: the agent proposing the spec-creation offer, having it accepted, and starting `spec new` is the same agent in the same live conversation turn — it already holds the discussion in its own context. It needs no CLI mechanism to hand that context back to itself. The corrected design folds carry-forward into the same AGENTS.md instruction as the recognition/offer behavior: once the user accepts, the agent drives the existing spec workflow's steps (unmodified — `templates/steps/spec/01-overview.md` and its siblings keep asking "describe this feature," etc., exactly as today) but answers from what it already knows, proposing a draft to the user for confirmation or refinement rather than asking cold. This is pure agent behavior interpreting an unchanged instruction surface — no new workflow state, no new template variables, no new CLI flags exercised. The already-shipped `.spektacular/context.md`-clearing behavior in the spec workflow's `new()` step (`internal/steps/spec/steps.go:64-93`) is unaffected and untouched: it exists to let a *future, cold* session resume an interrupted spec workflow, which is a different problem from a live agent using context it already has in the same turn.
 
-Defer and decline tracking is agent-side conversation management, not CLI state. The instruction tells agents to remember if the user declined the offer for a specific discussion topic and suppress re-offering for that topic within the same conversation, relying on the agent's own memory (or `.spektacular/context.md` for cross-session persistence if needed). The CLI has no concept of "discussion ID" or "offer declined" — it only knows whether a workflow is in progress — so this responsibility stays with the agent where conversation context naturally lives.
-
-This approach beats the alternatives because it uses proven patterns from the codebase (the AGENTS.md managed-section pattern from spec 000023, the `config.yaml` configuration pattern from `internal/config/config.go`, the workflow data pre-population from `cmd/spec.go`), works identically for all three supported agents without agent-specific code, and requires no new CLI commands or runtime detection logic. The threshold remains user-configurable per-project, the instruction surface stays consolidated in `AGENTS.md` (which all agents already load), and the spec workflow's existing data-passing mechanisms handle context carry-forward without structural changes. Rejected alternatives — including a runtime detection command (adds latency, assumes agents can pass conversation history) and hardcoded heuristics (violates the configurability constraint) — are documented with citations in [research.md § Alternatives considered and rejected](./research.md#alternatives-considered-and-rejected).
+This approach beats the alternatives because it reuses two patterns the codebase has already proven out (the config-enum-validation pattern from `SpecConfig.IDMethod`, and the AGENTS.md managed-section pattern from spec 000023's `installMemoryContextSection`), and because it recognizes that context carry-forward needs no new mechanism at all rather than inventing one. Rejected alternatives — a runtime detection CLI command, hardcoded per-agent heuristics, a separate instruction file outside AGENTS.md, and the original CLI-data-passing design for carry-forward — are documented with citations in [research.md § Alternatives considered and rejected](./research.md#alternatives-considered-and-rejected).
 
 ## Component Breakdown
 
-- **`config.yaml` (changed)** — Gains a new top-level `spec_trigger_threshold` field accepting string values (`"strict"`, `"moderate"`, `"lenient"`). When absent, defaults to `"moderate"`. This is the single source of truth for the project's spec-trigger sensitivity.
+- **`config.yaml` (changed)** — Gains a new top-level `spec_trigger_threshold` field accepting `"strict"`, `"moderate"`, or `"lenient"`. When absent, treated as `"moderate"`. This is the single source of truth for the project's spec-trigger sensitivity, read by agents at decision time.
 
-- **`internal/config/config.go` (changed)** — The `Config` struct gains a `SpecTriggerThreshold string` field. The `NewDefault()` function sets it to `"moderate"`. The `Validate()` method checks that the value, if present, is one of the three supported values. Follows the existing pattern for all other config fields.
+- **`Config` struct (changed)** — Gains a `SpecTriggerThreshold` field with the corresponding default and validation, following the exact pattern already used for every other enum-like configuration value in this package.
 
-- **`AGENTS.md` (managed)** — Gains (or, on re-init, has updated in place) a new `## Spec-Worthy Discussion Recognition` section written from the embedded template. Not hand-edited. Loaded natively by all three agents (Claude via `@AGENTS.md` in `CLAUDE.md`, Codex and Bob directly). Contains the instruction to recognize spec-worthy discussions, check the configured threshold, and offer to capture the conversation as a spec.
+- **`AGENTS.md` (managed)** — Gains (or, on re-init, has updated in place) a new `## Spec-Worthy Discussion Recognition` section, written from an embedded template. Not hand-edited. Loaded natively by all three supported agents. Owns the entire behavioral contract for this feature: when to recognize a spec-worthy discussion, how to offer, what "accept" means (start the spec workflow and drive it from the conversation already had, proposing drafts for confirmation rather than asking cold), how to read the configured threshold, and how to track defer vs. decline within the conversation.
 
-- **`templates/agents/spec-trigger.md` (new)** — Embedded markdown template for the managed section, rendered through `mustache` against `cfg.Command` and `cfg.SpecTriggerThreshold`. Holds the prose instruction that tells agents when to offer a spec (threshold-based trigger), how to offer (propose-then-confirm), what to do on accept (invoke `spec new` with pre-populated data), and how to handle defer/decline (agent-side tracking, no re-offer for declined topics).
+- **Spec-trigger instruction template (new)** — The embedded prose template that the managed section above is rendered from. Holds the full instruction: recognition criteria, the propose-then-confirm offer flow, the instruction to read the threshold from config at decision time, the carry-forward behavior for accepted offers, and the defer/decline handling rule.
 
-- **`internal/agent/spec_trigger.go` (new)** — Shared helper exposing `installSpecTriggerSection(projectPath, cfg, out)` that reads the embedded template, renders it, locates the `## Spec-Worthy Discussion Recognition` heading in `AGENTS.md`, and replaces from that heading to the next H1/H2 or EOF (or appends if absent, or creates the file if missing). Idempotent. Follows the exact pattern from `memory_context.go` (spec 000023).
+- **Spec-trigger section installer (new)** — A small installer, structurally identical to the existing memory-context installer, that writes or updates the managed section in `AGENTS.md`. Owns only the mechanics of locating, replacing, appending, or creating the section — no behavioral logic of its own.
 
-- **`internal/agent/claude.go`, `codex.go`, `bob.go` (changed)** — Each `Install()` method gains a single call to `installSpecTriggerSection(projectPath, cfg, out)` after its existing skill/command-wrapper calls. No other change to the per-agent files.
+- **Per-agent install sequences (changed)** — Each supported agent's install sequence gains one additional step that invokes the new installer, alongside its existing install steps (skills, command wrappers, the memory-context section).
 
-- **`templates/steps/spec/01-overview.md` (changed)** — Modified to check for a pre-populated `overview` key in workflow data (passed via `spec new --data` or `--stdin`). If present, the template presents it to the user for confirmation/refinement rather than prompting from scratch. If absent, prompts as normal. This is the mechanism for "carrying forward already-established context".
+- **Spec workflow (unchanged, referenced)** — The existing `spec new`/`spec goto` workflow and its step templates are the target the new instruction drives. Nothing about them changes; the instruction tells the agent how to *use* the existing "ask the user..." prompts differently (propose-from-memory-then-confirm) when arriving with live conversation context, not to alter what those prompts ask.
 
-- **`templates/steps/spec/02-requirements.md`, `03-acceptance_criteria.md`, etc. (optionally changed)** — May be modified to detect pre-populated data for their respective sections (e.g., `requirements`, `acceptance_criteria`), following the same pattern as the overview step. The extent of pre-population support is determined during implementation based on what the agent can realistically extract from an open-ended discussion.
+- **Spec workflow's existing context.md resume behavior (unchanged, referenced)** — Already handles the separate case of a cold/interrupted session resuming a spec workflow. This plan does not touch it; it solves a different problem than live carry-forward.
 
-- **Project knowledge store (unchanged, referenced)** — The `.spektacular/knowledge/` store and the `spek-knowledge` skill (shipped under spec 000022) are referenced in the instruction as the destination for any learnings the agent identifies during the discussion. This plan does not modify them; it only directs agents to use them.
+- **Project knowledge store (unchanged, referenced)** — `.spektacular/knowledge/` and the `spek-knowledge` skill are referenced in the instruction as the destination for any learnings the agent identifies during the discussion. This plan does not modify them.
 
 ## Data Structures & Interfaces
 
-The feature introduces minimal new data structures, focusing instead on extending existing configuration and leveraging the project's established template rendering and workflow data mechanisms.
+The feature introduces one small configuration field and one installer function signature. It introduces no new workflow data keys, no new template variables for context carry-forward, and no changes to any existing interface — the corrected design (see Architecture) folds carry-forward into agent-instruction prose rather than a data contract.
 
-## Configuration Extension
+### Configuration field
 
-The `Config` struct in `internal/config/config.go` gains a single new field:
+The `Config` struct gains a single new field:
 
 ```go
 type Config struct {
@@ -65,211 +63,175 @@ type Config struct {
 }
 ```
 
-This field accepts one of three string values: `"strict"`, `"moderate"`, or `"lenient"`. When absent from `config.yaml`, `NewDefault()` sets it to `"moderate"`. The `Validate()` method checks that the value, if present, is one of the three supported values and returns an error otherwise.
+This accepts one of `"strict"`, `"moderate"`, or `"lenient"`. An absent or empty value is treated as `"moderate"`.
 
-## Template Variables
+### Installer function signature
 
-The embedded template at `templates/agents/spec-trigger.md` is rendered through `mustache.Render` against a map containing:
-
-```go
-map[string]string{
-    "command":   cfg.Command,           // e.g. "spektacular"
-    "threshold": cfg.SpecTriggerThreshold, // e.g. "moderate"
-}
-```
-
-This follows the same pattern as the existing skill templates and the memory-context template from spec 000023. The `{{command}}` placeholder is used for CLI invocations in the instruction prose, and `{{threshold}}` allows the instruction to reference the configured sensitivity level.
-
-## Workflow Data Keys
-
-The spec workflow's data map (accessed via `workflow.Data` interface) may contain pre-populated section content passed from the agent via `spec new --data` or `--stdin`/`--file`. The keys match section names:
-
-- `overview` — pre-populated overview text
-- `requirements` — pre-populated requirements list
-- `acceptance_criteria` — pre-populated acceptance criteria
-- (and so on for other sections)
-
-These are plain string values, not structured types. The step templates check for their presence using mustache conditionals (e.g., `{{#overview}}...{{/overview}}`) and present the pre-populated content to the user for confirmation/refinement rather than prompting from scratch.
-
-## Installer Function Signature
-
-The new `internal/agent/spec_trigger.go` exposes a single function matching the pattern from `memory_context.go`:
+A new installer function matches the shape of the existing memory-context installer:
 
 ```go
 func installSpecTriggerSection(projectPath string, cfg config.Config, out io.Writer) error
 ```
 
-This is called from each agent's `Install()` method and writes (or updates in place) the managed section in `AGENTS.md`. The function signature is identical to `installMemoryContextSection` except for the name, maintaining consistency across the agent installation surface.
+Called once from each supported agent's install sequence. Writes or updates the managed `## Spec-Worthy Discussion Recognition` section in `AGENTS.md`. Its signature is identical in shape to the existing memory-context installer, keeping the agent-installation surface uniform.
 
-No new exported types, no new package boundaries, and no changes to the existing `Agent` interface. The feature operates entirely through configuration extension, template rendering, and the workflow's existing data-passing mechanism.
+### No new workflow data contract
+
+The spec workflow's existing data interface (get/set by key) is unchanged and unused by this feature — the earlier, abandoned design would have introduced new keys (e.g. `overview`) flowing through it; the corrected design does not, because context carry-forward happens entirely in agent behavior, not through any CLI-to-workflow data channel. No new template variables are introduced for step templates either; the only template variable the new AGENTS.md instruction template needs is `{{command}}` (matching the existing memory-context template), since the threshold is read by the agent directly from `config.yaml` at decision time rather than being rendered into the instruction.
 
 ## Implementation Detail
 
-## Configuration Extension Pattern
+### Configuration extension pattern
 
-The implementation extends the existing configuration mechanism by adding a single field to the `Config` struct and updating the validation logic to check for supported values. This follows the established pattern used for all other configuration fields: the struct field is exported and tagged for YAML unmarshaling, `NewDefault()` sets a sensible default, and `Validate()` enforces constraints. No new configuration file or loading mechanism is introduced — the feature integrates into the existing `config.yaml` → `Config` struct → validation pipeline.
+The implementation extends the existing configuration mechanism by adding a single field and its validation, following the established pattern for every other enum-like configuration value: an exported, YAML-tagged struct field; a sensible default set alongside every other default; a switch-based validator that accepts the empty string (meaning "not configured, use default") and the supported literal values, and returns a descriptive error otherwise. No new configuration file, loading path, or validation style is introduced.
 
-## Managed Section Pattern Reuse
+### Managed-section pattern reuse
 
-The AGENTS.md instruction delivery reuses the managed-section pattern shipped under spec 000023 (memory-redirect). A new installer function (`installSpecTriggerSection`) follows the exact structure of `installMemoryContextSection`: read embedded template, render with mustache, locate section by markdown heading, replace or append, write atomically. The pattern is proven, tested, and already works for all three agents. The only differences are the template path, the heading text, and the template variables — the algorithm and idempotency contract are identical.
+The AGENTS.md instruction delivery reuses the managed-section pattern already proven for the memory-redirect feature: a new installer function structurally identical to the existing one, differing only in the heading it looks for, the template it renders, and the call sites it's wired into. The replace/append/create/idempotency algorithm itself is not reinvented — it is copied verbatim in shape. This keeps the agent-installation surface uniform: a developer reading any agent's install sequence sees a list of interchangeable install steps with no special cases for this one.
 
-## Template Rendering Consistency
+### Instruction prose as the entire behavioral surface
 
-The embedded template is rendered through the same `mustache.Render` path used by workflow skills and the memory-context section. The template receives a map of string variables (`command`, `threshold`) and produces plain markdown prose. This keeps the instruction-generation surface uniform: all agent-facing prose is template-driven, all templates live under `templates/`, and all rendering goes through the same mustache helper. A developer adding a new managed section in the future will follow this exact pattern.
+This is the plan's one genuinely new pattern, and it is deliberately *not* a code pattern: the full behavioral contract for this feature — when to recognize a spec-worthy discussion, how to phrase the offer, how to read the configured threshold, how to carry conversation context into the spec workflow once accepted, and how to track defer vs. decline — lives entirely as prose in the new AGENTS.md section. No Go code branches on "is this discussion spec-worthy," no workflow state tracks "was an offer made," no CLI mechanism transports conversation content. This is a deliberate continuation of the existing split in this codebase between what the CLI's state machine owns (step sequencing, file writes, validation) and what agent instructions own (judgment calls, conversational behavior, natural-language interpretation) — the same split the memory-redirect instruction and the propose-then-confirm pattern from the knowledge-write skill already rely on.
 
-## Step Template Pre-Population Detection
+### Carry-forward as an instruction to reuse existing prompts differently, not a new prompt flow
 
-The spec step templates gain optional pre-population detection: check for a workflow data key matching the section name (e.g., `{{#overview}}...{{/overview}}`), and if present, display the pre-populated content for confirmation/refinement rather than prompting from scratch. This is a backward-compatible addition — templates that don't check for pre-population continue to prompt as normal, and the workflow data map already supports arbitrary keys. The pattern is: check, present if found, prompt if absent. No new workflow state or step logic is required.
+The spec workflow's step templates (the "ask the user to describe this feature" prompts and their siblings) are not modified. The new instruction tells the agent to answer those same, unmodified prompts using the conversation it already has instead of asking the user cold — proposing a draft and asking for confirmation or correction. A developer reading the spec workflow's templates in isolation would see nothing different from today; the difference is entirely in how an agent that already has relevant context chooses to engage with an unmodified prompt.
 
-## Agent Install Path Extension
-
-Each agent's `Install()` method gains a single call to the new installer function, placed after the existing skill and command-wrapper installs. This follows the established pattern: `Install()` is a sequence of independent install operations (skills, commands, AGENTS.md sections), each returning an error that halts the sequence if it fails. The new call is indistinguishable from the existing ones — same signature, same error-handling, same one-line-per-artifact output format. A developer reading any agent's `Install()` will see a uniform list of install steps with no special cases.
-
-## Instruction Prose as Configuration
-
-The threshold-based trigger logic lives entirely in the AGENTS.md instruction prose, not in Go code. The instruction tells agents "when you recognize a discussion has crossed the `{{threshold}}` threshold, offer to capture it as a spec" — the interpretation of "strict", "moderate", or "lenient" is left to the agent's natural-language understanding. This keeps the CLI free of conversation-analysis logic and avoids hardcoding heuristics that would need to evolve as agent capabilities improve. The trade-off: consistency across agents depends on clear instruction wording, not enforced by code.
-
-## No New CLI Commands or State
-
-The feature introduces no new CLI commands, no new workflow state fields, and no new state transitions. The spec workflow's existing `--data`, `--stdin`, and `--file` flags handle context pre-population, and the workflow's existing data map stores it. Defer and decline tracking is agent-side conversation management, not CLI state. The only CLI-visible change is the new configuration field, which is read at init time and rendered into the instruction template. A developer working on the CLI will see no new command handlers, no new state machine logic, and no new JSON output schemas.
-
-## Code-Structure UX
+### Code-structure UX
 
 A developer encountering this feature in the codebase will see:
-- A new field in `Config` that looks like every other config field
-- A new installer function in `internal/agent/` that looks like `installMemoryContextSection`
-- A new template in `templates/agents/` that looks like `memory-context.md`
-- A new call in each agent's `Install()` that looks like the existing calls
-- Optional pre-population checks in spec step templates that follow the mustache conditional pattern
+- A new field in `Config` that looks like every other config field, with matching default and validation style
+- A new installer function in the agent package that looks like the existing memory-context installer, differing only in heading/template/name
+- A new template that looks like the existing memory-context template in structure and length
+- One new call in each agent's install sequence, indistinguishable in shape from the calls already there
+- No changes anywhere in the spec workflow's step callbacks, templates, or data-passing surface
 
-The feature integrates into existing patterns without introducing new abstractions, new packages, or new control flow. The only novel element is the instruction prose itself, which is template-driven and therefore easy to iterate on without touching Go code.
+The feature integrates into existing patterns without introducing new abstractions, new packages, or new control flow anywhere in the CLI. The only genuinely novel element is the instruction prose itself, which is easy to iterate on without touching Go code — consistent with how the rest of this codebase already treats agent-facing behavior as configuration-adjacent rather than hardcoded.
 
 ## Dependencies
 
-- **Spec 000020 (context)** — Already shipped. Provides the project knowledge store at `.spektacular/knowledge/` that the instruction references as the destination for learnings identified during discussions. No changes required.
+- **Spec 000020 (context)** — Already shipped. Provides the project knowledge store at `.spektacular/knowledge/` that the new instruction references as the destination for any learnings identified during a discussion. No changes required.
 
-- **Spec 000022 (spek-knowledge skill)** — Already shipped. Provides the agent-facing skill and `go run . knowledge {search,read,write}` CLI used in the instruction's propose-then-confirm pattern. No changes required.
+- **Spec 000022 (spek-knowledge skill)** — Already shipped. Provides the agent-facing skill and CLI used for propose-then-confirm knowledge writes. The new offer/carry-forward instruction follows the same propose-then-confirm shape. No changes required.
 
-- **Spec 000023 (context-over-memory)** — Already shipped. Provides the managed-section pattern (`installMemoryContextSection` in `internal/agent/memory_context.go`) that this plan reuses for the spec-trigger instruction. No changes required.
+- **Spec 000023 (context-over-memory)** — Already shipped. Provides the managed-section pattern this plan's installer clones. No changes required.
 
-- **`internal/config`** — Existing package. Provides the `Config` struct, `FromYAMLFile` loader, and validation logic. This plan extends the struct with one new field and adds validation for it; no breaking changes to the package's API.
+- **`internal/config`** — Existing package. Provides the `Config` struct, its loader, and its validation pipeline. This plan adds one new field and its validation; no breaking changes to the package's API.
 
-- **`internal/agent`** — Existing package. Provides the per-agent `Install()` methods and the `sourceFS` variable for template loading. This plan adds a new installer function following the existing pattern and wires it into each agent's `Install()`; no changes to the `Agent` interface or existing functions.
+- **`internal/agent`** — Existing package. Provides the per-agent `Install()` methods and the embedded template filesystem. This plan adds one new installer function following the existing pattern and wires one call into each agent's install sequence; no changes to any existing function or interface.
 
-- **`internal/workflow`** — Existing package. Provides the `Data` interface and the workflow state machine. This plan uses the existing data-passing mechanism (`SetData`, `GetData`) without modification; no changes to the package.
+- **`templates`** — Existing embedded filesystem. Provides the mustache templates for skills and agent instructions. This plan adds one new template; no changes to the embed directive or loading logic.
 
-- **`templates`** — Existing embedded filesystem. Provides the mustache templates for skills and agent instructions. This plan adds one new template (`agents/spec-trigger.md`) following the existing structure; no changes to the embed directive or loading logic.
+- **`github.com/cbroglie/mustache`** — External library, already in use. Renders the new instruction template. No version change or new usage pattern required.
 
-- **`github.com/cbroglie/mustache`** — External library, already in use. Provides template rendering for the new instruction template. No version change or new usage patterns required.
+- **`gopkg.in/yaml.v3`** — External library, already in use. Unmarshals the new config field. No version change or new usage pattern required.
 
-- **`gopkg.in/yaml.v3`** — External library, already in use. Provides YAML unmarshaling for the new config field. No version change or new usage patterns required.
+- **The existing spec workflow (`internal/steps/spec`, `templates/steps/spec/*`)** — Existing, unmodified. This plan depends on it staying exactly as it is today: the new instruction tells agents how to *use* its existing prompts, and any change to those prompts' wording is out of scope here.
 
-- **`io/fs`** — Standard library, already in use. Provides filesystem abstraction for reading the embedded template. No new usage required.
-
-No new external dependencies are introduced. All referenced prior work (specs 000020, 000022, 000023) has already shipped and requires no changes. The feature integrates into existing packages and libraries without breaking changes or version bumps.
+No new external dependencies are introduced. All referenced prior specs (000020, 000022, 000023) have already shipped and require no further changes before this plan can start.
 
 ## Testing Approach
 
-## Test Types and Coverage
+### Test types and coverage
 
-The feature is tested through three layers:
+**Unit tests** cover the two genuinely new pieces of code: the configuration field's default and validation, and the installer function's idempotency contract. The installer function receives the same coverage shape as the existing memory-context installer it's cloned from: create-from-missing, append-after-existing-content, update-in-place idempotency, preserve-surrounding-content, template-change-picked-up, and cross-agent idempotency (claude → codex → bob leaves exactly one managed section). Config validation tests assert the field accepts only the three supported values plus the empty/absent case, and defaults to `"moderate"`. These follow the project's existing table-driven test conventions and live alongside the code they exercise.
 
-**Unit tests** cover the configuration extension, the installer function's idempotency contract, and template rendering. The installer function (`installSpecTriggerSection`) receives the same test coverage as `installMemoryContextSection` from spec 000023: create-from-missing, append-after-existing-content, update-in-place idempotency, preserve-surrounding-content, template-change-picked-up, and cross-agent idempotency (claude → codex → bob). Config validation tests assert that `SpecTriggerThreshold` accepts only the three supported values and defaults to `"moderate"` when absent. These tests follow the project's existing table-driven test pattern and live alongside the production code they exercise.
+**Integration tests are deliberately omitted**, for the same reason as the installer's own package already omits them: the installer's contract is fully exercised by unit tests against a temp directory, and the instruction's actual effectiveness — whether agents recognize spec-worthy discussions, offer correctly, honor the threshold, and carry context forward — is a property of agent behavior interpreting prose, not of code paths that can be asserted by an automated test. Automating "does the agent behave as instructed" would require mocking agent decision-making, which is brittle and does not reflect real usage.
 
-**Integration tests** are deliberately omitted. The installer function's contract (write or update a managed section in AGENTS.md) is fully exercised by unit tests against a temp directory, and the instruction's effectiveness (whether agents actually recognize spec-worthy discussions and offer to capture them) is verified through manual smoke testing rather than automated integration tests. Attempting to automate agent behavior would require mocking conversation state and agent decision-making, which is brittle and does not reflect real usage.
+**Manual smoke tests** verify that the instruction is loaded and honored: start a session with each of Claude, Codex, and Bob after running `spektacular init`, engage in a discussion that crosses the configured threshold, and observe that the agent offers to create a spec, then accepts and confirms the carried-forward draft rather than re-asking from scratch. Separately, confirm the same agents do not exhibit the behavior in a repository that has not been Spektacular-initialized (out-of-repo control), and that changing `spec_trigger_threshold` in `config.yaml` changes offer behavior immediately without re-running `init` (since the threshold is read dynamically, not baked in). These are recorded in the PR description, following the same pattern already established for the memory-redirect feature's manual verification.
 
-**Manual smoke tests** verify that the instruction is loaded by each agent and that agents honor the threshold configuration. These are recorded in the PR description rather than committed as automated tests: start a session in this repo with each of Claude, Codex, and Bob after running `spektacular init`, engage in a discussion that crosses the configured threshold, and observe that the agent offers to create a spec. Then start a session in an unrelated repo and confirm the same agents do not exhibit the behavior (out-of-repo control). These checks are best-effort and not enforced by CI.
-
-## Load-Bearing Assertions
+### Load-bearing assertions
 
 The unit tests guarantee:
-- The config field accepts only `"strict"`, `"moderate"`, or `"lenient"` and rejects other values
+- The config field accepts only `"strict"`, `"moderate"`, `"lenient"`, and the empty/absent value, rejecting everything else
 - The config field defaults to `"moderate"` when absent
-- The installer function writes the managed section to AGENTS.md when the file is missing
-- The installer function appends the section when AGENTS.md exists but the section is absent
-- The installer function updates the section in place on re-init without duplicating it
-- The installer function preserves surrounding content (e.g., a tessl-managed block above, an unrelated section below)
-- The installer function picks up template changes when re-run with a different config
-- Running `spektacular init` for three different agents against the same project leaves exactly one managed section
+- The installer writes the managed section when `AGENTS.md` is missing
+- The installer appends the section when `AGENTS.md` exists but the section is absent
+- The installer updates the section in place on re-init without duplicating it
+- The installer preserves surrounding content (e.g. the existing Memory & Context section, or an unrelated section)
+- The installer picks up template changes on re-run
+- Running `spektacular init` for all three agents against the same project leaves exactly one managed section
 
 The manual smoke tests verify:
-- Agents load the instruction from AGENTS.md at session start
-- Agents recognize spec-worthy discussions and offer to capture them
-- The behavior is scoped to Spektacular-initialized repos (out-of-repo control)
+- Agents load the instruction from `AGENTS.md` at session start
+- Agents recognize spec-worthy discussions and offer to capture them, honoring the configured threshold
+- Accepted offers result in the agent proposing carried-forward drafts for confirmation rather than re-asking from scratch
+- The threshold is read live from `config.yaml`, not baked in at init time
+- The behavior is scoped to Spektacular-initialized repositories (out-of-repo control)
 
-## Success Metrics Verification
+### Success metrics verification
 
-The spec defines three success metrics. Each is mapped to its verification approach:
+The spec defines three success metrics, all of which are properties of real conversational behavior over time rather than deterministic code paths:
 
-1. **"Substantial discussions consistently get offered a spec at a point that feels natural rather than premature or too late."**
-   - **Manual — captured in the implementation test plan.** This metric depends on subjective judgment ("feels natural") and real conversation flow, which cannot be expressed as an automated behavioral test. The implement workflow will produce a test plan that describes how to evaluate this metric through live agent sessions with varied discussion patterns.
+1. **"Substantial discussions consistently get offered a spec at a point that feels natural rather than premature or too late."** — Manual, captured in the implementation test plan. Depends on subjective judgment and real conversation flow; the implement workflow will produce a concrete test procedure describing live agent sessions with varied discussion patterns.
 
-2. **"Users rarely feel surprised by the offer behavior — neither annoyed by over-triggering on trivial work, nor missing an offer they expected on substantial work."**
-   - **Manual — captured in the implementation test plan.** This metric is about user perception ("feel surprised", "annoyed", "expected") across a range of discussion types, which requires human evaluation rather than automated assertion. The test plan will describe scenarios for both over-triggering and under-triggering and how to assess user reaction.
+2. **"Users rarely feel surprised by the offer behavior."** — Manual, captured in the implementation test plan. Depends on human perception of over-triggering and under-triggering across discussion types; the test plan will describe scenarios covering both directions.
 
-3. **"Users rarely need to adjust the default threshold, indicating the out-of-the-box default is well-calibrated."**
-   - **Manual — captured in the implementation test plan.** This metric is observable only through production usage patterns (how often users change the config field) and cannot be asserted in a test environment. The test plan will describe how to instrument and monitor threshold adjustments in real deployments to validate calibration.
+3. **"Users rarely need to adjust the default threshold."** — Manual, captured in the implementation test plan. Observable only through real usage patterns over time, not assertable in a test environment; the test plan will describe how to note threshold adjustments during dogfooding as a proxy signal.
 
-All three success metrics are flagged for manual verification because they depend on subjective user experience, real conversation dynamics, or production telemetry. The implement workflow will produce concrete test procedures for each once the code exists.
-
-## Test Conventions
-
-The unit tests follow the project's established patterns:
-- Table-driven tests with descriptive names (e.g., `TestInstallSpecTriggerSection_CreateFromMissing`)
-- Filesystem interaction rooted in `t.TempDir()` (no reads or writes outside the test's scratch directory)
-- Expected file contents hand-maintained as string constants (independent oracle, not derived from production renderer)
-- Test fixtures for the embedded template substituted via the existing `withSourceFS` helper (reused from `agent_test.go`)
-
-The manual smoke tests follow the pattern established by spec 000023 (memory-redirect): recorded in the PR description, not committed as code, and treated as best-effort verification rather than CI-enforced gates.
+All three are flagged for manual verification because they depend on subjective user experience or usage patterns over time that cannot be captured as a deterministic assertion at implementation time.
 
 ## Milestones & Phases
 
-### Milestone 1: Agents recognize spec-worthy discussions and offer to capture them
+### Milestone 1: Agents recognize spec-worthy discussions, offer to capture them, and carry the conversation forward into the resulting spec
 
-**What changes**: When a developer works in a Spektacular-initialized repository with any of the supported coding agents (Claude, Codex, Bob), and the conversation produces something substantial enough to warrant a specification — multiple requirements mentioned, a scoped decision reached, a feature described in detail — the agent recognizes the moment and proactively offers to capture the discussion as a spec. The offer is always propose-then-confirm: the agent presents the option, waits for the user's decision (accept, defer, or decline), and only starts the spec workflow on explicit acceptance. The threshold for "substantial enough" is configurable per-project through a new `spec_trigger_threshold` field in `.spektacular/config.yaml` (values: `"strict"`, `"moderate"`, `"lenient"`), with a sensible default (`"moderate"`) that works out-of-the-box. Outside Spektacular-initialized repositories, the same agents continue their normal behavior without offering specs. Running `spektacular init` for any agent installs or updates the instruction that enables this behavior, and re-running init (for the same agent or a different one) updates the instruction in place without duplicating it.
+**What changes**: When a developer works in a Spektacular-initialized repository with any of the supported coding agents (Claude, Codex, Bob), and the conversation produces something substantial enough to warrant a specification — multiple requirements mentioned, a scoped decision reached, a feature described in detail — the agent recognizes the moment and proactively offers to capture the discussion as a spec. The offer is always propose-then-confirm: the agent presents the option, waits for the user's decision, and only starts the spec workflow on explicit acceptance. If the user isn't ready, the agent continues normally and may raise the offer again later as the discussion develops; if the user declines outright, the agent drops the offer for the remainder of that discussion. The threshold for "substantial enough" is configurable per-project through a new `spec_trigger_threshold` field in `.spektacular/config.yaml` (`"strict"`, `"moderate"`, or `"lenient"`), read live by the agent so a config change takes effect immediately, with a sensible default (`"moderate"`) when unconfigured. When the user accepts the offer, the agent starts the spec workflow and drives its existing prompts using the conversation it already had — proposing a draft answer for the user to confirm or refine, rather than asking the same questions from scratch. Outside Spektacular-initialized repositories, agents continue their normal behavior without offering specs. Running `spektacular init` for any agent installs or updates the instruction that enables all of this; re-running init (for the same agent or a different one) updates it in place without duplication.
 
-**Validation point**: After running `spektacular init <agent>` in this repository, start a fresh session with that agent and engage in a discussion that describes a feature with multiple requirements. The agent offers to create a spec before proceeding to implementation. Start a session in an unrelated repository with the same agent and confirm it does not exhibit the behavior (out-of-repo control). Re-run `spektacular init <agent>` and confirm the instruction in `AGENTS.md` is updated in place without duplication.
+**Validation point**: After running `spektacular init <agent>` in this repository, start a fresh session with that agent and engage in a discussion that describes a feature with multiple requirements. The agent offers to create a spec before proceeding to implementation; accepting the offer starts the spec workflow with the agent proposing drafted answers from the conversation rather than asking cold. Deferring keeps the conversation open and allows a later re-offer; declining suppresses further offers for that discussion. Changing `spec_trigger_threshold` in `config.yaml` changes the offer's sensitivity for the same conversation shape without needing to re-run `init`. Start a session in an unrelated, non-initialized repository with the same agent and confirm it does not exhibit the behavior. Re-run `spektacular init <agent>` and confirm the instruction in `AGENTS.md` is updated in place without duplication.
 
-### Milestone 2: Context from the discussion carries forward into the spec
+#### - [x] Phase 1.1: Add the `spec_trigger_threshold` config field
 
-**What changes**: When the user accepts the agent's offer to create a spec, the agent invokes the spec workflow with pre-populated context from the conversation — the overview, requirements, or other sections already discussed — so the user is not forced to re-answer questions the conversation already covered. The spec workflow's first step (overview) detects the pre-populated content, presents it to the user for confirmation or refinement, and only prompts from scratch if nothing was pre-populated. This mechanism works for any section the agent can extract from the discussion, and the spec workflow remains backward-compatible: if no context is pre-populated, the workflow prompts as normal.
-### Milestone 2: Context from the discussion persists for resumption
+Add a new top-level field to the project configuration that lets a team configure how readily agents should offer to capture a discussion as a spec, accepting `"strict"`, `"moderate"`, or `"lenient"`, defaulting to `"moderate"` when not set. Validation rejects any other value with a clear error, following the exact style already used for the project's other configurable enum-like settings.
 
-**What changes**: When the spec workflow starts via `spec new`, it clears `.spektacular/context.md` and returns an instruction telling the agent to write the current conversation context to context.md if meaningful context exists. The agent writes detailed discussion context (problem, requirements, constraints, alternatives, exact phrasing), which persists for resumption. The existing skill already tells agents to read context.md on resume, so no template modifications are needed.
-
-**Validation point**: Start a session with a supported agent, discuss a feature in detail, accept the agent's offer to create a spec, and observe that the `new` step returns an instruction to write context. Verify context.md contains the discussion details. Interrupt the workflow (close terminal), restart, and observe that the skill tells the agent to read context.md on resume, enabling the agent to answer prompts without re-asking.
-
-#### - [x] Phase 2.1: Modify new step to clear context.md and return write instruction
-
-Update the `new()` step callback in `internal/steps/spec/steps.go` to: (1) clear `.spektacular/context.md` by writing an empty file after creating the spec scaffold, and (2) return an instruction (via the step template) telling the agent: "Write the current conversation context to `.spektacular/context.md` if meaningful context exists. Capture the full discussion in detail: what problem was identified and why it needs solving, all requirements and constraints discussed, alternatives considered and why rejected, and the user's exact phrasing for key requirements. If no meaningful context exists, leave context.md empty."
-
-*Technical detail:* [context.md#phase-21](./context.md#phase-21-modify-new-step-to-clear-contextmd-and-return-write-instruction)
+*Technical detail:* [context.md#phase-11](./context.md#phase-11-add-the-spec_trigger_threshold-config-field)
 
 **Acceptance criteria**:
 
-- [x] When `spec new` runs, the `new()` step creates a fresh empty `.spektacular/context.md` file after creating the spec scaffold
-- [x] The `new` step returns an instruction (not silent) telling the agent to write conversation context to context.md
-- [x] The instruction specifies detailed format: problem, requirements, constraints, alternatives, exact phrasing
-- [x] The instruction includes caveat: skip if no meaningful context exists
-- [x] When resuming via `spec goto`, the `new` step does not run (context.md preserved)
-- [x] Existing spec workflows continue to work unchanged
-- [x] The template's pre-population detection uses mustache conditionals (e.g., `{{#overview}}...{{/overview}}`) and does not require changes to the step callback or workflow state machine
-- [x] Existing spec workflows (those not using pre-population) continue to work unchanged
+- [x] The configuration accepts a `spec_trigger_threshold` value of `"strict"`, `"moderate"`, or `"lenient"` in `.spektacular/config.yaml`
+- [x] When the field is absent, the project behaves as though it were set to `"moderate"`
+- [x] Setting the field to any other value produces a clear validation error naming the field and the allowed values
+- [x] Existing config files that don't mention this field continue to load and validate exactly as before
+
+#### - [x] Phase 1.2: Add the AGENTS.md managed instruction section (installer plumbing)
+
+Add the mechanism that installs and keeps up to date a new managed section in `AGENTS.md`, following the exact structure of the existing memory-and-context managed section: an embedded instruction template, an installer that locates the section by its heading and replaces it in place (or appends it if absent, or creates the file if missing), and a single wiring call added to each supported agent's install sequence. This phase delivers the plumbing with placeholder instruction content; Phase 1.3 replaces the placeholder with the real instruction.
+
+*Technical detail:* [context.md#phase-12](./context.md#phase-12-add-the-agentsmd-managed-instruction-section-installer-plumbing)
+
+**Acceptance criteria**:
+
+- [x] The managed section is written to `AGENTS.md` when the file is missing
+- [x] The managed section is appended when `AGENTS.md` exists but the section is absent
+- [x] The managed section is updated in place on re-init without duplicating it
+- [x] Surrounding content in `AGENTS.md` (e.g. the existing Memory & Context section) is preserved untouched
+- [x] Running `spektacular init` for each of the three supported agents against the same project leaves exactly one managed section
+
+#### - [x] Phase 1.3: Write the spec-trigger instruction content
+
+Replace the placeholder content from Phase 1.2 with the full instruction: how to recognize a spec-worthy discussion, how to read the project's configured threshold at decision time (not baked in at install time), how to phrase and offer the propose-then-confirm choice, how to handle a deferral (keep the conversation open, may re-offer later) versus an outright decline (stop offering for that discussion), and — once accepted — how to start the spec workflow and drive its existing prompts using the conversation already had, proposing draft answers for the user to confirm or refine rather than asking from scratch.
+
+*Technical detail:* [context.md#phase-13](./context.md#phase-13-write-the-spec-trigger-instruction-content)
+
+**Acceptance criteria**:
+
+- [x] The instruction tells the agent to check the project's configured threshold before deciding whether a discussion qualifies
+- [x] The instruction describes the propose-then-confirm offer flow, including deferral and outright decline as distinct outcomes
+- [x] The instruction tells the agent, once an offer is accepted, to drive the spec workflow's existing prompts from the conversation already had, proposing a draft for user confirmation rather than asking from scratch
+- [x] The instruction states that the threshold is read live from the project's configuration, not fixed at install time
 
 ## Open Questions
 
 No open questions remain. All design decisions have been resolved during planning:
 
-- **Configuration mechanism**: Resolved to `spec_trigger_threshold` field in `config.yaml` with validation
-- **Instruction delivery**: Resolved to managed section in AGENTS.md following spec 000023 pattern
-- **Context carry-forward**: Resolved to use existing `spec new --data`/`--stdin`/`--file` flags
-- **Defer/decline tracking**: Resolved to agent-side conversation management
-- **Threshold interpretation**: Resolved to natural-language prose in instruction template (agents interpret "strict"/"moderate"/"lenient")
-- **Template wording**: Will be drafted in Phase 1.2 following the pattern from `memory-context.md`
-- **Pre-population extent**: Resolved to start with overview step (Phase 2.1), other sections optional for future expansion
-- **Test coverage**: Resolved to unit tests for installer idempotency, manual smoke tests for agent behavior
+- **Configuration mechanism**: Resolved to `spec_trigger_threshold` field in `config.yaml` with validation matching `SpecConfig.IDMethod`'s pattern.
+- **Instruction delivery**: Resolved to a managed section in `AGENTS.md` following the spec 000023 pattern.
+- **Threshold interpretation timing**: Resolved to a dynamic read of `config.yaml` at decision time, not baked in at `spektacular init` time — chosen so a config change takes effect immediately.
+- **Context carry-forward mechanism**: Resolved to pure agent-instruction prose — the agent drives the existing, unmodified spec workflow prompts using conversation context it already has, proposing drafts for user confirmation. No CLI or template changes.
+- **Defer/decline tracking**: Resolved to agent-side conversation memory, scoped to the single conversation (no new workflow state, no cross-session tracking).
+- **Milestone/phase structure**: Resolved to a single milestone, three phases (config field; installer plumbing with placeholder content; real instruction prose).
+- **Threshold interpretation itself ("strict" vs "moderate" vs "lenient" in concrete terms)**: Left as natural-language guidance in the instruction prose for the agent to interpret — this is a deliberate design choice (see Architecture), not an unresolved question.
 
-The implementer should proceed with the phases as defined. If any assumption proves incorrect during implementation (e.g., agents do not interpret the threshold prose consistently, or the pre-population mechanism does not work as expected), STOP and ask the user before adjusting the approach.
+The implementer should proceed with the phases as defined. If any assumption proves incorrect during implementation (e.g. agents do not interpret the threshold prose consistently across Claude/Codex/Bob, or reading `config.yaml` mid-conversation turns out to need different handling than expected), STOP and ask the user before adjusting the approach.
 
 ## Out of Scope
 
@@ -277,33 +239,74 @@ The implementer should proceed with the phases as defined. If any assumption pro
 
 - **Adding a user-acceptance walkthrough to the plan workflow's verification step** — a separately identified gap, not addressed here (noted in spec § Non-Goals).
 
-- **A durable changelog/context artifact for downstream doc/blog generation** — deferred to its own separate spec, to be sequenced before this one's implementation (noted in spec § Non-Goals).
+- **A durable changelog/context artifact for downstream doc/blog generation** — deferred to its own separate spec (noted in spec § Non-Goals). Plan 000033 (spec-workflow-output-changelog) addresses a related but distinct problem — an output record after implementation — and is not a dependency of this plan.
 
 - **Recognizing spec-worthy discussion across multiple separate conversations or sessions** — this feature operates only within a single, ongoing conversation. Cross-session recognition would require persistent conversation-ID tracking, which is not part of this design (noted in spec § Non-Goals).
 
 - **Automatically creating a spec without the user's explicit acceptance of the offer** — the assistant always offers and waits for a decision; it never starts a spec workflow unilaterally (noted in spec § Non-Goals).
 
-- **Pre-population support for all spec sections** — Milestone 2 implements pre-population detection only for the overview step. Extending this to requirements, acceptance criteria, constraints, and other sections is left for future work if the pattern proves valuable. The mechanism is designed to be extensible (step templates check for workflow data keys), but only overview is implemented in this plan.
+- **Any CLI or workflow-level mechanism for context carry-forward** — rejected during discovery/architecture. An earlier attempt at this plan proposed passing conversation context through `spec new --data` and mustache template conditionals; this was found to be both non-functional as designed (the CLI never merges workflow data into rendered templates) and unnecessary (the agent already holds the conversation live and needs no CLI round-trip to use it). The corrected design is pure agent-instruction prose with zero CLI/template changes (documented in research.md § Alternatives considered and rejected).
 
-- **Runtime detection command** — rejected at the architecture step in favor of instruction-based recognition. A `spektacular detect-spec-worthy` CLI command would add latency and assume agents can pass conversation history, which is not guaranteed across all three supported agents (documented in research.md § Alternatives considered and rejected).
+- **Modifying the existing spec workflow's step templates** — the "ask the user..." prompts in `templates/steps/spec/*.md` are not changed by this plan. The new instruction changes how an agent engages with those unmodified prompts, not the prompts themselves.
 
-- **Hardcoded agent heuristics** — rejected at the architecture step because it violates the spec's core constraint that "the trigger threshold must be user-configurable". Fixed rules in agent instructions cannot be adjusted per-project without editing the instructions themselves (documented in research.md § Alternatives considered and rejected).
+- **Modifying the existing `context.md`-clearing/resume behavior in the spec workflow's `new()` step** — already shipped, solves a different problem (resuming a cold/interrupted session), and is unaffected by this plan.
 
-- **Enforcing adherence** — no hook, lint, pre-commit check, or runtime guardrail that detects an agent writing to per-user memory is added. Adherence is best-effort per agent (noted in spec § Non-Goals).
+- **Runtime detection command** — rejected at the architecture step in favor of instruction-based recognition. A `spektacular detect-spec-worthy` CLI command would add latency and assume agents can pass conversation history to the CLI, which is not guaranteed across all three supported agents (documented in research.md § Alternatives considered and rejected).
 
-- **Migrating existing per-user memory entries into the shared knowledge store** — only persistence triggered after the redirect lands is affected. Existing per-developer memory stays where it is (noted in spec § Non-Goals).
+- **Hardcoded agent heuristics** — rejected because it violates the spec's constraint that the trigger threshold must be user-configurable. Fixed rules in agent instructions cannot be adjusted per-project without editing the instructions themselves (documented in research.md § Alternatives considered and rejected).
+
+- **Baking the threshold value into the rendered instruction at `spektacular init` time** — considered and rejected in favor of a dynamic read at decision time, so a `config.yaml` change takes effect without requiring a re-init (decided during the architecture step).
+
+- **Enforcing adherence** — no hook, lint, pre-commit check, or runtime guardrail detects whether an agent actually offers, reads the threshold, or carries context forward correctly. Adherence is best-effort per agent, verified only by manual smoke testing.
 
 ## Changelog
 
-### 2026-07-08 — Phase 2.1: Modify new step to clear context.md and return write instruction
+### FINAL SUMMARY
 
-**What was done**: Modified the spec workflow's `new()` step to clear `.spektacular/context.md` after creating the spec scaffold and return an instruction (via new template `templates/steps/spec/00-new.md`) telling the agent to write detailed conversation context to context.md. The instruction specifies capturing problem, requirements, constraints, alternatives, and exact phrasing, with a caveat to skip if no meaningful context exists.
+This plan delivered proactive spec-creation offers: agents now recognize when an open-ended discussion has become substantial enough to warrant a specification, offer to capture it (honoring a per-project `spec_trigger_threshold` config value), and — on acceptance — drive the existing spec workflow using conversation context already in hand rather than asking cold. All three phases shipped as designed, with no scope changes; the only correction along the way was resolving a stale prediction in context.md about needing to update test fixtures in Phase 1.3, which turned out to be unnecessary once traced through the actual test code.
 
-**Deviations**: None. Implementation followed the plan exactly.
+**Total phases**: 3/3 completed
+
+**Notable deviations from the plan**: A necessary aside during Phase 1.1's verification: full-repo tests surfaced pre-existing stale tests (in `cmd/` and `templates/`) left over from the immediately-prior commit's intentional change to the spec workflow's `new()` step (it now stops at `"new"` instead of auto-advancing to `"overview"`, so the agent can write `context.md` first). These were fixed as part of getting a clean verification gate — not a scope change to this plan's own three phases, but recorded here since it touched files outside the plan's own component list.
+
+### 2026-07-09 — Phase 1.1: Add the `spec_trigger_threshold` config field
+
+**What was done**: Added a new top-level `spec_trigger_threshold` field to the project's `Config` struct, accepting `"strict"`, `"moderate"`, or `"lenient"`, defaulting to `"moderate"` when absent. Validation rejects any other value with an error naming the field and the allowed values, following the same pattern already used for the existing `spec.id_method` field.
+
+**Deviations**: While verifying this phase, full-repo `go test ./...` surfaced pre-existing failures in `cmd/` and `templates/` unrelated to this change — stale tests written against the old auto-advance behavior of the spec workflow's `new()` step, which was intentionally changed to stop at `"new"` (not auto-advance to `"overview"`) by the immediately-prior commit so the agent can write `context.md` before proceeding. Fixed these five stale tests and added a documented exemption for `steps/spec/00-new.md` in the shared context-directive test, so the full suite is green again. This was a necessary aside to get a clean verification gate, not part of this phase's own scope.
 
 **Files changed**:
-- `templates/steps/spec/00-new.md` (created)
-- `internal/steps/spec/steps.go` (modified new() callback)
-- `internal/steps/spec/steps_test.go` (added 5 new tests)
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `cmd/root_test.go`
+- `cmd/spec_test.go`
+- `templates/context_directive_test.go`
 
-**Discoveries**: The new() step now uses writeStep() instead of returning "overview" directly, which changes the FSM behavior slightly - the workflow stays at "new" state after the first transition and returns an instruction. Tests were updated to reflect this. The relative path `.spektacular/context.md` resolves correctly against the current working directory (project root) when running `go run . spec new`.
+**Discoveries**: The spec workflow's `new()` step (`internal/steps/spec/steps.go`) no longer auto-advances to `"overview"` — it intentionally stops at `"new"` so the agent can write conversation context first. Any test or tooling that assumes `spec new` lands on `"overview"` needs to add an explicit `goto overview` step. `templates/steps/spec/00-new.md` also does not carry the generic "refresh context.md" directive marker used by every other non-terminal step template, since it has its own bespoke, more detailed context-writing instruction — this is intentional and now explicitly exempted in `templates/context_directive_test.go`.
+
+### 2026-07-09 — Phase 1.2: Add the AGENTS.md managed instruction section (installer plumbing)
+
+**What was done**: Added a new managed section installer, `installSpecTriggerSection` in `internal/agent/spec_trigger.go`, structurally cloned from the existing `installMemoryContextSection`. It creates, appends, or replaces in place a `## Spec-Worthy Discussion Recognition` section in a project's `AGENTS.md`, rendered from a new embedded template `templates/agents/spec-trigger.md` (placeholder body — Phase 1.3 fills in the real instruction prose). Wired one call to the new installer into each of `claude.go`, `codex.go`, and `bob.go`'s `Install()` sequence, immediately after their existing memory-context install call.
+
+**Deviations**: None.
+
+**Files changed**:
+- `internal/agent/spec_trigger.go`
+- `internal/agent/spec_trigger_test.go`
+- `internal/agent/claude.go`
+- `internal/agent/codex.go`
+- `internal/agent/bob.go`
+- `templates/agents/spec-trigger.md`
+
+**Discoveries**: None beyond what Phase 1.1 already surfaced. The installer reuses the existing `writeAGENTSAtomic`/`writeFileAtomic` helpers from `memory_context.go` rather than duplicating them, since those helpers aren't heading-specific. The cross-agent idempotency test now verifies both managed sections (`## Memory & Context` and `## Spec-Worthy Discussion Recognition`) survive together with exactly one heading each — useful joint coverage now that two managed sections install side by side.
+
+### 2026-07-09 — Phase 1.3: Write the spec-trigger instruction content
+
+**What was done**: Replaced `templates/agents/spec-trigger.md`'s placeholder body with the full instruction: recognition criteria for a spec-worthy discussion, reading `spec_trigger_threshold` live from `.spektacular/config.yaml` at decision time (defaulting to `"moderate"` when absent), the propose-then-confirm offer flow, the three outcomes (accept/defer/decline) with decline being final for that discussion topic, and the carry-forward behavior for accepted offers (drive the existing spec workflow prompts using conversation context already had, proposing drafts for user confirmation).
+
+**Deviations**: None from the plan's acceptance criteria. One correction to context.md's prediction: the Phase 1.3 technical-detail note anticipated needing to update Phase 1.2's test fixture strings to match the real content — this turned out not to be necessary, since `spec_trigger_test.go` uses its own independent in-memory fixture (mirroring how `memory_context_test.go` already worked), not the real template body. No test files were touched in this phase.
+
+**Files changed**:
+- `templates/agents/spec-trigger.md`
+
+**Discoveries**: None beyond the fixture-independence correction noted above. This completes all 3 phases of Milestone 1 — the feature (config field, AGENTS.md installer, instruction content) is now fully implemented.

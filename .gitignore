@@ -42,14 +42,6 @@ vendor/
 
 # Spektacular debug output
 .spektacular/debug/
-.spektacular/tmp/
-
-# Agent skill/command artefacts installed by `spektacular init <agent>`
-.agents/skills/
-.bob/skills/
-.bob/commands/spek-*
-.claude/skills/
-.claude/commands/spek/
 
 # Temporary files
 *.tmp

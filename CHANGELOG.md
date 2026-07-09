@@ -1,3 +1,7 @@
+## 000032_spec-workflow-pair-programming-enhancements
+
+When you start a spec workflow, Spektacular now captures the conversation context that led to it. The spec's `new` step clears `.spektacular/context.md` and instructs the agent to write detailed discussion context — the problem identified, requirements and constraints discussed, alternatives considered, and the user's exact phrasing for key requirements — so that context persists for resumption if the workflow is interrupted. If no meaningful context exists, the agent skips the write, keeping the file empty.
+
 ## spec-workflow-output-changelog
 
 Every feature Spektacular finishes building now gets its own durable, self-contained changelog record automatically — no extra step required. When an implementation wraps up, the assistant writes a plain-language summary of what was actually built, why it matters, and where it diverged from the original plan, and stores it under a name you can retrieve later without hunting through the original spec, plan, or conversation. The workflow's final summary now tells you exactly where that record lives, alongside the other artifacts it already reports.

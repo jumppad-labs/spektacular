@@ -54,6 +54,8 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 		"update_changelog",
 		"update_repo_changelog",
 		"test_plan",
+		"update_feature_changelog",
+		"reconcile_spec",
 		"finished",
 	}
 	got := Steps()
@@ -72,6 +74,28 @@ func TestAnalyzeStepHasMultiSourceTransition(t *testing.T) {
 		}
 	}
 	t.Fatal("analyze step not found")
+}
+
+func TestReconcileSpecStepWiring(t *testing.T) {
+	steps := Steps()
+
+	var reconcileSpecStep, finishedStep *workflow.StepConfig
+	for i := range steps {
+		switch steps[i].Name {
+		case "reconcile_spec":
+			reconcileSpecStep = &steps[i]
+		case "finished":
+			finishedStep = &steps[i]
+		}
+	}
+
+	require.NotNil(t, reconcileSpecStep, "reconcile_spec step not found")
+	require.NotNil(t, finishedStep, "finished step not found")
+
+	require.Equal(t, []string{"update_feature_changelog"}, reconcileSpecStep.Src,
+		"reconcile_spec must only be reachable from update_feature_changelog")
+	require.Equal(t, []string{"reconcile_spec"}, finishedStep.Src,
+		"finished must only be reachable from reconcile_spec")
 }
 
 func TestFSMWalkFromNewToFinished(t *testing.T) {
@@ -108,6 +132,10 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 	require.Equal(t, "update_repo_changelog", wf.Current())
 	require.NoError(t, wf.Goto("test_plan"))
 	require.Equal(t, "test_plan", wf.Current())
+	require.NoError(t, wf.Goto("update_feature_changelog"))
+	require.Equal(t, "update_feature_changelog", wf.Current())
+	require.NoError(t, wf.Goto("reconcile_spec"))
+	require.Equal(t, "reconcile_spec", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
 }
@@ -137,11 +165,15 @@ func TestFSMLoopFromUpdateChangelogBackToAnalyze(t *testing.T) {
 		require.Equal(t, want, wf.Current())
 	}
 
-	// Second exit: update_changelog → update_repo_changelog → test_plan → finished.
+	// Second exit: update_changelog → update_repo_changelog → test_plan → update_feature_changelog → reconcile_spec → finished.
 	require.NoError(t, wf.Goto("update_repo_changelog"))
 	require.Equal(t, "update_repo_changelog", wf.Current())
 	require.NoError(t, wf.Goto("test_plan"))
 	require.Equal(t, "test_plan", wf.Current())
+	require.NoError(t, wf.Goto("update_feature_changelog"))
+	require.Equal(t, "update_feature_changelog", wf.Current())
+	require.NoError(t, wf.Goto("reconcile_spec"))
+	require.Equal(t, "reconcile_spec", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
 }
@@ -196,6 +228,25 @@ func TestReadPlanTemplateDirectsDriftCheck(t *testing.T) {
 	require.Contains(t, lower, "fix the plan first")
 	require.Contains(t, lower, "proceed with")
 	require.Contains(t, lower, "abandon")
+}
+
+func TestReadPlanTemplateDirectsSpecCoverageCheck(t *testing.T) {
+	out := renderStep(t, readPlan())
+	lower := strings.ToLower(out)
+	require.Contains(t, out, "spec file read test.md", "spec coverage check must read the spec via `spec file read`")
+	require.Contains(t, out, "## Requirements")
+	require.Contains(t, out, "## Acceptance Criteria")
+	require.Contains(t, lower, "stop")
+	// The two-option prompt (fix / accept as descoped).
+	require.Contains(t, lower, "fix the plan first")
+	require.Contains(t, lower, "accept the gap as descoped")
+}
+
+func TestReadPlanTemplateDirectsDescopedMarkerMechanics(t *testing.T) {
+	out := renderStep(t, readPlan())
+	require.Contains(t, out, "**Descoped requirements**:", "descoped gaps must use the documented marker format")
+	require.Contains(t, strings.ToLower(out), "already recorded as accepted", "spec coverage check must skip gaps already recorded as accepted")
+	require.Contains(t, out, "plan file write test/plan.md --from .spektacular/tmp/plan_update.md", "descoped marker must be committed via `plan file write`")
 }
 
 func TestAnalyzeStepReferencesSpawnImplementationAgents(t *testing.T) {
@@ -268,15 +319,17 @@ func TestUpdateRepoChangelogTemplateContainsDirectives(t *testing.T) {
 
 func TestStopOnMismatchDirectivePresentInEveryNonTerminalTemplate(t *testing.T) {
 	nonTerminal := map[string]workflow.StepCallback{
-		"read_plan":             readPlan(),
-		"analyze":               analyze(),
-		"implement":             implementStep(),
-		"test":                  testStep(),
-		"verify":                verify(),
-		"update_plan":           updatePlan(),
-		"update_changelog":      updateChangelog(),
-		"update_repo_changelog": updateRepoChangelog(),
-		"test_plan":             testPlan(),
+		"read_plan":                readPlan(),
+		"analyze":                  analyze(),
+		"implement":                implementStep(),
+		"test":                     testStep(),
+		"verify":                   verify(),
+		"update_plan":              updatePlan(),
+		"update_changelog":         updateChangelog(),
+		"update_repo_changelog":    updateRepoChangelog(),
+		"test_plan":                testPlan(),
+		"update_feature_changelog": updateFeatureChangelog(),
+		"reconcile_spec":           reconcileSpec(),
 	}
 	for name, cb := range nonTerminal {
 		out := renderStep(t, cb)
@@ -297,4 +350,33 @@ func TestFinishedStepEmitsNoGoto(t *testing.T) {
 	out := renderStep(t, finished())
 	require.NotContains(t, out, "implement goto", "finished template must not emit a goto command")
 	require.Contains(t, strings.ToLower(out), "terminal")
+}
+
+func TestFinishedStepMentionsChangelogPath(t *testing.T) {
+	out := renderStep(t, finished())
+	require.Contains(t, out, "test.md", "finished template must mention the resolved changelog record path")
+}
+
+func TestFinishedStepReportsSpecCompletionStatus(t *testing.T) {
+	out := renderStep(t, finished())
+	require.Contains(t, out, "spec file read test.md", "finished template must direct reading the spec via `spec file read`")
+	require.Contains(t, out, "Requirements/Acceptance-Criteria", "finished template must report Requirements/Acceptance-Criteria status")
+	require.Contains(t, out, "reconcile_spec", "finished template must reference reconcile_spec as the source of unchecked-item reasons")
+	require.Contains(t, out, "deferred, descoped, or not attempted", "finished template must enumerate the possible reasons for unchecked items")
+}
+
+func TestUpdateFeatureChangelogStepMentionsSourcesAndCommitCommand(t *testing.T) {
+	out := renderStep(t, updateFeatureChangelog())
+	require.Contains(t, out, "spec file read test.md", "update_feature_changelog must read the feature's spec via `spec file read`")
+	require.Contains(t, out, "plan file read test/plan.md", "update_feature_changelog must read the plan's implementation history via `plan file read`")
+	require.Contains(t, out, ".spektacular/tmp/changelog_record.md", "update_feature_changelog must stage its record at the scratch path")
+	require.Contains(t, out, "changelog file write test.md --from .spektacular/tmp/changelog_record.md", "update_feature_changelog must commit the record via `changelog file write`")
+}
+
+func TestReconcileSpecStepMentionsSourcesAndCommitCommand(t *testing.T) {
+	out := renderStep(t, reconcileSpec())
+	require.Contains(t, out, "spec file read test.md", "reconcile_spec must read the feature's spec via `spec file read`")
+	require.Contains(t, out, "plan file read test/plan.md", "reconcile_spec must read the plan's implementation history via `plan file read`")
+	require.Contains(t, out, ".spektacular/tmp/spec_reconcile.md", "reconcile_spec must stage its record at the scratch path")
+	require.Contains(t, out, "spec file write test.md --from .spektacular/tmp/spec_reconcile.md", "reconcile_spec must commit the record via `spec file write`")
 }

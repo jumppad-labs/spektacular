@@ -56,7 +56,42 @@ If the list is non-empty, STOP and report all mismatches to the user in one bloc
 2. **Proceed with the mismatches noted in memory.** The agent will adapt during implementation, mapping stale pointers to their current equivalents on the fly.
 3. **Abandon the workflow.** Stop the implement run entirely.
 
-Do **not** continue to Step 4 until the user has picked an option.
+Do **not** continue to Step 3.5 until the user has picked an option.
+
+### Step 3.5: Spec coverage check
+
+Read the specification the plan was created from:
+
+```
+{{config.command}} spec file read {{plan_name}}.md
+```
+
+Enumerate every `- [ ]`/`- [x]` checkbox under the spec's `## Requirements` and `## Acceptance Criteria` headings. For each one, confirm it has corresponding coverage somewhere in `{{plan_path}}`'s `## Milestones & Phases` section — a phase summary, an acceptance criterion, or a technical-detail note that addresses it (paraphrase or explicit mention both count; it does not need to be a verbatim match).
+
+Before flagging any gap, check whether it is already recorded as accepted: look for a `**Descoped requirements**:` list under `## Milestones & Phases` in `{{plan_path}}` (see the marker format below). A requirement or acceptance criterion listed there is already resolved — do not re-flag it.
+
+If every remaining spec item has coverage (or is already marked descoped), proceed to Step 4 without interruption.
+
+If one or more spec items have no coverage and are not already marked descoped, STOP and report the missing items to the user in one block, quoting each item's checkbox text. Ask the user to pick one of two options:
+
+1. **Fix the plan first.** Update `{{plan_path}}` to add the missing coverage, then restart this step.
+2. **Accept the gap as descoped.** Record it using the marker format below, then continue to Step 4.
+
+**Descoped marker format** — when the user accepts a gap, append (or add to an existing) `**Descoped requirements**:` list near the end of `{{plan_path}}`'s `## Milestones & Phases` section, one bullet per accepted gap:
+
+```
+**Descoped requirements**:
+- <requirement/acceptance-criterion short title> — descoped: <one-line reason>
+```
+
+Apply the edit by reading `{{plan_path}}` with `{{config.command}} plan file read {{plan_name}}/plan.md`, adding or extending the list, staging the updated document with the `Write` tool at the scratch path `.spektacular/tmp/plan_update.md`, then committing it and removing the scratch file:
+
+```
+{{config.command}} plan file write {{plan_name}}/plan.md --from .spektacular/tmp/plan_update.md
+rm .spektacular/tmp/plan_update.md
+```
+
+Do **not** continue to Step 4 until every gap is either fixed in the plan or recorded as descoped.
 
 ### Step 4: Changelog mode detection
 

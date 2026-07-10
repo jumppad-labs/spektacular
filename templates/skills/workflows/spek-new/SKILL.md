@@ -3,6 +3,9 @@ name: spek-new
 description: Create a new Specification for a feature.
 ---
 
+> **STOP. Read this before running any command below.**
+> A single successful CLI call — including the very first `spec new` — is **NOT** task completion. It is not a milestone to report back to the user. It is one step out of many in a workflow that you must keep driving, turn after turn, without stopping, until the CLI itself tells you the workflow is *finished*. If you find yourself about to say "successfully completed" or summarize results after calling `spec new` or `spec goto` even once, you are wrong — go back and read the `instruction` field you just received, do what it says, and call `goto` again.
+
 # What this skill does
 
 This skill drives a **multi-step interactive workflow** that produces a complete specification file at the `spec_path` returned by the CLI. The workflow is owned by the `{{command}}` CLI, not by you — the CLI is the state machine and you are the executor.
@@ -15,6 +18,8 @@ On each turn, the CLI returns JSON containing an `instruction` field. That instr
 4. Read the next `instruction` from the new JSON response and repeat.
 
 **This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user.
+
+**Concretely: do not stop after `spec new`.** That command only starts the workflow — it returns the *first* instruction (the `overview` step), not a finished spec. Seeing a clean JSON response with no `error` is not a signal to stop; it is the signal to keep going. Reporting success, summarizing "spec initialized," or handing control back to the user at this point is the single most common way this skill is executed incorrectly — do not do it.
 
 # Reading and writing the spec file
 
@@ -34,8 +39,6 @@ While you gather each section, write that section's agreed content directly to i
 
 # How to start
 
-Spec name: $ARGUMENTS
-
 **First, check whether a workflow is already in progress — before asking the user for a spec name.** Run the new command with no `--data`:
 
 ```
@@ -51,7 +54,7 @@ This reads the project's single workflow state and changes nothing on disk. One 
 
 Only once you know there is no workflow to resume:
 
-If no spec name was provided in $ARGUMENTS, ask the user for one now. Then run:
+Ask the user for a spec name now. Then run:
 
 ```
 {{command}} spec new --data '{"name": "<spec_name>"}'

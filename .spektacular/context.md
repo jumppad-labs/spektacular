@@ -1,474 +1,429 @@
-# Plan working context — 000031_agent-session-debug-log
+# Context: plan-walkthrough-conversation
 
-## Spec summary
-- Opt-in, off-by-default recording of every command+response the agent issues to the tool during a
-  workflow session, structured for another agent to reconstruct events later (not for humans).
-- Must be self-contained, session-isolated, unambiguously ordered, machine-extractable (no
-  free-form prose parsing), and must not change tool behavior/output when enabled.
-- Never committed to VCS; no new service/process/dependency (single binary); does not replace
-  self-sufficient error messages; no viewer/UI, no auto-diagnosis, no redaction, no retention
-  policy, no self-healing, no internal reasoning capture (only observable command/response).
-- Technical Approach hints (not decided): one record per event; timestamp each event; reuse
-  existing debug/diagnostic toggle if one exists rather than adding a new one; capture
-  outcome/state-change per command, not just issued+response.
+## Problem identified and why it needs solving
 
-## Discovery step — complete
-research.md written to `.spektacular/work/000031_agent-session-debug-log/research.md`. Key
-resolved findings (full evidence there):
-- Toggle: reuse `internal/config.Config.Debug.Enabled` (config.go:39-42,92) — exists, defaults
-  false, round-trips via YAML, currently has ZERO read-sites anywhere. This repo's own
-  `.spektacular/config.yaml` already has `debug.enabled: true` set.
-- Interception point: `cmd/root.go`'s `runRoot()` (the Phase-1.2-of-plan-000030 single outcome
-  choke point) — capture `os.Args[1:]` before `rootCmd.Execute()`, tee `rootCmd`'s output writer
-  via `io.MultiWriter` so every response byte (all ~40 `output.Write` sites + the one
-  `skillListCmd` raw-Fprintln outlier) is captured without altering what reaches real stdout.
-- Outcome/state-change signal: error type ALONE is insufficient — `Workflow.Goto` to the current
-  step is a documented silent no-op (returns nil, looks like success). Must independently
-  snapshot `.spektacular/state.json` before/after each command and diff
-  CurrentStep/CompletedSteps/UpdatedAt.
-- Session identity: none exists. Proposed: auto-derived session id via an idle-gap marker file
-  under `.spektacular/debug/` (new session after N minutes of inactivity) — needs zero cooperation
-  from the calling agent.
-- Format: JSON Lines, one record per completed CLI invocation, at
-  `.spektacular/debug/session-log.jsonl` (already-gitignored directory, precedent for JSONL
-  agent-transcript shape exists in this repo's own knowledge base).
+Today, the `plan` workflow's `finished` step (`internal/steps/plan/steps.go`,
+`templates/steps/plan/18-finished.md`) ends by printing the three document paths
+(plan.md, context.md, research.md) and telling the agent to inform the user the
+workflow is finished. The user is left to read the documents alone to understand
+and evaluate what was decided.
 
-## Architecture step — complete
-Working files written: `.spektacular/work/000031_agent-session-debug-log/architecture.md` and
-`conventions.md`. User decisions (via AskUserQuestion, confirmed):
-- **Chosen architecture**: Option 1 — root-level tee + state diff, entirely in `cmd/root.go` plus
-  one new package (proposed `internal/sessionlog`). Rejected: cobra PersistentPreRun/PostRun hooks
-  (PostRun doesn't fire on RunE errors — would still need root-level failure capture anyway);
-  structured recording inside `internal/output` (largest blast radius, mixes concerns).
-- **Session boundary — user-directed, NOT idle-gap**: derive `session_id` as a pure function of
-  `.spektacular/state.json`'s `(Kind, Name)` pair. No new marker file/persisted counter needed —
-  reuses the same state read already needed for the outcome diff. Boundary = `(Kind,Name)` change.
-  Resuming the same named instance after a gap stays the SAME session (deliberate). No active
-  workflow yet → fixed sentinel session id (proposed `"no-active-workflow"`).
-- **Response capture**: full raw response bytes verbatim (not a structured subset) — user deferred
-  to my recommendation. Simplest, most self-contained, avoids special-casing `file read`'s raw-byte
-  success path and `skillListCmd`'s `output.Write`-bypass outlier.
-- **Toggle**: confirmed reuse of `internal/config.Config.Debug.Enabled` (no new flag/env var).
-- **Conventions**: none apply — project's `conventions/` area has only a placeholder README, no
-  actual entries exist yet. Stated to user, not treated as a blocking question (empty-set case).
-- **Record location/format**: `.spektacular/debug/session-log.jsonl`, single continuously-appended
-  file (not one-file-per-session — retention/rotation is an explicit Non-Goal), JSON Lines.
-- Remaining low-stakes implementation defaults (not further user-confirmed, low risk): exact
-  sentinel session id string; config-load failure while checking the toggle fails OPEN (recording
-  silently disabled, never fails the primary command — required by "Non-invasive").
+The user wants to simulate the process two colleagues would go through when
+discussing a feature: the agent should be able to walk the user through the
+finished plan as a presentation, so the user can either agree with it or request
+changes — fully understanding the plan rather than just being handed file paths.
 
-## Write_research step — complete
-research.md committed via `plan file write`, verified by reading it back. Scratch file removed.
-Working directory `.spektacular/work/000031_agent-session-debug-log/` removed (all 3 store docs
-committed). Next: finished step (terminal).
+Explicitly **not** the default path: if the user just wants to read the plan
+themselves, they will — this is an *offered alternative* for when a live
+walkthrough is preferred over reading, not a mandatory gate blocking completion.
 
-## Write_context step — complete
-context.md committed via `plan file write`, verified by reading it back. Scratch file removed.
-Next: write_research step.
+## Requirements agreed (final design from conversation — ready to turn into spec requirements/acceptance criteria)
 
-## Write_plan step — complete
-plan.md committed via `plan file write`, verified by reading it back from the store. Scratch file
-removed. Next: write_context step.
+1. **Trigger — offer once, opt in.** After the plan workflow's `finished` step
+   reports the three document paths (unchanged from today), the agent offers
+   once: "Want me to walk you through it, or would you rather read it yourself?"
+   Declining ends the workflow exactly as it does today — no repeated prompting.
+2. **Presentation style — segmented with natural pause points.** If accepted,
+   the agent presents like a colleague giving a walkthrough, not reading the
+   document aloud. Structured in beats with brief pauses between them, roughly:
+   approach & why → phase breakdown → scope boundaries (what's deliberately out).
+   Not a rigid per-phase Q&A gate, but not one unstoppable monologue either — the
+   user can interrupt easily between beats.
+3. **Mid-flow changes — handle inline, then resume.** If the user requests a
+   change at any point during the presentation, the agent discusses it right
+   there, edits the affected plan section(s), recommits through the existing
+   `plan file write` mechanism (confirmed in an earlier conversation — no new
+   FSM step/state for revision, just a normal store write), briefly confirms the
+   update to the user, then resumes the presentation from where it left off,
+   re-summarizing anything that changed as a result of the edit.
+4. **Closing — explicit agreement checkpoint.** After the last beat (scope
+   boundaries), the agent asks directly: "does this look right, good to
+   proceed?" and waits for explicit agreement rather than trailing off. Only
+   once the user agrees is the plan considered settled.
 
-## Verification step — complete
-Found and fixed one real gap: context.md's scaffold shown during the assemble step (6 sections)
-omitted `## Project References`, but the verification step's required list has 7 (includes it
-between Testing Strategy and Token Management Strategy). Added it directly to the staged
-context_template.md (no dedicated working file for this one — same treatment as Current State
-Analysis). All sections now present, in order, in all 3 staged docs (grep-verified). All 4
-Technical detail links in plan.md resolve exactly to context.md's 4 Phase headings (byte-identical
-titles). No shell commands or file:line references leaked into plan.md's Milestones & Phases
-(grep-verified empty). Staged docs ready to write. Next: write_plan step.
+## Alternatives considered and rejected
 
-## Assemble step — complete
-Staged all 3 documents to `.spektacular/tmp/`: `plan_template.md`, `context_template.md`,
-`research_template.md` (research.md copied straight from the working file — its 7 sections already
-match the scaffold 1:1, only a title header was prepended). Metadata gathered: 2026-07-02T16:15:24Z,
-commit 62b1af7, branch b-debugging, git@github.com:jumppad-labs/spektacular.git. Plan name/slug
-already fixed as 000031_agent-session-debug-log (matches the spec, set at `plan new` time) — no
-new slug determination needed. Nothing written to the plan store yet. Next: verification step.
+- **Reading the sections aloud in document order** — rejected. A colleague
+  wouldn't recite headings; the user wants a narrative explanation, not a
+  table-of-contents read-through.
+- **Always-on walkthrough (no offer/opt-in)** — rejected. The user was explicit
+  that reading the plan document directly remains the default expectation;
+  the walkthrough is something the agent offers, not something forced.
+- **Strict phase-by-phase gated Q&A** (pause and require explicit sign-off after
+  every single phase before continuing) — considered, but user chose the lighter
+  "segmented with natural pause points" version as a better match for how a real
+  colleague-to-colleague conversation flows; less friction than a hard gate per
+  phase.
+- **Defer all requested changes to the end of the presentation** (collect
+  feedback, apply edits only after the full walkthrough finishes) — considered
+  to avoid re-deriving downstream sections mid-flow, but user chose to handle
+  changes inline immediately when raised, then resume.
+- **Implicit/no closing question** (just end after the last beat, no formal
+  sign-off) — rejected in favor of an explicit closing agreement checkpoint,
+  matching how a real design conversation actually concludes.
 
-## Out of scope step — complete
-Working file: `out_of_scope.md`. 6 items straight from spec's Non-Goals (auto-diagnosis, viewer/UI,
-redaction, retention/rotation, self-healing, internal-reasoning capture) + 2 plan-specific
-boundaries (no internal/config schema or internal/workflow interface/format changes; no new
-opt-in mechanism, reuses existing debug.enabled). Proceeded straight through.
+## Prior technical investigation carried forward (from the earlier, now-discarded spec attempt — still valid, not yet chosen)
 
-## Open questions step — complete
-Working file: `open_questions.md`. Empty (healthy outcome) — verified cobra --help/--version write
-through cmd.OutOrStdout() too (tested against the real built binary, so the tee captures it with
-no special-casing), confirmed the SessionID before/after call was already resolved in phases,
-confirmed Seq-via-line-count is an accepted trade-off not a new open risk (Non-Goals already rules
-out retention/rotation).
+The exact **wiring mechanism** for where this lives in the workflow is not yet
+decided and is explicitly left for the plan workflow to resolve, not this spec:
 
-## Phases step — complete
-Working files: `phases_plan.md`, `phases_context.md`. 4 phases: 1.1 (internal/sessionlog package,
-reduced Event, Record with no error return, Low/~12k), 1.2 (wire runRoot() — toggle check,
-argv capture, writer tee with critical save/restore-after-WriteFailure-not-after-Execute timing
-gotcha documented, Medium/~28k), 2.1 (StateSnapshot + Advanced diff, no-op regression test vs the
-goto-to-current-step gotcha, Medium/~20k), 2.2 (SessionID pure fn + wiring, Low-Medium/~15k).
-One implementer judgment call surfaced and RESOLVED during this step (not deferred): SessionID
-must derive from stateAfter, not stateBefore — stateBefore would wrongly tag a workflow's founding
-`new` call under the "no-active-workflow" sentinel instead of grouping it with its own instance's
-later calls. All file:line references verified against actual current code during phases drafting
-(cmd/root.go:33-40/63-82, internal/workflow/state.go:14-61, internal/workflow/workflow.go
-renderStep:241-260/Goto:180-195, cmd/implement_test.go:51-62 setupImplementCmd,
-cmd/skill.go:87-92 the output.Write-bypass outlier).
+1. Instruction-only extension of `templates/steps/plan/18-finished.md` — no FSM
+   or Go changes; `internal/workflow/state.go`'s `InProgress()` hardcodes the
+   literal string `"finished"` as terminal for all three workflow kinds (spec,
+   plan, implement), so this option touches zero shared code.
+2. New terminal FSM step (e.g. `discuss_plan`) appended after `finished` —
+   structurally possible since `internal/workflow/workflow.go`'s `commitTerminal`,
+   the implicit `"done"` transition, and `NextStepName()` are positional
+   (`steps[len(steps)-1]`), not name-based. The blocker: `state.go:26`'s
+   `InProgress()` would need to become kind-aware (or compare against
+   `steps[len(steps)-1].Name` instead of the magic string `"finished"`) without
+   breaking spec/implement's existing resume-detection behavior.
+3. Not fully explored: a skill-level instruction (in `spek-plan/SKILL.md`)
+   triggered once `finished` reports done, with no CLI step involved at all.
 
-## Milestones step — complete
-Working file: `.spektacular/work/000031_agent-session-debug-log/milestones.md`. 2 milestones:
-M1 = raw capture (toggle, argv, response tee, JSONL append, non-invasive byte-identical
-guarantee, non-progress events included). M2 = outcome/session intelligence (Advanced flag via
-state diff, SessionID grouping, closes out the manual success-metric verification with a real
-induced stuck-agent scenario). Proceeded straight through.
+This spec should describe the *what* (the four requirements above); the *how*
+(which of the three wiring shapes, or another) belongs to the downstream plan
+workflow's architecture step.
 
-## Testing approach step — complete
-Working file: `.spektacular/work/000031_agent-session-debug-log/testing_approach.md`. Unit tests
-on internal/sessionlog in isolation (SessionID pure-function matrix, Record never
-errors/panics even on unwritable target). Integration tests via existing runRootCmd-style harness:
-full record contents across command families + toggle-on/off byte-identical output assertion +
-explicit Goto-to-current-step no-op recorded as Advanced:false regression test. Deliberate gap: no
-benchmark (structural O(1)-per-command argument instead). Both spec Success Metrics mapped:
-metric 1 (reconstruction) = Manual, grounded in this plan's completeness/ordering/no-op tests;
-metric 2 (cost/adoption) = split — side-effects half is Behavioral (the byte-identical assertion),
-cost/adoption half is Manual (ongoing observation, same pattern as plan 000030's 2nd metric).
-Proceeded straight through.
+## Verification step: fresh-eyes review findings applied
 
-## Dependencies step — complete
-Working file: `.spektacular/work/000031_agent-session-debug-log/dependencies.md`. Depends on
-runRoot()/Debug.Enabled/state.json (all existing, all already shipped by plan 000030 — no
-prerequisite work needed). Stdlib only, no go.mod change. No blocking in-flight spec/plan.
-Proceeded straight through.
+An independent subagent reviewed the assembled spec with no conversation context.
+Three findings, all accepted:
 
-## Implementation detail step — complete
-Working file: `.spektacular/work/000031_agent-session-debug-log/implementation_detail.md`. New
-leaf package `internal/sessionlog` (no deps on workflow/output/config — cmd builds StateSnapshot
-and passes it in). runRoot() toggle-check short-circuits to today's exact behavior when debug is
-off. Introduces io.MultiWriter (stdlib tee) and a JSONL append writer — both new patterns in this
-codebase but stdlib-only (no new go.mod dependency). State-file reading follows the existing
-pattern of cmd owning state.json path construction (no new internal/workflow export). Proceeded
-straight through (direct derivation, no new design fork).
+- Technical Approach's closing line referenced the spec's own drafting history
+  ("more than one shape was discussed") — reworded to neutral planner guidance.
+- Added a constraint: mid-walkthrough edits must be written to the same plan
+  document the rest of the workflow reads/writes, not a copy or transient state
+  (closes a gap Requirement 4 / AC 4 implied but never stated as a hard rule).
+- Dropped a Non-Goals bullet ("no rigid per-stage sign-off gate") as duplication
+  of Technical Approach's existing phrasing — Technical Approach already states
+  this direction; repeating its inverse in Non-Goals added no new boundary.
 
-## Data structures step — complete
-Working file: `.spektacular/work/000031_agent-session-debug-log/data_structures.md`. `Event`
-(JSONL record shape: Seq/Timestamp/SessionID/Command/DurationMS/ExitCode/Response/
-StateBefore/StateAfter/Advanced), `StateSnapshot` (Kind/Name/CurrentStep/CompletedSteps),
-`SessionID(state) string` (pure function, no stored registry), `Record(logPath, ev)` (session
-recorder's sole entry point — deliberately NO error return, so a recording failure structurally
-cannot propagate into the command outcome wrapper; enforces "Non-invasive" at the type level, not
-by convention). No changes to internal/output, internal/workflow, or internal/config schemas.
-Proceeded straight through without re-blocking (direct derivation of already-confirmed
-architecture, no new design fork).
+Spec committed to `.spektacular/specs/000035_plan-walkthrough-conversation.md`.
 
-## Components step — complete
-Working file: `.spektacular/work/000031_agent-session-debug-log/components.md`. 4 components,
-directly derived from the already-confirmed architecture (no new decisions, so not re-blocked on
-user confirmation per established preference for straight-through progression on non-design
-points): Debug toggle (existing, `internal/config`, gains a consumer); Command outcome wrapper
-(existing `runRoot`, extended — captures argv/tees response/snapshots state, hands off to
-recorder, strictly additive when toggle is off); Session recorder (new component/package — owns
-record shape, session-id derivation from workflow state, on-disk append, fail-contained error
-handling so it can never change the agent's outcome); Workflow state store (existing, unchanged,
-becomes a read-only dependency for session-id + outcome derivation).
+## Plan workflow status
 
-## Implement workflow — read_plan step — complete
-Structural validation passed: all 10 required `## ` sections present in plan.md; all 4 phase
-checkboxes (1.1/1.2/2.1/2.2) have `*Technical detail:*` links that resolve to matching `###
-Phase N.M` headings in context.md. Ran a full drift check (sub-agent) of every file:line/symbol
-reference in plan.md + context.md against the live codebase. Findings: only minor off-by-a-line
-citation drift (closing braces excluded from cited ranges — items like
-`internal/workflow/workflow.go:182-195`→actually 182-196, `cmd/root_test.go:67-72`→actually
-67-73, etc.) plus one background-reference mislabel: context.md's Phase 2.1 notes cite
-`internal/workflow/workflow_test.go:100-125` as showing "spec new lands on overview" — that
-assertion actually lives in `cmd/spec_test.go:107`; lines 100-125 of workflow_test.go are really
-inside `TestGotoSameStepReRenders` (still relevant background on the goto-noop behavior, just a
-wrong citation for that one specific claim). `internal/runner` package still physically exists
-(not deleted) but confirmed still unreferenced from any `cmd`/`internal` code — consistent with
-context.md's own framing. None of these affect implementation substance — every referenced
-function/type/behavior exists as described. User chose to proceed as-is rather than fix citations
-or abandon. Changelog mode: plan.md has no `## Changelog` section yet → first-phase invocation;
-`analyze` will pick up at Phase 1.1. Next: analyze step.
+Now planning against this spec via `go run . plan new --data '{"name":
+"000035_plan-walkthrough-conversation"}'`. Discovery is done; research.md
+written to `.spektacular/work/000035_plan-walkthrough-conversation/research.md`.
 
-## Implement workflow — analyze step (Phase 1.1) — complete
-Current phase: 1.1 "Build the session record writer" (Low complexity, ~12k tokens) — did analysis
-directly in main context per the instruction (Low complexity doesn't require sub-agent
-delegation). Confirmed `internal/sessionlog/` does not exist yet. Confirmed
-`internal/workflow/state.go`'s loadState/saveState shape matches context.md's description
-(MkdirAll 0755, WriteFile 0644, encoding/json, errors via fmt.Errorf wrapping). Module path is
-`github.com/jumppad-labs/spektacular`. Test convention across `internal/*` (e.g.
-`internal/output/writer_test.go`) uses `github.com/stretchr/testify/require`, table-style JSON
-assertions via `require.JSONEq`. Plan: `internal/sessionlog/record.go` — reduced `Event` (Seq,
-Timestamp, Command, DurationMS, ExitCode, Response — no SessionID/StateBefore/StateAfter/Advanced
-yet, those land in Phase 2.1/2.2 per context.md), `Record(logPath string, ev Event)` with no error
-return (swallows all errors internally), `Seq` derived by counting existing lines in the log file
-at write time (no second counter file). `internal/sessionlog/record_test.go` — pure unit tests
-against `t.TempDir()`, plus one deliberately-unwritable-target test proving `Record` never
-errors/panics. Next: implement step.
+**Wiring decision resolved during discovery** (was left open in the spec):
+Option 1 — instruction-only extension of `templates/steps/plan/18-finished.md`
+(line 26, the "Inform the user that the plan workflow is finished..." sentence)
+— confirmed as the correct approach. Option 2 (new terminal FSM step) is ruled
+out: `internal/workflow/state.go:25-27`'s `InProgress()` hardcodes the literal
+string `"finished"` as terminal for all three workflow kinds, so a step after
+it would break resume detection without a shared-code change. Option 3
+(skill-only, no template change) is ruled out: `SKILL.md` is Claude-Code-only,
+the template reaches every agent surface driving the CLI. Also need a small
+consistency addition to `.claude/skills/spek-plan/SKILL.md` (lines 20-22)
+so the skill's "report completion" framing doesn't skip past the new offer.
 
-## Implement workflow — implement step (Phase 1.1) — complete
-Wrote `internal/sessionlog/record.go`: `Event` struct (json tags: seq, timestamp, command,
-duration_ms, exit_code, response), `Record(logPath string, ev Event)` (no error return, swallows
-all internal errors — MkdirAll/ReadFile/OpenFile/Marshal failures all just cause a silent no-op
-return), and an unexported `countLines` helper (counts `\n` bytes in the existing file, 0 if the
-file doesn't exist yet) that derives each Event's `Seq`. `go build ./...` passes clean, no other
-files touched. No tests written yet (next step). Next: test step.
+Direct precedent found: spec 000032's own Non-Goals explicitly names this
+exact feature ("Adding a user-acceptance walkthrough to the plan workflow's
+verification step — a separately identified gap, not addressed here") and
+that plan's finished shape (pure instruction prose, zero FSM/Go changes,
+modeled on `installMemoryContextSection`'s AGENTS.md pattern) is the direct
+structural template for this plan's own Architecture/Testing Approach
+sections — see plan 000032's plan.md and research.md.
 
-## Implement workflow — test step (Phase 1.1) — complete
-Delegated to sub-agent per `follow-test-patterns` skill. Wrote
-`internal/sessionlog/record_test.go`, 5 tests, all passing (`go test ./internal/sessionlog/...`,
-`go vet`, `go build ./...` all clean): ordered/increasing Seq across multiple calls; full-field
-round-trip against a hand-written JSON oracle (not derived from the struct, per this project's
-independent-oracle testing convention); first-call-ever → Seq 0; MkdirAll failure (blocker file at
-a path component) doesn't panic/corrupt state, subsequent calls to a valid path still work;
-read-only parent dir → OpenFile failure doesn't panic (self-skips under root via
-`os.Geteuid()==0`, restores perms in `t.Cleanup`). One implementer gotcha worth remembering:
-Linux reports `ENOTDIR` not `ENOENT` for a path component that's a file, so `os.IsNotExist` is the
-wrong check there — use `require.Error` instead. Both Phase 1.1 acceptance criteria covered, none
-skipped. `record.go` untouched by the test-writing agent. Next: verify step.
+Mid-walkthrough edits reuse the exact same `plan file write <name>/plan.md
+--from <scratch>` mechanism the workflow itself already uses (confirmed via
+`cmd/plan_file.go` — standalone CLI command, not FSM-gated) — no new write
+path needed, satisfying the spec's "same document, not a copy" constraint
+by construction.
 
-## Implement workflow — verify step (Phase 1.1) — complete
-All green: `go build ./...`, `go vet ./...`, `go test ./...` (full suite, not just the new
-package) all pass. `gofmt -l .` flags 2 pre-existing unformatted files unrelated to this phase
-(`internal/runner/runner.go`, `internal/stepkit/stepkit_test.go`) — noted, not touched, not this
-phase's concern. Makefile's `test`/`lint` targets are just thin wrappers around the same `go
-test`/`go vet` commands. Phase 1.1 fully verified. Next: update_plan step.
+One open assumption flagged for the implement workflow to double check:
+the offer belongs in `18-finished.md` (after all 3 docs are committed to the
+store), not earlier in `14-verification.md` before commit — based on the
+spec's Overview framing ("After Spektacular finishes generating..."). If this
+turns out wrong, STOP and ask before proceeding.
 
-## Implement workflow — update_plan step (Phase 1.1) — complete
-Flipped `#### - [ ] Phase 1.1` → `[x]` and both its acceptance-criteria checkboxes to `[x]` in
-plan.md (both passed verification, no deviation from what's described). Committed via `plan file
-write` from `.spektacular/tmp/plan_update.md`, verified by reading it back — checkbox change
-confirmed live in the store. Scratch file removed. Next: update_changelog step.
+## Architecture step: user confirmed
 
-## Implement workflow — update_changelog step (Phase 1.1) — complete
-plan.md had no `## Changelog` section yet — created it at end of file with the Phase 1.1 entry
-(What was done / Deviations: None / Files changed: record.go+record_test.go / Discoveries: the
-ENOTDIR-not-ENOENT gotcha, and that `internal/sessionlog` stays a pure leaf package — Phase 1.2
-is where `cmd/root.go` builds and wires in the values). Committed via `plan file write`, scratch
-removed. 3 unchecked phases remain (1.2, 2.1, 2.2) — looping automatically per Auto Mode /
-established preference for driving multi-step workflows straight through without per-phase
-confirmation. Next: analyze step (Phase 1.2).
+User confirmed the recommended option: extend `18-finished.md` + small
+`SKILL.md` consistency edit, zero FSM/Go changes (see the 3-option
+AskUserQuestion — chose "Extend 18-finished.md template (Recommended)" over
+the new-FSM-step and skill-only alternatives). Architecture section and
+Conventions section ("no conventions apply", user-confirmed) written to their
+working files.
 
-## Implement workflow — analyze step (Phase 1.2) — complete
-Medium complexity → delegated codebase research to a sub-agent. Key confirmed finding (drift from
-what context.md described): `runRoot()` (`cmd/root.go:33-40`) currently does NOT call
-`loadConfig()` at all and has zero pre-`Execute()` logic — the tee/record wiring is greenfield
-inside this function, not a modification of existing pre-Execute logic (context.md's phrasing
-implied loadConfig() was already being called there; it wasn't — a minor citation gap, not a
-blocker). Confirmed hard constraints from existing tests: (a) "orig" writer must be captured via
-`rootCmd.OutOrStdout()` called *before* `Execute()`, not `os.Stdout` — `cmd/implement_test.go`'s
-`setupImplementCmd` pre-sets `rootCmd.SetOut(buf)` before tests call `runRoot()`, so reading
-`OutOrStdout()` early is what makes the tee compose with that; (b) tee must stay installed through
-the `output.WriteFailure` call too (not restored right after `Execute()` returns), or a failing
-command's response would never make it into the buffer; (c)
-`TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate` asserts the failure JSON appears
-exactly once in stdout — `io.MultiWriter` duplicates into the buffer, not into a second write to
-the real stream, so this holds. `stateFilePath`/`State` struct/`dataDir()` all confirmed exactly
-as context.md described (Phase 2.1 will need these, not this phase). Next: implement step.
+## Components step: user confirmed
 
-## Implement workflow — implement step (Phase 1.2) — complete
-Edited `cmd/root.go` only. `runRoot()` now: calls `loadConfig()` unconditionally at the top
-(fail-open — a config-load error just means `debugEnabled = false`, never surfaces); if
-`cfg.Debug.Enabled`, captures `argv`/`start`, reads `orig := rootCmd.OutOrStdout()`, installs
-`rootCmd.SetOut(io.MultiWriter(orig, buf))`; runs `Execute()` exactly as before; on error, calls
-`output.WriteFailure` through the still-tee'd writer (unchanged call, still `rootCmd.OutOrStdout()`
-which now resolves to the tee when debug is on); only then — after both the success/failure
-outcome and the failure write have happened — builds the `sessionlog.Event` (Timestamp, Command,
-DurationMS, ExitCode, Response — no StateBefore/After/Advanced/SessionID yet, those are Phase
-2.1/2.2) and calls `sessionlog.Record`, then restores `rootCmd.SetOut(orig)` unconditionally. Added
-a small `sessionLogPath()` helper (`dataDir()/debug/session-log.jsonl`). `go build ./...` and
-`go test ./cmd/...` both pass with no changes needed to existing tests — toggle-off path is
-untouched original logic plus one `loadConfig()` call whose result is simply discarded when
-disabled. Manually verified end-to-end against this repo's own `.spektacular/config.yaml`
-(`debug.enabled: true`): ran `go run . knowledge always-applied`, confirmed
-`.spektacular/debug/session-log.jsonl` was created with a correctly-shaped entry (seq 0, argv,
-duration, exit_code 0, full JSON response body). No tests written yet (next step, delegated to
-sub-agent). Next: test step.
+Four components (finished-step instruction changed; spek-plan skill file
+changed; plan document write path reused unchanged; FSM unchanged) confirmed
+by user as-is, no edits requested.
 
-## Implement workflow — test step (Phase 1.2) — complete
-First sub-agent attempt stalled (returned "waiting for a background research agent" with zero
-file changes — a stuck/confused sub-agent, not a real blocker); resumed it via SendMessage with an
-explicit "do the work directly now" instruction, which completed correctly on the second pass.
-Added 3 tests to `cmd/root_test.go` (140 lines): `TestSessionLog_DisabledProducesNoRecordFile`
-(no config / explicit `debug.enabled: false` → no log file, criterion 1),
-`TestSessionLog_EnabledRecordsSuccessAndRejection` (debug on → a success and a validation-rejected
-`spec new` both produce a recorded `Event` with correct ExitCode/Response, criterion 2),
-`TestSessionLog_EnabledDoesNotChangeCallerVisibleOutput` (same command, debug on vs off, in
-separate temp dirs → byte-identical stdout/exit code after normalizing the temp-dir path embedded
-in `spec_path`, criterion 3). Important discovery baked into the tests: `runRoot()`'s recorded
-`Event.Command` is `os.Args[1:]` — the real process argv — not whatever `rootCmd.SetArgs(...)`
-the `runRootCmd` test helper injects (that only affects cobra's own parsing). This is correct
-production behavior (a real CLI invocation's `os.Args` genuinely is the command issued) but means
-within one test binary every recorded `Command` is constant regardless of which subcommand a test
-drives — the test explicitly captures `os.Args[1:]` once and asserts against that, rather than
-against the `spec new ...` strings, to avoid asserting something the implementation doesn't
-actually do. `go build ./...`, `go vet ./...`, `go test ./...` (full repo) all pass. Next: verify
-step.
+## Data structures step
 
-## Implement workflow — verify step (Phase 1.2) — complete
-Sub-agent ran full suite: build/vet/test/gofmt all green. Flagged one real gap against the literal
-acceptance-criteria wording: plan.md's criterion 2 asks for "succeeds, rejected, AND errors" as
-three distinct cases, but the shipped tests only covered success + rejected (validation error via
-`*output.ErrorResponse`). Closed the gap myself (main context, not delegated — small mechanical
-addition): added a third `t.Run("errors", ...)` subtest under
-`TestSessionLog_EnabledRecordsSuccessAndRejection` using malformed `--data '{not-json'` — this hits
-a genuinely different code path than "rejected" (cmd/spec.go's own `json.Unmarshal` fails and
-returns a plain `error`, not an `*output.ErrorResponse`, so `toErrorResponse` falls back to
-wrapping it as `internal_error` — confirmed by reading `cmd/spec.go:206-207`). Re-ran build/vet/
-full-suite/gofmt myself after the addition — all still green, including the new subtest. Phase 1.2
-fully verified, criterion 2 now literally covered (3/3 outcome types).
+No new data structures/interfaces — pure prose feature, confirmed no Go types,
+no new workflow.Data keys, no new template variables. Straightforward enough
+not to pause for a separate confirmation round.
 
-Second gap found on my own closer read of criterion 3's exact wording ("for a representative
-command from every command family") — the shipped byte-identical test only covered `spec`. Closed
-it by rewriting `TestSessionLog_EnabledDoesNotChangeCallerVisibleOutput` into a table-driven test
-covering spec/plan/implement/knowledge/skill (the same 5 families
-`TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly` exercises, minus `init`). `init` deliberately
-excluded: its behavior legitimately branches on whether `.spektacular/config.yaml` already exists
-(only writes one if absent), so pre-seeding a debug-on config to flip the toggle would make the
-on/off runs asymmetric for a reason unrelated to this feature, not a fair comparison. For
-`knowledge`, debug is toggled by appending (not overwriting) `debug:\n  enabled: true\n` to
-`twoScopeProject`'s own generated config, since `writeSpecCommandConfig` overwrites the whole file
-and would have clobbered the two-scope sources config. Re-ran build/vet/full-suite/gofmt again —
-all green, all 5 families pass. Phase 1.2 now fully verified against the literal acceptance
-criteria text, not just the mechanism's structural argument. Next: update_plan step.
+## Implementation detail step: user confirmed
 
-## Implement workflow — update_plan + update_changelog steps (Phase 1.2) — complete
-Checked off Phase 1.2's heading and all 3 acceptance criteria in plan.md, committed via `plan file
-write`, verified. Appended the Phase 1.2 changelog entry (What was done / Deviations: none from
-architecture, one analysis-phase citation drift noted / Files changed: root.go+root_test.go /
-Discoveries: the OutOrStdout-before-Execute and tee-through-WriteFailure constraints, the
-os.Args[1:]-is-real-argv gotcha, and the 2 acceptance-criteria gaps closed during verify). 2
-unchecked phases remain (2.1, 2.2) — continuing automatically per Auto Mode. Next: analyze step
-(Phase 2.1).
+Sketch confirmed as-is: 5-part instruction shape (offer once; loose beats —
+approach/reasoning, stages, scope boundaries — not a rigid gate; handle
+interruptions directly; apply changes inline via existing write path then
+resume; explicit closing agreement question). No Go changes, template +
+SKILL.md prose only.
 
-## Implement workflow — analyze + implement steps (Phase 2.1) — complete
-Medium complexity, but I had already directly edited `cmd/root.go` in the prior phase and had
-fresh, verified knowledge of `internal/workflow/state.go`'s `State` shape and
-`cmd/spec.go:99-101`'s `stateFilePath(dataDir)` helper from the Phase 1.2 research agent — did the
-analysis directly rather than spawning a redundant sub-agent. Implemented: extended
-`internal/sessionlog.Event` with `StateBefore *StateSnapshot`, `StateAfter *StateSnapshot`,
-`Advanced bool` (json tags state_before/state_after/advanced, no omitempty — explicit `null` for
-absent state, consistent with the existing fields' style); added `StateSnapshot{Kind, Name,
-CurrentStep, CompletedSteps}`. In `cmd/root.go`: added `readStateSnapshot()` (reads
-`.spektacular/state.json` via `dataDir()`+`stateFilePath()`, unmarshals into a small unexported
-`stateSnapshotFile` mirroring `workflow.State`'s shape, pulls `Name` out of `Data["name"]`, returns
-nil on any error or missing file — never surfaces) and `stateAdvanced(before, after)` (nil/non-nil
-mismatch → true; both nil → false; both present → compare Kind/Name/CurrentStep/len(CompletedSteps)).
-Wired both into `runRoot()`: `stateBefore` captured right alongside `argv`/`start` (before
-`Execute()`), `stateAfter` captured right after `Execute()` returns (before the `Record` call).
-`internal/sessionlog` still does not import `internal/workflow` — `cmd` builds the snapshot itself
-from the raw file, exactly as context.md specified.
+## Dependencies step
 
-One necessary mechanical fix: adding the 3 new `Event` fields broke Phase 1.1's
-`TestRecordRoundTripsAllFields` (its hand-written JSON oracle didn't have the new keys). Updated
-that test's `Event` literal and oracle to include populated `StateBefore`/`StateAfter`/`Advanced`
-values — not new test *authorship* for this phase's own coverage (that's still the next step), just
-keeping a pre-existing test's fixture in sync with the struct it exercises. `go build ./...` and
-`go test ./...` (full repo) both green after the fix.
+No external libs, no Go package changes, no prior-plan blockers — all
+referenced prior specs (000020, 000022, 000023, 000032) already shipped.
+Objective/low-risk list.
 
-Manually verified end-to-end with a built binary against the exact
-`goto-to-current-step-is-a-silent-noop` gotcha scenario: `spec new` (fresh project) →
-`advanced=true, before=null, after={...,current_step:overview}`; immediately following `spec goto
---data '{"step":"overview"}'` (the already-current step) → `advanced=false`,
-`before==after==identical snapshot`, despite the command returning no error. This is the exact
-proof-of-concept the whole feature was designed around. No tests written yet for this phase's own
-acceptance criteria (next step, delegated to sub-agent). Next: test step.
+## Testing approach step: user confirmed
 
-## Implement workflow — test step (Phase 2.1) — complete
-Sub-agent added a `readSessionLogEvents(t, dir) []sessionlog.Event` helper (generalizes the
-existing single-event reader for multi-command sequences) plus 3 tests to `cmd/root_test.go`:
-`TestSessionLog_AdvancedTrueWhenStateChanges` (founding `spec new` call + a genuine step advance,
-criterion 1), `TestSessionLog_AdvancedFalseWhenGotoRepeatsCurrentStep` (the exact
-goto-noop-gotcha scenario, criterion 2), `TestSessionLog_UnrelatedCommandRecordsNothingToAdvance`
-(`knowledge sources` with no `state.json` on disk yet → both snapshots nil, Advanced false, no
-error, criterion 3). Did NOT touch `cmd/root.go`, `internal/sessionlog/record.go`, or the
-already-fixed `TestRecordRoundTripsAllFields`, as instructed. Re-verified myself:
-`go build ./...`, `go vet ./...`, `go test ./...` (full repo) all green. Next: verify step.
+No automated tests (prose-only feature, no code path exists to test) — manual
+smoke tests cover all 5 acceptance criteria, mirroring spec 000032's
+precedent. Spec has no Success Metrics defined; acceptance criteria serve as
+the de facto verification targets instead. User confirmed. Proceeding to
+milestones step.
 
-## Implement workflow — verify step (Phase 2.1) — complete
-All green: build/vet/full-suite/gofmt (only phase-touched files) all pass. Sub-agent read all 3 new
-tests plus the `stateAdvanced`/`readStateSnapshot` implementation and confirmed each criterion is
-genuinely (not superficially) covered: criterion 1's test exercises both the founding-call case
-and a real different-step advance; criterion 2's test is directly corroborated by the pre-existing
-`internal/workflow/workflow_test.go:87`'s `TestGotoSameStepReRenders`, confirming the goto-noop
-scenario is real or contrived; criterion 3's test explicitly asserts no `state.json` exists before
-running an unrelated command. Phase 2.1 fully verified. Next: update_plan step.
+Note: earlier in this session, a background Explore agent
+(abd58fc5e2cb49634) spawned during discovery to double-check the finished-step
+FSM facts never returned/completed before a session interruption — this did
+not block progress since the same facts (InProgress() hardcoding "finished",
+the finished() callback, Steps() list, SKILL.md content) were already
+confirmed directly via Read/Bash and are captured in research.md. No need to
+resume that agent; safe to ignore/let it be cleaned up.
 
-## Implement workflow — update_plan + update_changelog steps (Phase 2.1) — complete
-Checked off Phase 2.1's heading and all 3 acceptance criteria in plan.md, committed and verified.
-Appended the Phase 2.1 changelog entry. 1 unchecked phase remains (2.2) — continuing automatically
-per Auto Mode. Next: analyze step (Phase 2.2, the final phase).
+## Milestones step: user confirmed
 
-## Implement workflow — analyze + implement steps (Phase 2.2) — complete
-Low-Medium complexity, already had full context from prior phases — implemented directly. Added
-`SessionID(state *StateSnapshot) string` (pure function in `internal/sessionlog/record.go`): nil
-state or both Kind/Name empty → sentinel `"no-active-workflow"`; otherwise `Kind + ":" + Name`.
-Added `SessionID string` field to `Event` (positioned after Timestamp, before Command, matching
-the plan's full Event field order). In `cmd/root.go`, wired `SessionID: sessionlog.SessionID(stateAfter)`
-into the `Event` built in `runRoot()` — deliberately `stateAfter`, not `stateBefore`, per the
-design decision already resolved during planning (context.md's Phases-step notes): a workflow's
-founding `new` call has `stateBefore == nil` but `stateAfter` holding the new `(Kind, Name)`;
-deriving from `stateAfter` tags that founding call consistently with every later call on the same
-instance, while `stateBefore` would wrongly sentinel it alone.
+Single milestone (matching spec 000032's shape) covering the whole feature —
+user confirmed, no split requested.
 
-Same mechanical fix as Phase 2.1: the new `SessionID` field broke Phase 1.1's
-`TestRecordRoundTripsAllFields` oracle again — updated it to include `session_id`. `go build ./...`
-and `go test ./...` (full repo) green after the fix.
+## Phases step: user confirmed
 
-Manually verified end-to-end with a built binary: `knowledge sources` (no workflow state yet) →
-`session_id="no-active-workflow"`; `spec new` (founding call) → `session_id="spec:000001_billing"`;
-following `spec goto` on the same instance → same `session_id="spec:000001_billing"` — confirms
-both the sentinel fallback and same-instance grouping work exactly as designed. No tests written
-yet for this phase's own acceptance criteria (next step, delegated to sub-agent). Next: test step.
+Two sequential phases: 1.1 the finished-step template's full walkthrough
+instruction (offer, beats, interruption/change handling, closing gate),
+1.2 the SKILL.md consistency edit (runs after 1.1 so it can reference the
+actual offer text just written). User confirmed as-is.
 
-## Implement workflow — test step (Phase 2.2, final phase) — complete
-Sub-agent added `TestSessionID` (pure-function table test in `internal/sessionlog/record_test.go`:
-nil, both-empty, populated Kind/Name) and 3 tests to `cmd/root_test.go`:
-`TestSessionLog_SameSessionIDAcrossFoundingAndResumedCalls` (criterion 1),
-`TestSessionLog_DistinctSessionIDsForDifferentNamedWork` (same-kind-different-name +
-different-kind subtests, criterion 2), `TestSessionLog_NoActiveWorkflowSessionIDBeforeAnyWorkflow`
-(criterion 3). Notable finding: this repo's own `id_method` default is `timestamp`, not `counter`
-— the sub-agent set `spec.id_method: counter` in its test fixtures' config (combined with
-`debug.enabled: true` in one `writeSpecCommandConfig` call, since it overwrites the whole file) so
-resolved spec names — and therefore the exact `session_id` strings — are deterministic and
-assertable rather than timestamp-dependent. Did not touch `cmd/root.go`,
-`internal/sessionlog/record.go`, or `TestRecordRoundTripsAllFields`, as instructed. Re-verified
-myself: `go build ./...`, `go vet ./...`, `go test ./...` (full repo), `gofmt -l` on all
-plan-touched files all green. Next: verify step.
+## Open questions step
 
-## Implement workflow — verify step (Phase 2.2, final phase) — complete
-All green with no regressions across the whole repo (build/vet/gofmt/full-suite, plus targeted
-`cmd/...` and `internal/sessionlog/...` reruns). Sub-agent confirmed each criterion is genuinely
-covered: criterion 1's test uses a truly fresh temp dir (no pre-existing state.json, so
-StateBefore really is nil for the founding call) followed by a resumed call on the same instance;
-criterion 2's test correctly uses separate fresh projects per subtest (avoiding the trap where a
-second `new` in the same project would be a resume, not a distinct instance); criterion 3 uses
-`require.NoFileExists` to prove no workflow had run before the sentinel-tagged command. All 4
-phases of plan 000031 are now implemented, tested, and verified. Next: update_plan step (final
-phase, then update_repo_changelog).
+None remain — every design decision was resolved during planning (see list
+in open_questions.md working file). Straightforward/objective outcome;
+proceeding to out_of_scope step without a separate confirmation round.
 
-## Implement workflow — update_plan + update_changelog steps (Phase 2.2, final phase) — complete
-Checked off Phase 2.2's heading and all 3 acceptance criteria in plan.md, committed and verified.
-Appended the final Phase 2.2 changelog entry. Zero unchecked phases remain — all 4 phases (1.1,
-1.2, 2.1, 2.2) implemented, tested, and verified with no regressions. Next: update_repo_changelog
-step.
+## Out of scope step: user confirmed
 
-## Implement workflow — update_repo_changelog step — complete
-Prepended a `## 000031_agent-session-debug-log` section to the repo-root `CHANGELOG.md` (above the
-existing `## 000030_agent-actionable-errors` entry), 4-sentence user-facing summary: opt-in local
-session record via existing `debug.enabled` toggle, no new flag; captures every command+response
-including rejections/failures; entries state whether a command actually advanced anything (catches
-the re-run-current-step-looks-successful case); entries auto-grouped by piece of work; zero effect
-on normal behavior when off (default). No file paths or package names in the user-facing text.
-Next: test_plan step.
+Pulled from spec's Non-Goals (verbatim recitation, deferred-batch changes,
+cross-session memory) + rejected architecture alternatives (new FSM step,
+skill-only instruction, persisted offer-flag) + 2 explicit boundary notes
+(read-directly path untouched; not extending to spec/implement workflows).
+User confirmed as-is.
 
-## Implement workflow — test_plan step — complete
-Wrote `test-plan.md` covering the 2 success metrics plan.md's Testing Approach classified as
-manual (the "no side effects" half of metric 2 is already covered by the automated
-`TestSessionLog_EnabledDoesNotChangeCallerVisibleOutput`, not repeated here): (1) reconstruction —
-a grounded procedure using the real `goto-to-current-step` scenario, real commands
-(`spektacular spec new`/`spec goto`), the real record path
-(`.spektacular/debug/session-log.jsonl`), and a concrete pass condition (fresh agent correctly
-names the `advanced:false` entry as the stuck point); (2) cost/adoption — uses this repo's own
-already-`debug.enabled: true` config as the dogfooding observation vehicle, a 4-week window, and
-concrete things to check (was it ever disabled, log size complaints, issue-tracker mentions).
-Committed via `plan file write`, verified by reading it back. Next: finished (terminal step).
+## All content sections complete — ready to assemble
+
+All 9 working files written and user-confirmed: architecture.md,
+conventions.md, components.md, data_structures.md, implementation_detail.md,
+dependencies.md, testing_approach.md, milestones.md, phases_plan.md +
+phases_context.md, open_questions.md, out_of_scope.md. Plus research.md from
+discovery.
+
+## Assemble step complete
+
+Metadata gathered: commit ca60a2b11d2cf6424f2f294b7725813ff41db72d, branch
+f-conversational, repo git@github.com:jumppad-labs/spektacular.git, created
+2026-07-10T09:05:57Z. All three documents assembled from working files and
+staged to `.spektacular/tmp/{plan_template,context_template,research_template}.md`.
+Nothing written to the plan store yet.
+
+## Verification step complete
+
+All 11 plan.md sections, 7 context.md sections, 7 research.md sections
+present, in order, non-empty (checked via grep + line-count spot-check).
+Phase 1.1/1.2 anchors in plan.md match context.md's heading slugs exactly.
+
+## write_plan step complete
+
+plan.md committed to store, scratch file removed.
+
+## write_context step complete
+
+context.md committed to store, scratch file removed.
+
+## write_research step complete
+
+research.md committed to store, scratch file removed, working directory
+`.spektacular/work/000035_plan-walkthrough-conversation` deleted (no longer
+needed — all three documents are now durably in the plan store). Proceeding
+to finished step.
+
+## Implement workflow: analyze step complete (Phase 1.1)
+
+Current phase: 1.1 ("Add the walkthrough offer and conversational
+instructions to the `finished` step"), first unchecked phase in plan.md.
+Technical detail confirmed at context.md#phase-11. Low complexity — did
+analysis directly, no sub-agent delegation needed. Confirmed via direct read
+that `templates/steps/plan/18-finished.md` still matches the plan/research
+exactly (27 lines, `{{^plan_incomplete}}` branch lines 17-27, insertion point
+at line 26's closing sentence). No new template variables needed —
+`{{config.command}}` and `{{plan_name}}` are the only ones the new prose
+requires, both already rendered. No mismatches found. Proceeding to
+`implement` step to write the phase.
+
+## Implement workflow: implement step complete (Phases 1.1 and 1.2)
+
+Both phases written in one pass (both Low complexity, no code, pure prose):
+
+- Phase 1.1: extended `templates/steps/plan/18-finished.md`'s
+  `{{^plan_incomplete}}` branch (was line 26's single closing sentence) with
+  the full 5-part walkthrough instruction — offer once, 3 paced beats
+  (approach/reasoning, stage breakdown, scope boundaries), interruption
+  handling, inline change application via the existing
+  `plan file write {{plan_name}}/plan.md --from <scratch>` command, and an
+  explicit-affirmative closing gate. No new mustache variables/sections used
+  (only pre-existing `{{plan_path}}`, `{{config.command}}`, `{{plan_name}}`).
+- Phase 1.2: added one sentence to `.claude/skills/spek-plan/SKILL.md` line 20
+  (the "report completion" line) clarifying that reporting completion
+  includes presenting the `finished` instruction's offer and conducting the
+  walkthrough if accepted — not summarizing and stopping short.
+
+`go build ./...` passes (expected — no `.go` files touched). Diff scope
+confirmed limited to exactly these two files for this phase's work. Proceeding
+to `test` step next (no automated tests are added per the plan's Testing
+Approach — expect that step to confirm manual-smoke-test-only and move on).
+
+## Implement workflow: test step complete (no tests to write)
+
+Confirmed via `git diff --name-only -- '*.go'` that zero `.go` files changed
+by Phases 1.1/1.2's work — matches the plan's Testing Approach ("No automated
+tests are added by this plan... no Go code, no new function, no new branch,
+no new data contract exists for a unit or integration test to exercise").
+No sub-agent delegated; nothing for a test-writing agent to act on. Manual
+smoke tests (per plan.md's Testing Approach) are the sole verification
+mechanism and will be exercised at the `verify` step. Proceeding to `verify`.
+
+## Implement workflow: verify step complete — all green
+
+Ran directly (Low complexity, no sub-agent needed): `make test` (all packages
+pass, including `internal/steps/plan` — existing FSM-order tests unaffected
+since they don't assert on rendered template prose) and `make lint` (clean).
+Confirmed via `internal/steps/plan/steps_test.go` that no test asserts on
+`18-finished.md`'s content, so template prose is free to change without
+breaking coverage — expected, since prose isn't a data contract.
+
+Manual smoke test: rendered `18-finished.md`'s success branch with sample
+mustache values (substituting `{{config.command}}`, `{{plan_name}}`, etc.) to
+confirm the walkthrough offer prose reads naturally and covers Phase 1.1's
+5 acceptance criteria (offer-once, 3-beat narrative structure, interruption
+handling, inline change application via `plan file write`, explicit-agreement
+close). Uses only pre-existing mustache variables/sections — no new ones —
+so the production render path (`cbroglie/mustache` via
+`stepkit.RenderTemplate`), already exercised by existing passing tests,
+covers this template unchanged.
+
+Proceeding to `update_plan` to check off Phase 1.1 and Phase 1.2's checkboxes
+in plan.md.
+
+## Implement workflow: update_plan step complete
+
+Checked off both phase headings (`#### - [x] Phase 1.1`, `#### - [x] Phase
+1.2`) and all 8 acceptance criteria across both phases (6 for 1.1, 2 for 1.2)
+— all verified passing in the `verify` step. Committed via `plan file write
+000035_plan-walkthrough-conversation/plan.md --from
+.spektacular/tmp/plan_update.md`, scratch file removed. Confirmed via `plan
+file read` that both checkboxes landed correctly. No criteria left unchecked
+— every acceptance criterion for both phases was satisfied by the prose
+added to `18-finished.md` and `SKILL.md`. Proceeding to `update_changelog`.
+
+## Implement workflow: update_changelog step complete
+
+Created the `## Changelog` section (first invocation for this plan) at the
+end of plan.md and appended two entries in one pass, matching how both
+phases were implemented together: Phase 1.1 (the `18-finished.md` walkthrough
+instruction) and Phase 1.2 (the `SKILL.md` consistency sentence). Both marked
+"Deviations: None" — implementation matched context.md's technical notes
+exactly. Re-read plan.md and confirmed zero `#### - [ ] Phase` (unchecked)
+headings remain — this was the last phase. Proceeding to
+`update_repo_changelog` for the repo-level release-note summary.
+
+## Implement workflow: update_repo_changelog step complete
+
+Prepended a new `## 000035_plan-walkthrough-conversation` section to the top
+of repo-root `CHANGELOG.md` (above the existing `## 000034_...` section) with
+a 4-sentence user-facing summary — no file paths or package names, focused on
+the behavior change (offer, walkthrough structure, inline edits, explicit
+close, unchanged read-directly path). Matches the format of all prior entries
+in the file. Proceeding to `test_plan`.
+
+## Implement workflow: test_plan step complete (none required)
+
+Plan's Testing Approach defines no success metrics (spec has none; acceptance
+criteria substitute), so wrote the explicit "none required" artifact to
+`000035_plan-walkthrough-conversation/test-plan.md` via `plan file write`,
+noting the manual smoke tests were already run in `verify`. Confirmed via
+`plan file read`. Proceeding to `update_feature_changelog`.
+
+## User's exact phrasing for the key requirement
+
+"Yeah so what I would like to simulate is the process between two colleagues
+discussing a feature. Let's figure out a good process for this. The aim is that
+I the user fully understand your plan so that I can either agree with it or
+request changes."
+
+"It should be like a presentation, If I just wanted to read through I would read
+the plan, which the user would most likely do, but when asked if the user wants
+a walk through it should be presentation style, at each point the user can stop
+and ask questions, this may change the plan."
+
+## Implement workflow: read_plan step complete
+
+Started `go run . implement new --data '{"name":
+"000035_plan-walkthrough-conversation"}'`. Read plan.md, context.md,
+research.md in full. Structural validation passed (all 10 required `## `
+sections present; 2 phases, each with a `*Technical detail:*` link resolving
+to a matching `### Phase N.M:` heading in context.md). Drift check passed
+against the working tree with zero mismatches — every referenced file/line
+(`templates/steps/plan/18-finished.md` 27 lines exactly as described,
+`.claude/skills/spek-plan/SKILL.md` lines 20-22, `internal/steps/plan/steps.go`
+lines 28-48 and 277-299, `internal/workflow/state.go` lines 25-27,
+`cmd/plan_file.go`) matches the plan/research documents verbatim, including
+line numbers. Spec coverage check passed: all 5 requirements and 5 acceptance
+criteria in the spec map to Phase 1.1 (offer, narrative beats, interruption
+handling, immediate change application, explicit-agreement close) or Phase 1.2
+(SKILL.md consistency); no gaps, no descoping needed. No `## Changelog`
+section exists in plan.md yet — this is a first-phase invocation; the
+`update_changelog` step will create the section on first use. Proceeding to
+`analyze` step, which will pick up at Phase 1.1 (the first `#### - [ ]` phase).
+
+## Implement workflow: update_feature_changelog step complete
+
+Authored a self-contained changelog record (What was built / Why it matters
+/ Deviations: None) drawing on the spec's Overview and the plan's own
+Changelog section (both already in context from earlier steps). Committed to
+the changelog store via `go run . changelog file write
+000035_plan-walkthrough-conversation.md --from .spektacular/tmp/changelog_record.md`,
+scratch file removed, confirmed via `changelog file read`. Proceeding to
+`finished` — the terminal step. All phases complete; implementation done.
+
+## Implement workflow: reconcile_spec step complete
+
+The skill's stated next step after `update_feature_changelog` was stale
+(`finished`) — the CLI's actual FSM required `reconcile_spec` first (from
+plan 000034, landed after this skill file). Followed the CLI's
+`invalid_transition` error and `next_action` field rather than the skill's
+text. Judged all 5 spec Requirements and 5 Acceptance Criteria against the
+plan's Changelog entries (both phases: Deviations: None) — all 10 genuinely
+satisfied by the delivered prose (offer-once, narrative structure,
+interruption handling, immediate change application, explicit-agreement
+close). Flipped all 10 checkboxes to `[x]`, committed via `spec file write
+000035_plan-walkthrough-conversation.md --from .spektacular/tmp/spec_reconcile.md`,
+confirmed via `spec file read`. Proceeding to `finished`.
+
+## Implement workflow: FINISHED — terminal state reached
+
+Reached the `finished` step. All work complete:
+- Both phases (1.1, 1.2) implemented and checked off in plan.md.
+- Plan's inline `## Changelog` has both phase entries (Deviations: None).
+- Repo `CHANGELOG.md` has the user-facing release note.
+- Feature changelog record written to `.spektacular/changelog/000035_plan-walkthrough-conversation.md`.
+- Spec fully reconciled — all 10 Requirements/Acceptance-Criteria checkboxes
+  flipped to `[x]`, nothing left unchecked or descoped.
+
+No further `goto` — this is the terminal state. Reporting completion to the
+user next.

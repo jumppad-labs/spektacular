@@ -2,6 +2,8 @@ package spec
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
@@ -59,12 +61,12 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 	)
 }
 
-// new creates the spec file and produces no output.
-// The caller is expected to immediately advance to "overview".
+// new creates the spec file, clears context.md, and returns an instruction
+// to write conversation context before proceeding to overview.
 func new() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
 		if cfg.DryRun {
-			return "overview", nil
+			return "", writeStep("new", "overview", "steps/spec/00-new.md", data, out, st, cfg, nil)
 		}
 		if st == nil {
 			return "", fmt.Errorf("store required for new step")
@@ -77,7 +79,16 @@ func new() workflow.StepCallback {
 		if err := st.Write(SpecFilePath(cfg.SpecDir, name), []byte(rendered)); err != nil {
 			return "", err
 		}
-		return "overview", nil
+		
+		// Clear context.md to prepare for fresh conversation context.
+		// Use a relative path that resolves against the current working directory
+		// (which is the project root when running `go run . spec new`).
+		contextPath := filepath.Join(".spektacular", "context.md")
+		if err := os.WriteFile(contextPath, []byte(""), 0644); err != nil {
+			return "", fmt.Errorf("clearing context.md: %w", err)
+		}
+		
+		return "", writeStep("new", "overview", "steps/spec/00-new.md", data, out, st, cfg, nil)
 	}
 }
 

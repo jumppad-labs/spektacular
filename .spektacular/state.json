@@ -12,11 +12,13 @@
     "update_changelog",
     "update_repo_changelog",
     "test_plan",
+    "update_feature_changelog",
+    "reconcile_spec",
     "finished"
   ],
-  "created_at": "2026-07-02T16:25:01.718406184Z",
-  "updated_at": "2026-07-02T17:12:36.418319135Z",
+  "created_at": "2026-07-10T09:13:04.191956569Z",
+  "updated_at": "2026-07-10T09:21:58.29642536Z",
   "data": {
-    "name": "000031_agent-session-debug-log"
+    "name": "000035_plan-walkthrough-conversation"
   }
 }

@@ -25,7 +25,9 @@ func Steps() []workflow.StepConfig {
 		{Name: "update_changelog", Src: []string{"update_plan"}, Dst: "update_changelog", Callback: updateChangelog()},
 		{Name: "update_repo_changelog", Src: []string{"update_changelog"}, Dst: "update_repo_changelog", Callback: updateRepoChangelog()},
 		{Name: "test_plan", Src: []string{"update_repo_changelog"}, Dst: "test_plan", Callback: testPlan()},
-		{Name: "finished", Src: []string{"test_plan"}, Dst: "finished", Callback: finished()},
+		{Name: "update_feature_changelog", Src: []string{"test_plan"}, Dst: "update_feature_changelog", Callback: updateFeatureChangelog()},
+		{Name: "reconcile_spec", Src: []string{"update_feature_changelog"}, Dst: "reconcile_spec", Callback: reconcileSpec()},
+		{Name: "finished", Src: []string{"reconcile_spec"}, Dst: "finished", Callback: finished()},
 	}
 }
 
@@ -47,7 +49,7 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 			StepName:     stepName,
 			NextStep:     nextStep,
 			TemplatePath: templatePath,
-			Strategy:     strategy{planDir: cfg.PlanDir},
+			Strategy:     strategy{planDir: cfg.PlanDir, changelogDir: cfg.ChangelogDir, specDir: cfg.SpecDir},
 			Extra:        extra,
 		},
 		data, out, st, cfg,
@@ -124,12 +126,32 @@ func updateRepoChangelog() workflow.StepCallback {
 // metrics that cannot be covered by an automated behavioural test.
 func testPlan() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("test_plan", "finished", "steps/implement/09-test_plan.md", data, out, st, cfg, nil)
+		return "", writeStep("test_plan", "update_feature_changelog", "steps/implement/09-test_plan.md", data, out, st, cfg, nil)
+	}
+}
+
+// updateFeatureChangelog runs last, after every phase is implemented and
+// verified and the test plan is written. It authors a durable, self-contained
+// changelog record for the feature into the changelog store, grounded in what
+// was actually built rather than what was originally planned.
+func updateFeatureChangelog() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("update_feature_changelog", "finished", "steps/implement/10-update_feature_changelog.md", data, out, st, cfg, nil)
+	}
+}
+
+// reconcileSpec runs after the feature changelog record is written. It
+// compares the specification's Requirements and Acceptance Criteria against
+// the plan's accumulated changelog record and commits an updated spec with
+// satisfied items checked off, so the finished report can read it back.
+func reconcileSpec() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("reconcile_spec", "finished", "steps/implement/11-reconcile_spec.md", data, out, st, cfg, nil)
 	}
 }
 
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("finished", "", "steps/implement/10-finished.md", data, out, st, cfg, nil)
+		return "", writeStep("finished", "", "steps/implement/12-finished.md", data, out, st, cfg, nil)
 	}
 }

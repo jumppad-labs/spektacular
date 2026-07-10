@@ -1,5 +1,6 @@
 command: go run .
 agent: claude
+spec_trigger_threshold: moderate
 debug:
     enabled: true
 spec:
@@ -11,6 +12,10 @@ plan:
     provider: file
     config:
         directory: .spektacular/plans
+changelog:
+    provider: file
+    config:
+        directory: .spektacular/changelog
 knowledge:
     sources:
         - scope: project

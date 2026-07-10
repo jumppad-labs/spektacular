@@ -17,6 +17,12 @@ const (
 	SpecIDMethodExternal  = "external"
 )
 
+const (
+	SpecTriggerThresholdStrict   = "strict"
+	SpecTriggerThresholdModerate = "moderate"
+	SpecTriggerThresholdLenient  = "lenient"
+)
+
 // ProviderFile is the only storage provider this release ships. The provider
 // field on the spec, plan, and knowledge sections names a backend; today it
 // must always be this value.
@@ -29,6 +35,10 @@ const (
 	// DefaultPlanDir is the plan output directory used when none is configured.
 	// It is resolved relative to the project root, like the knowledge location.
 	DefaultPlanDir = ".spektacular/plans"
+	// DefaultChangelogDir is the changelog output directory used when none is
+	// configured. It is resolved relative to the project root, like the
+	// knowledge location.
+	DefaultChangelogDir = ".spektacular/changelog"
 	// DefaultKnowledgeScope is the scope of the synthesised default knowledge source.
 	DefaultKnowledgeScope = "project"
 	// DefaultKnowledgeLocation is the project-relative location of the
@@ -67,6 +77,18 @@ type FilePlanConfig struct {
 	Directory string `yaml:"directory"`
 }
 
+// ChangelogConfig holds configuration for changelog record storage. It names
+// a storage provider and carries that provider's settings.
+type ChangelogConfig struct {
+	Provider string              `yaml:"provider"`
+	Config   FileChangelogConfig `yaml:"config"`
+}
+
+// FileChangelogConfig is the file-provider configuration for the changelog section.
+type FileChangelogConfig struct {
+	Directory string `yaml:"directory"`
+}
+
 // KnowledgeConfig holds the ordered list of configured knowledge sources.
 type KnowledgeConfig struct {
 	Sources []SourceConfig `yaml:"sources"`
@@ -87,18 +109,21 @@ type FileKnowledgeConfig struct {
 
 // Config is the top-level Spektacular configuration.
 type Config struct {
-	Command   string          `yaml:"command"`
-	Agent     string          `yaml:"agent"`
-	Debug     DebugConfig     `yaml:"debug"`
-	Spec      SpecConfig      `yaml:"spec"`
-	Plan      PlanConfig      `yaml:"plan"`
-	Knowledge KnowledgeConfig `yaml:"knowledge"`
+	Command              string          `yaml:"command"`
+	Agent                string          `yaml:"agent"`
+	SpecTriggerThreshold string          `yaml:"spec_trigger_threshold"`
+	Debug                DebugConfig     `yaml:"debug"`
+	Spec                 SpecConfig      `yaml:"spec"`
+	Plan                 PlanConfig      `yaml:"plan"`
+	Changelog            ChangelogConfig `yaml:"changelog"`
+	Knowledge            KnowledgeConfig `yaml:"knowledge"`
 }
 
 // NewDefault returns a Config populated with default values.
 func NewDefault() Config {
 	return Config{
-		Command: "spektacular",
+		Command:              "spektacular",
+		SpecTriggerThreshold: SpecTriggerThresholdModerate,
 		Debug: DebugConfig{
 			Enabled: false,
 		},
@@ -113,6 +138,12 @@ func NewDefault() Config {
 			Provider: ProviderFile,
 			Config: FilePlanConfig{
 				Directory: DefaultPlanDir,
+			},
+		},
+		Changelog: ChangelogConfig{
+			Provider: ProviderFile,
+			Config: FileChangelogConfig{
+				Directory: DefaultChangelogDir,
 			},
 		},
 		Knowledge: KnowledgeConfig{
@@ -153,10 +184,18 @@ func FromYAMLFile(path string) (Config, error) {
 
 // Validate checks whether the config contains supported values.
 func (c Config) Validate() error {
+	switch c.SpecTriggerThreshold {
+	case "", SpecTriggerThresholdStrict, SpecTriggerThresholdModerate, SpecTriggerThresholdLenient:
+	default:
+		return fmt.Errorf("spec_trigger_threshold must be one of %q, %q, or %q", SpecTriggerThresholdStrict, SpecTriggerThresholdModerate, SpecTriggerThresholdLenient)
+	}
 	if err := c.Spec.Validate(); err != nil {
 		return err
 	}
 	if err := c.Plan.Validate(); err != nil {
+		return err
+	}
+	if err := c.Changelog.Validate(); err != nil {
 		return err
 	}
 	if err := c.Knowledge.Validate(); err != nil {
@@ -190,6 +229,18 @@ func (c PlanConfig) Validate() error {
 	}
 	if c.Config.Directory == "" {
 		return fmt.Errorf("plan.config.directory must not be empty")
+	}
+	return nil
+}
+
+// Validate checks whether the changelog config names a supported provider
+// and carries valid provider settings.
+func (c ChangelogConfig) Validate() error {
+	if c.Provider != ProviderFile {
+		return fmt.Errorf("changelog.provider %q is not supported (only %q)", c.Provider, ProviderFile)
+	}
+	if c.Config.Directory == "" {
+		return fmt.Errorf("changelog.config.directory must not be empty")
 	}
 	return nil
 }

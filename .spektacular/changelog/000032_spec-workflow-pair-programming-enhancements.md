@@ -1,0 +1,27 @@
+# Feature: 000032_spec-workflow-pair-programming-enhancements
+
+## What was built
+
+Coding agents working in a Spektacular-initialized repository now proactively recognize when an open-ended discussion has produced something substantial enough to warrant a specification, and offer to capture it — rather than only starting the spec workflow when the user explicitly invokes it.
+
+The feature ships as two coordinated pieces, both landing in existing extension points rather than new machinery:
+
+1. A new `spec_trigger_threshold` field in `.spektacular/config.yaml`, accepting `"strict"`, `"moderate"`, or `"lenient"`, defaulting to `"moderate"` when absent. It follows the exact same struct-field/default/validation shape already used for every other enum-like setting in `internal/config/config.go` (the pattern cloned from `SpecConfig.IDMethod`).
+
+2. A new managed `## Spec-Worthy Discussion Recognition` section installed into every Spektacular-initialized project's `AGENTS.md`, delivered by a new `installSpecTriggerSection` installer (`internal/agent/spec_trigger.go`) that is a structural clone of the existing memory-context installer (`internal/agent/memory_context.go`, from spec 000023). It is wired into each supported agent's install sequence (Claude, Codex, Bob) alongside the existing memory-context call.
+
+The section's instruction prose is the entire behavioral surface for this feature — no Go code branches on "is this discussion spec-worthy" or tracks offer/defer/decline state. The instruction tells the agent: how to recognize a spec-worthy discussion; to read `spec_trigger_threshold` from `.spektacular/config.yaml` live, at the moment of deciding whether to offer (not baked in at `init` time, so a config change takes effect immediately); to always propose-then-confirm rather than starting a spec unilaterally; to treat a deferral ("not yet") as temporary and a decline as final for that discussion topic; and, once accepted, to drive the existing spec workflow's unmodified step prompts using the conversation already had — proposing draft answers for the user to confirm or refine, rather than asking cold.
+
+An earlier attempt at this plan proposed a third mechanism — passing conversation context through `spec new --data` and mustache conditionals in step templates — to handle carry-forward. That design was abandoned during planning: tracing the actual render path showed `stepkit.WriteStepResult` never merges workflow data into rendered templates, so it wouldn't have worked as specified, and more fundamentally it solved a problem that doesn't exist (the agent proposing the offer already holds the conversation live and needs no CLI round-trip to use it). The corrected design needed zero CLI or template changes for carry-forward — it is pure agent-instruction prose reusing the spec workflow's existing, unmodified prompts.
+
+## Why it matters
+
+Real feature discussions often start as open-ended exploration — diagnosing a problem, kicking around ideas — and only partway through does it become clear the conversation has produced something worth a formal specification. Previously, nothing prompted the assistant to notice that shift, so the conversation's context risked being lost unless the user remembered to explicitly start the spec workflow and re-explain everything from scratch. Now the assistant proactively notices the moment, offers to capture it, and — if accepted — drafts the spec from what's already been discussed instead of asking the same questions again. How aggressively this triggers is a per-project policy (via `spec_trigger_threshold`), since some teams want even small fixes to go through a lightweight spec while others only want it for substantial new features.
+
+## Deviations from the plan
+
+None in the three phases' own scope (config field; installer plumbing; instruction content) — all acceptance criteria for all three phases passed as designed.
+
+One necessary aside surfaced during Phase 1.1's verification, outside this plan's own component list: full-repo `go test ./...` revealed pre-existing stale tests in `cmd/` and `templates/`, left over from the immediately-prior commit's intentional change to the spec workflow's `new()` step (it now stops at `"new"` instead of auto-advancing to `"overview"`, specifically so the agent can write `.spektacular/context.md` before proceeding — a deliberate, correct behavior, not a bug). Five tests in `cmd/root_test.go` and `cmd/spec_test.go` still expected the old auto-advance behavior, and `templates/context_directive_test.go` expected the spec workflow's first step template to carry a generic context-refresh marker it doesn't need (it has its own bespoke, more detailed context-writing instruction instead). These were fixed to get a clean verification gate before continuing — recorded here since the touched files sit outside this plan's own component list, though the fixes themselves were test-only.
+
+One correction to the plan's own predictions: `context.md`'s Phase 1.3 technical detail anticipated needing to update Phase 1.2's test fixture strings to match the real instruction content. This turned out unnecessary — `spec_trigger_test.go` uses its own independent in-memory template fixture (mirroring how the cloned `memory_context_test.go` already worked), not the real `templates/agents/spec-trigger.md` body, so the real content change in Phase 1.3 required zero test changes.

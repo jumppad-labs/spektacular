@@ -1,5 +1,6 @@
 command: go run .
 agent: claude
+spec_trigger_threshold: moderate
 debug:
     enabled: true
 spec:

@@ -1,140 +1,429 @@
-# Context: 000032_spec-workflow-pair-programming-enhancements
+# Context: plan-walkthrough-conversation
 
-## Planning session (plan workflow, restarted 2026-07-09)
+## Problem identified and why it needs solving
 
-The prior plan for this spec was deleted (recoverable at commit `5b502a8`) because its Milestone 2 design was wrong. It proposed passing carried-forward conversation context into the spec workflow via `spec new --data '{"overview":"..."}'` and having step templates read it back with mustache conditionals (`{{#overview}}`). Tracing the actual code path (`overview()` → `writeStep` → `stepkit.WriteStepResult` in `internal/stepkit/stepkit.go`) showed the template `vars` map is built only from `pathVars`/`step`/`title`/`next_step`/`config`/`Extra` — the raw workflow `data` map is never merged in, so `{{overview}}` would always render empty as designed. But more fundamentally, per the user: **this whole mechanism is unnecessary**. The agent already holds the full conversation in its own context/memory. It doesn't need to serialize it through the CLI at all — it can just drive the spec workflow's existing prompts (e.g. the overview step's "ask the user to describe this feature") using what it already knows, presenting a draft to the user for confirmation instead of asking from scratch, and only asking the user when something is genuinely missing or ambiguous.
+Today, the `plan` workflow's `finished` step (`internal/steps/plan/steps.go`,
+`templates/steps/plan/18-finished.md`) ends by printing the three document paths
+(plan.md, context.md, research.md) and telling the agent to inform the user the
+workflow is finished. The user is left to read the documents alone to understand
+and evaluate what was decided.
 
-**Correction for this replan**: context carry-forward should be described as an *agent behavior instruction* (delivered via the same AGENTS.md managed section as the recognition/offer instruction), not a CLI/data-passing mechanism. No new `--data` keys, no mustache conditionals in step templates, no changes to `stepkit.WriteStepResult`. The instruction should tell the agent: when starting the spec workflow after an accepted offer, use the conversation you already had to propose answers for each step's prompts, and ask the user to confirm/refine rather than asking cold.
+The user wants to simulate the process two colleagues would go through when
+discussing a feature: the agent should be able to walk the user through the
+finished plan as a presentation, so the user can either agree with it or request
+changes — fully understanding the plan rather than just being handed file paths.
 
-**Already-shipped code kept as-is**: an earlier phase's implementation (`new()` step in `internal/steps/spec/steps.go` clears `.spektacular/context.md` and returns a write instruction via `templates/steps/spec/00-new.md`) remains valid and useful for the *resume* scenario (interrupted session, agent needs to reload context) — it is not the mechanism for initial carry-forward within a single continuous conversation, and should not be reverted.
+Explicitly **not** the default path: if the user just wants to read the plan
+themselves, they will — this is an *offered alternative* for when a live
+walkthrough is preferred over reading, not a mandatory gate blocking completion.
 
-- Overview step: read spec `000032_spec-workflow-pair-programming-enhancements.md` in full (already done earlier this session — see conversation). Confirmed scope: proactive recognize-and-offer behavior for spec-worthy discussions, configurable threshold, default when unconfigured, context carry-forward on accept, defer vs. decline handling. Non-goals confirm this plan should NOT build a durable changelog/context artifact for docs (separate spec), NOT touch the requirements-gathering interview UX, NOT add plan-workflow acceptance walkthroughs, NOT do cross-session recognition, NOT auto-create specs without explicit acceptance.
-- Discovery step complete. research.md written to `.spektacular/work/000032_spec-workflow-pair-programming-enhancements/research.md`. Three parallel codebase-analyzer agents confirmed: (1) `internal/config/config.go:105-113,116-156,178-192,196-209` gives the exact struct/default/validation pattern to copy from `SpecConfig.IDMethod`; (2) `internal/agent/memory_context.go:17-144` gives the exact installer algorithm to clone for `installSpecTriggerSection`, plus the 6-test coverage shape from `memory_context_test.go`; (3) confirmed directly that `stepkit.WriteStepResult` (`internal/stepkit/stepkit.go:78-85`) never merges `workflow.Data` into template vars, so the original CLI-data-passing carry-forward design was dead on arrival — but more importantly it was solving a non-problem, since the agent already holds the conversation live and just needs to answer existing step prompts from memory with user confirmation. `.spektacular/context.md`-clearing in `new()` (steps.go:64-93) is a separate, still-valid *resume* mechanism (cold session picks up from disk) and stays untouched.
-- Architecture step complete. User confirmed Milestone 1's shape as researched (config field + AGENTS.md managed section, no alternatives needed — codebase conventions dictate the shape). User chose **dynamic threshold read** over init-time-bake: the AGENTS.md instruction tells the agent to read `.spektacular/config.yaml`'s `spec_trigger_threshold` at decision time, not have it rendered in at `spektacular init` time. This means the template does NOT need a `{{threshold}}` mustache variable — only `{{command}}` (if needed at all for CLI invocation prose). architecture.md and conventions.md written (no conventions apply — knowledge base has only category placeholders, consistent with every recent plan).
-- Components step complete. components.md written: 9 components, only 3 genuinely new (config field, spec-trigger instruction template, spec-trigger installer); rest are changed-in-place (per-agent install sequences) or explicitly unchanged/referenced (spec workflow steps, context.md resume behavior, knowledge store).
-- Data structures step complete. data_structures.md written. Only 2 new contracts: the `SpecTriggerThreshold string` config field, and the `installSpecTriggerSection(projectPath string, cfg config.Config, out io.Writer) error` function signature (identical shape to `installMemoryContextSection`). Explicitly no new workflow data keys and no new template variables beyond `{{command}}` — confirms the corrected design introduces no data-passing contract at all for carry-forward.
-- Implementation detail step complete. implementation_detail.md written. Framed the one genuinely new pattern as "instruction prose as the entire behavioral surface" — no Go code branches on discussion-worthiness or offer-state; it's all agent judgment in AGENTS.md prose, consistent with the existing CLI-state-vs-agent-judgment split elsewhere in this codebase (memory-redirect instruction, knowledge-write propose-then-confirm skill).
-- Dependencies step complete. dependencies.md written. No new external deps; depends on specs 000020/000022/000023 (all shipped, no changes needed) and explicitly depends on the existing spec workflow's step templates staying unmodified.
-- Testing approach step complete. testing_approach.md written. Unit tests cover config validation + installer idempotency (mirrors memory_context_test.go's 6-case shape). Integration tests omitted (same rationale as the pattern being cloned). All 3 spec success metrics classified Manual — captured in implementation test plan, since they're all subjective/usage-pattern properties, not deterministic assertions. Manual smoke tests explicitly include verifying the dynamic-threshold-read behavior (config change takes effect without re-init).
-- Milestones step complete, confirmed by user: **single milestone** (not split), since the corrected design is small/coherent enough that config+installer+instruction-content all ship together — none is independently useful. milestones.md written.
-- Phases step complete, confirmed by user: **3 phases** within the single milestone. 1.1 config field (Low), 1.2 installer plumbing with placeholder content (Medium — clones memory_context.go/memory_context_test.go exactly), 1.3 real instruction prose replacing the placeholder (Low). phases_plan.md and phases_context.md written. Important note for the implementer: Phase 1.3 must update Phase 1.2's test fixture string constants (the independent-oracle expected-content strings) since those were written against the placeholder body in 1.2.
-- Open questions step complete: none remain, everything resolved during this planning pass.
-- Out of scope step complete. 5 spec Non-Goals + several architecture-time exclusions (rejected CLI/data-passing carry-forward mechanism, unmodified spec-workflow templates, unmodified context.md resume behavior, rejected runtime-detection command, rejected hardcoded heuristics, rejected init-time-baked threshold, no adherence enforcement). Noted plan 000033 (output changelog) is related-but-distinct and not a dependency.
-- Assemble step complete. Feature slug confirmed: 000032_spec-workflow-pair-programming-enhancements (matches existing spec and deleted-plan directory name). All 3 documents staged to .spektacular/tmp/ (plan_template.md, context_template.md, research_template.md). During assembly, caught and fixed 2 staleness spots in research.md (leftover from before the architecture step's dynamic-threshold-read decision was locked in): Evidence 2 still said the new template needed a `{{threshold}}` variable, and Open Assumption 2 still described the init-time-bake approach as chosen rather than rejected. Both corrected to reflect the dynamic-read decision before staging.
-- Verification step complete. All 25 required sections (11 plan.md + 7 context.md + 7 research.md) present, in order, filled. No shell commands in plan.md. All 3 phase Technical-detail anchors resolve correctly to matching context.md Phase headings. research.md has 13+ file:line citations. No fixes needed — staged documents pass as assembled.
-- write_plan/write_context/write_research steps complete: all 3 documents committed to `.spektacular/plans/000032_spec-workflow-pair-programming-enhancements/` via `plan file write`, scratch files removed, working directory `.spektacular/work/000032_spec-workflow-pair-programming-enhancements/` removed. Plan workflow finished.
+## Requirements agreed (final design from conversation — ready to turn into spec requirements/acceptance criteria)
 
-## Implement workflow session (started 2026-07-09)
+1. **Trigger — offer once, opt in.** After the plan workflow's `finished` step
+   reports the three document paths (unchanged from today), the agent offers
+   once: "Want me to walk you through it, or would you rather read it yourself?"
+   Declining ends the workflow exactly as it does today — no repeated prompting.
+2. **Presentation style — segmented with natural pause points.** If accepted,
+   the agent presents like a colleague giving a walkthrough, not reading the
+   document aloud. Structured in beats with brief pauses between them, roughly:
+   approach & why → phase breakdown → scope boundaries (what's deliberately out).
+   Not a rigid per-phase Q&A gate, but not one unstoppable monologue either — the
+   user can interrupt easily between beats.
+3. **Mid-flow changes — handle inline, then resume.** If the user requests a
+   change at any point during the presentation, the agent discusses it right
+   there, edits the affected plan section(s), recommits through the existing
+   `plan file write` mechanism (confirmed in an earlier conversation — no new
+   FSM step/state for revision, just a normal store write), briefly confirms the
+   update to the user, then resumes the presentation from where it left off,
+   re-summarizing anything that changed as a result of the edit.
+4. **Closing — explicit agreement checkpoint.** After the last beat (scope
+   boundaries), the agent asks directly: "does this look right, good to
+   proceed?" and waits for explicit agreement rather than trailing off. Only
+   once the user agrees is the plan considered settled.
 
-`implement new` started against this plan. `read_plan` step's validation/drift/coverage gate passed cleanly:
+## Alternatives considered and rejected
 
-- Structural validation: all 10 required plan.md sections present, all 3 phases have resolving `context.md` technical-detail anchors.
-- Drift check: a dedicated agent verified all 20 file/line/symbol claims in plan.md and research.md against the current `f-conversational` branch. Result: every referenced function, type, const, test, and template exists under its claimed name — no renames, no missing code. Only trivial (1-8 line) line-number drift in a few places (`steps.go` `new()` off by 2 lines, `cmd/spec.go` a few line-range nuances) — none material enough to require fixing the plan or stopping. One wording nuance noted (not a mismatch): `templates/agents/memory-context.md` is pure static prose with no literal `{{command}}` mustache token in the file itself — the `command` var is passed at render time by `installMemoryContextSection` but this particular template doesn't use it. Worth remembering when writing the new `spec-trigger.md` template in Phase 1.2/1.3: it's fine if it ends up not needing `{{command}}` either, despite the plan mentioning that variable.
-- Spec coverage check: all 7 spec requirements and all 7 acceptance criteria have coverage in plan.md's Milestone 1 description and its 3 phases' acceptance criteria. No gaps, nothing descoped.
-- Changelog mode: no `## Changelog` section exists yet in plan.md — this is a **first-phase invocation**. `analyze` should pick up at Phase 1.1 (the first `#### - [ ]` phase).
+- **Reading the sections aloud in document order** — rejected. A colleague
+  wouldn't recite headings; the user wants a narrative explanation, not a
+  table-of-contents read-through.
+- **Always-on walkthrough (no offer/opt-in)** — rejected. The user was explicit
+  that reading the plan document directly remains the default expectation;
+  the walkthrough is something the agent offers, not something forced.
+- **Strict phase-by-phase gated Q&A** (pause and require explicit sign-off after
+  every single phase before continuing) — considered, but user chose the lighter
+  "segmented with natural pause points" version as a better match for how a real
+  colleague-to-colleague conversation flows; less friction than a hard gate per
+  phase.
+- **Defer all requested changes to the end of the presentation** (collect
+  feedback, apply edits only after the full walkthrough finishes) — considered
+  to avoid re-deriving downstream sections mid-flow, but user chose to handle
+  changes inline immediately when raised, then resume.
+- **Implicit/no closing question** (just end after the last beat, no formal
+  sign-off) — rejected in favor of an explicit closing agreement checkpoint,
+  matching how a real design conversation actually concludes.
 
-Proceeding to `analyze` step next.
+## Prior technical investigation carried forward (from the earlier, now-discarded spec attempt — still valid, not yet chosen)
 
-`analyze` step complete for Phase 1.1 (config field, Low complexity — analyzed directly, no sub-agent delegation needed). Confirmed against current `config.go`:
-- `Config` struct top-level fields at lines 105-113; `NewDefault()` at 116-156 with `Command: "spektacular"` at line 118; top-level `Config.Validate()` at 178-192 (calls `Spec.Validate()`, `Plan.Validate()`, `Changelog.Validate()`, `Knowledge.Validate()` in sequence — new `SpecTriggerThreshold` validation should be inlined directly in this top-level func since the field is top-level, not nested in a sub-config, so there's no separate `Validate()` receiver to add it to).
-- `SpecIDMethod*` const block at lines 14-18 is the exact style to copy for new `SpecTriggerThreshold*` constants.
-- `SpecConfig.Validate()`'s `IDMethod` switch at lines 203-207 is the exact validation shape to copy (case "", literals..., default: error mentioning field name + allowed values).
-- Test file confirms pattern: `TestNewDefault_HasExpectedDefaults` (line 11) uses bare `require.Equal(t, ...)` assertions on `cfg.<Field>` — add one more line for the new field's default. `TestFromYAMLFile_UnknownSpecIDMethodReturnsError` (lines 47-61) is the exact template for the new `TestFromYAMLFile_UnknownSpecTriggerThresholdReturnsError` test (write YAML with the field set to an invalid value at top level, i.e. `spec_trigger_threshold: unsupported`, assert error contains `"spec_trigger_threshold"`).
+The exact **wiring mechanism** for where this lives in the workflow is not yet
+decided and is explicitly left for the plan workflow to resolve, not this spec:
 
-Proceeding to `implement` step next.
+1. Instruction-only extension of `templates/steps/plan/18-finished.md` — no FSM
+   or Go changes; `internal/workflow/state.go`'s `InProgress()` hardcodes the
+   literal string `"finished"` as terminal for all three workflow kinds (spec,
+   plan, implement), so this option touches zero shared code.
+2. New terminal FSM step (e.g. `discuss_plan`) appended after `finished` —
+   structurally possible since `internal/workflow/workflow.go`'s `commitTerminal`,
+   the implicit `"done"` transition, and `NextStepName()` are positional
+   (`steps[len(steps)-1]`), not name-based. The blocker: `state.go:26`'s
+   `InProgress()` would need to become kind-aware (or compare against
+   `steps[len(steps)-1].Name` instead of the magic string `"finished"`) without
+   breaking spec/implement's existing resume-detection behavior.
+3. Not fully explored: a skill-level instruction (in `spek-plan/SKILL.md`)
+   triggered once `finished` reports done, with no CLI step involved at all.
 
-`implement` step complete for Phase 1.1. Code changes in `internal/config/config.go`:
-- New const block `SpecTriggerThresholdStrict/Moderate/Lenient` after the `SpecIDMethod*` block.
-- New top-level `SpecTriggerThreshold string` field on `Config` (yaml `spec_trigger_threshold`), placed after `Agent` and before `Debug`.
-- `NewDefault()` sets `SpecTriggerThreshold: SpecTriggerThresholdModerate`.
-- Validation added as a `switch` at the **top** of `Config.Validate()` (not a separate sub-config `Validate()` method, since the field is top-level, not nested) — accepts `""`/strict/moderate/lenient, else returns `fmt.Errorf("spec_trigger_threshold must be one of %q, %q, or %q", ...)`.
-- `go build ./...` passes clean. No test files touched yet (test step is next).
+This spec should describe the *what* (the four requirements above); the *how*
+(which of the three wiring shapes, or another) belongs to the downstream plan
+workflow's architecture step.
 
-Proceeding to `test` step next.
+## Verification step: fresh-eyes review findings applied
 
-`test` step complete for Phase 1.1. Delegated to a sub-agent per the `follow-test-patterns` skill. `internal/config/config_test.go` modified: added one assertion to `TestNewDefault_HasExpectedDefaults` for the new field's default, and a new `TestFromYAMLFile_UnknownSpecTriggerThresholdReturnsError` test mirroring `TestFromYAMLFile_UnknownSpecIDMethodReturnsError`'s shape exactly. No positive round-trip test added (consistent with sibling `id_method` field not having one). `go test ./internal/config/...` and `go build ./...` both pass.
+An independent subagent reviewed the assembled spec with no conversation context.
+Three findings, all accepted:
 
-Proceeding to `verify` step next.
+- Technical Approach's closing line referenced the spec's own drafting history
+  ("more than one shape was discussed") — reworded to neutral planner guidance.
+- Added a constraint: mid-walkthrough edits must be written to the same plan
+  document the rest of the workflow reads/writes, not a copy or transient state
+  (closes a gap Requirement 4 / AC 4 implied but never stated as a hard rule).
+- Dropped a Non-Goals bullet ("no rigid per-stage sign-off gate") as duplication
+  of Technical Approach's existing phrasing — Technical Approach already states
+  this direction; repeating its inverse in Non-Goals added no new boundary.
 
-`verify` step for Phase 1.1: `internal/config`'s own tests passed immediately, but full-repo `go test ./...` surfaced 3 pre-existing FAILING tests in `cmd/` and 1 in `templates/`, unrelated to the config field. Investigated with the user and found these are **stale tests**, not real bugs:
+Spec committed to `.spektacular/specs/000035_plan-walkthrough-conversation.md`.
 
-- `internal/steps/spec/steps.go`'s `new()` callback was intentionally changed in the immediately-prior commit `5b502a8` ("Add context capture") to stop at step `"new"` instead of auto-advancing straight to `"overview"` — this is deliberate: `00-new.md`'s instruction tells the agent to write context.md *before* advancing, and auto-skipping would have silently skipped that instruction. The tests (`TestSessionLog_AdvancedTrueWhenStateChanges`, `TestSessionLog_AdvancedFalseWhenGotoRepeatsCurrentStep`, `TestSessionLog_SameSessionIDAcrossFoundingAndResumedCalls` in `cmd/root_test.go`; `TestSpecNew_DefaultUsesTimestampPrefix`, `TestSpecNew_ForceStartsFreshOverInProgress` in `cmd/spec_test.go`) were never updated for this intentional behavior change — they still expected `spec new` to land on `"overview"`. Fixed: updated expected step to `"new"`, and where a test chained `goto requirements` directly after `spec new` (invalid now, since `requirements`' `Src` is `["overview"]`, not `["new"]`), inserted an explicit `goto overview` step first.
-- `templates/context_directive_test.go`'s `TestContextDirectivePresent` expected every non-terminal step template to carry the generic "refresh context.md" marker, but `steps/spec/00-new.md` has its own bespoke, more detailed context-writing instruction (predates the generic directive) and was never given the generic marker too. Fixed: added a `exemptFromContextDirective` map in the test explicitly excluding `steps/spec/00-new.md`, with a comment explaining why, and adjusted the floor-count assertion from 30 to 29.
+## Plan workflow status
 
-**Important for future phases/sessions**: this fix was a **necessary aside**, not part of plan 000032's own scope (config field / AGENTS.md installer / instruction prose) — it's cleaning up test drift left by the immediately-prior commit on this branch. `go build ./...`, `go vet ./...`, and `go test ./...` are now all green. Files touched beyond the plan's own scope: `cmd/root_test.go`, `cmd/spec_test.go`, `templates/context_directive_test.go` (test-only changes, no production code touched by this aside).
+Now planning against this spec via `go run . plan new --data '{"name":
+"000035_plan-walkthrough-conversation"}'`. Discovery is done; research.md
+written to `.spektacular/work/000035_plan-walkthrough-conversation/research.md`.
 
-Proceeding to `update_plan` step next.
+**Wiring decision resolved during discovery** (was left open in the spec):
+Option 1 — instruction-only extension of `templates/steps/plan/18-finished.md`
+(line 26, the "Inform the user that the plan workflow is finished..." sentence)
+— confirmed as the correct approach. Option 2 (new terminal FSM step) is ruled
+out: `internal/workflow/state.go:25-27`'s `InProgress()` hardcodes the literal
+string `"finished"` as terminal for all three workflow kinds, so a step after
+it would break resume detection without a shared-code change. Option 3
+(skill-only, no template change) is ruled out: `SKILL.md` is Claude-Code-only,
+the template reaches every agent surface driving the CLI. Also need a small
+consistency addition to `.claude/skills/spek-plan/SKILL.md` (lines 20-22)
+so the skill's "report completion" framing doesn't skip past the new offer.
 
-`update_plan` step complete for Phase 1.1: Phase 1.1 heading and all 4 acceptance criteria checked off (`[x]`) in plan.md via `plan file write`, since all 4 passed verification. No deviations to note.
+Direct precedent found: spec 000032's own Non-Goals explicitly names this
+exact feature ("Adding a user-acceptance walkthrough to the plan workflow's
+verification step — a separately identified gap, not addressed here") and
+that plan's finished shape (pure instruction prose, zero FSM/Go changes,
+modeled on `installMemoryContextSection`'s AGENTS.md pattern) is the direct
+structural template for this plan's own Architecture/Testing Approach
+sections — see plan 000032's plan.md and research.md.
 
-Proceeding to `update_changelog` step next.
+Mid-walkthrough edits reuse the exact same `plan file write <name>/plan.md
+--from <scratch>` mechanism the workflow itself already uses (confirmed via
+`cmd/plan_file.go` — standalone CLI command, not FSM-gated) — no new write
+path needed, satisfying the spec's "same document, not a copy" constraint
+by construction.
 
-`update_changelog` step complete for Phase 1.1: first invocation, so created the `## Changelog` section after `## Out of Scope` and added the Phase 1.1 entry (what was done, deviations — the stale-test aside — files changed, discoveries — new()'s no-longer-auto-advances behavior and 00-new.md's exemption). Two unchecked phases remain (1.2, 1.3), so looping back to `analyze` for Phase 1.2.
+One open assumption flagged for the implement workflow to double check:
+the offer belongs in `18-finished.md` (after all 3 docs are committed to the
+store), not earlier in `14-verification.md` before commit — based on the
+spec's Overview framing ("After Spektacular finishes generating..."). If this
+turns out wrong, STOP and ask before proceeding.
 
-Proceeding to `analyze` step next (Phase 1.2).
+## Architecture step: user confirmed
 
-`analyze` step complete for Phase 1.2 (installer plumbing, Medium complexity — analyzed directly in main context since the reference implementation was already fully read; sub-agent delegation wasn't needed for a read-only confirmation pass). Read `internal/agent/memory_context.go` and `memory_context_test.go` in full (both exactly as research.md described, no drift): the algorithm to clone is `installMemoryContextSection` (read embedded template via `fs.ReadFile(sourceFS, path)` → `mustache.Render` with `{"command": cfg.Command}` → ensure trailing newline → create/append/replace against `AGENTS.md` via `locateMemoryContextSection`/`appendMemoryContextSection`/`replaceMemoryContextSection` → `writeAGENTSAtomic`/`writeFileAtomic`). Confirmed call sites exactly: `claude.go:25` (`if err := installMemoryContextSection(...); err != nil { return err }` after skills, before `ensureClaudeImportsAGENTS`), `codex.go:17` (tail return), `bob.go:20` (tail return after skills + command wrappers). Test file has exactly 6 tests using a `fixtureMemoryFS()` helper (`fstest.MapFS` with a `{{command}}`-templated fixture) and a shared `withSourceFS(t, fsys)` helper (in `agent_test.go:30`) that swaps the package-level `sourceFS` var for the test's duration. Plan for Phase 1.2: create `internal/agent/spec_trigger.go` (installer clone, new heading `## Spec-Worthy Discussion Recognition`, new template path `agents/spec-trigger.md`), `templates/agents/spec-trigger.md` (placeholder body per Phase 1.2's scope — Phase 1.3 replaces it), `internal/agent/spec_trigger_test.go` (6 mirrored tests), and one new call added to each of claude.go/codex.go/bob.go's `Install()` right after their existing `installMemoryContextSection` call.
+User confirmed the recommended option: extend `18-finished.md` + small
+`SKILL.md` consistency edit, zero FSM/Go changes (see the 3-option
+AskUserQuestion — chose "Extend 18-finished.md template (Recommended)" over
+the new-FSM-step and skill-only alternatives). Architecture section and
+Conventions section ("no conventions apply", user-confirmed) written to their
+working files.
 
-Proceeding to `implement` step next (Phase 1.2).
+## Components step: user confirmed
 
-`implement` step complete for Phase 1.2. New files: `internal/agent/spec_trigger.go` (structural clone of `memory_context.go` — `installSpecTriggerSection`, `locateSpecTriggerSection`, `appendSpecTriggerSection`, `replaceSpecTriggerSection`, reusing the existing `writeAGENTSAtomic`/`writeFileAtomic` helpers rather than duplicating them, since those aren't heading-specific), `templates/agents/spec-trigger.md` (placeholder body, heading `## Spec-Worthy Discussion Recognition`, `{{command}}` mustache var matching the memory-context template's pattern for consistency even though Phase 1.2 doesn't use it in the placeholder text — Phase 1.3 will decide if the real prose needs it). Wired one call to `installSpecTriggerSection` into each of `claude.go`, `codex.go`, `bob.go`'s `Install()`, immediately after their existing `installMemoryContextSection` call, matching the existing sequential-error-check style in each file. `go build ./...`, `go vet ./...`, and `go test ./templates/... ./internal/agent/...` all pass. No test files touched yet (test step is next — will mirror all 6 `memory_context_test.go` cases into a new `spec_trigger_test.go`).
+Four components (finished-step instruction changed; spek-plan skill file
+changed; plan document write path reused unchanged; FSM unchanged) confirmed
+by user as-is, no edits requested.
 
-Proceeding to `test` step next (Phase 1.2).
+## Data structures step
 
-`test` step complete for Phase 1.2. Delegated to a sub-agent. New file `internal/agent/spec_trigger_test.go` with 6 tests mirroring `memory_context_test.go` exactly (CreatesFromMissing, AppendsAfterTesslBlock, IsIdempotent, PreservesSurroundingContent, PicksUpTemplateChange, CrossAgentIdempotency), using its own `fixtureSpecTriggerFS()`/`fixtureSpecTriggerRenderedDefault` (reusing the shared `withSourceFS` helper). CrossAgentIdempotency additionally verifies the joint claude→codex→bob install leaves exactly one of EACH managed heading (`## Memory & Context` and `## Spec-Worthy Discussion Recognition`), not just the new one — genuinely useful since this phase is the first time two managed sections install together. Full suite (`go build`, `go vet`, `go test ./...`) green.
+No new data structures/interfaces — pure prose feature, confirmed no Go types,
+no new workflow.Data keys, no new template variables. Straightforward enough
+not to pause for a separate confirmation round.
 
-Proceeding to `verify` step next (Phase 1.2).
+## Implementation detail step: user confirmed
 
-`verify` step complete for Phase 1.2: full suite already confirmed green in the main context (`go build ./...`, `go vet ./...`, `go test ./...` all pass) immediately after the test step, so no separate sub-agent verification pass was needed.
+Sketch confirmed as-is: 5-part instruction shape (offer once; loose beats —
+approach/reasoning, stages, scope boundaries — not a rigid gate; handle
+interruptions directly; apply changes inline via existing write path then
+resume; explicit closing agreement question). No Go changes, template +
+SKILL.md prose only.
 
-Proceeding to `update_plan` step next (Phase 1.2).
+## Dependencies step
 
-`update_plan` step complete for Phase 1.2: Phase 1.2 heading and all 5 acceptance criteria checked off in plan.md. No deviations.
+No external libs, no Go package changes, no prior-plan blockers — all
+referenced prior specs (000020, 000022, 000023, 000032) already shipped.
+Objective/low-risk list.
 
-Proceeding to `update_changelog` step next (Phase 1.2).
+## Testing approach step: user confirmed
 
-`update_changelog` step complete for Phase 1.2: appended entry under the existing `## Changelog` section. One unchecked phase remains (1.3), so looping back to `analyze`.
+No automated tests (prose-only feature, no code path exists to test) — manual
+smoke tests cover all 5 acceptance criteria, mirroring spec 000032's
+precedent. Spec has no Success Metrics defined; acceptance criteria serve as
+the de facto verification targets instead. User confirmed. Proceeding to
+milestones step.
 
-Proceeding to `analyze` step next (Phase 1.3).
+Note: earlier in this session, a background Explore agent
+(abd58fc5e2cb49634) spawned during discovery to double-check the finished-step
+FSM facts never returned/completed before a session interruption — this did
+not block progress since the same facts (InProgress() hardcoding "finished",
+the finished() callback, Steps() list, SKILL.md content) were already
+confirmed directly via Read/Bash and are captured in research.md. No need to
+resume that agent; safe to ignore/let it be cleaned up.
 
-`analyze` step complete for Phase 1.3 (prose-only, Low complexity — analyzed directly). Read the current placeholder `templates/agents/spec-trigger.md` and `internal/agent/spec_trigger_test.go`. **Important correction to context.md's Phase 1.3 prediction**: context.md's technical-detail note said "Phase 1.3 ... updates Phase 1.2's expected-content fixture strings to match the real instruction prose" — this does NOT apply. `spec_trigger_test.go` (written in Phase 1.2) uses its OWN independent in-memory fixture FS (`fixtureSpecTriggerFS`/`fixtureSpecTriggerRenderedDefault`), exactly mirroring how `memory_context_test.go` uses `fixtureMemoryFS` rather than asserting against the real `memory-context.md` content. Only `TestInstallSpecTriggerSection_CrossAgentIdempotency` touches the real `templates.FS`, and it only counts headings, never asserts body text. So **Phase 1.3 requires zero test changes** — purely a content edit to `templates/agents/spec-trigger.md`. Confirmed via `01-overview.md` read in full: the exact "ask the user to describe this feature" prompt this plan's carry-forward instruction needs to reference behaviorally (not by editing it).
+## Milestones step: user confirmed
 
-Proceeding to `implement` step next (Phase 1.3).
+Single milestone (matching spec 000032's shape) covering the whole feature —
+user confirmed, no split requested.
 
-`implement` step complete for Phase 1.3. Replaced `templates/agents/spec-trigger.md`'s placeholder with full instruction prose covering, in order: recognition criteria, reading `spec_trigger_threshold` live at decision time (with strict/moderate/lenient interpreted as relative sensitivity, not baked-in numbers), the propose-then-confirm offer, the three outcomes (accept/defer/decline) with decline being final for that topic, and the carry-forward behavior (start `spec new`, answer existing step prompts from conversation, propose drafts, still require user confirmation). Confirmed all 4 acceptance criteria are textually satisfied. No Go/test changes needed (confirmed in `analyze`) — `go build`, `go vet`, `go test ./...` all pass unchanged, confirming the test suite genuinely doesn't touch real template body content.
+## Phases step: user confirmed
 
-Proceeding to `test` step next (Phase 1.3 — expected to be a no-op given the analysis above, but following the workflow's step sequence).
+Two sequential phases: 1.1 the finished-step template's full walkthrough
+instruction (offer, beats, interruption/change handling, closing gate),
+1.2 the SKILL.md consistency edit (runs after 1.1 so it can reference the
+actual offer text just written). User confirmed as-is.
 
-`test` step complete for Phase 1.3: no new test cases added, per the plan's own Testing Approach ("Phase 1.3 does not add new test cases... updates fixture strings") and confirmed by direct analysis that the fixture strings don't actually need updating (Phase 1.2's tests use an independent fixture FS, not the real template). No sub-agent delegated since there was no code to test. Phase 1.2's existing 6 tests continue to pass unchanged and remain the coverage for this template's installer mechanics.
+## Open questions step
 
-Proceeding to `verify` step next (Phase 1.3).
+None remain — every design decision was resolved during planning (see list
+in open_questions.md working file). Straightforward/objective outcome;
+proceeding to out_of_scope step without a separate confirmation round.
 
-`verify` step complete for Phase 1.3: full suite already confirmed green in main context (`go build ./...`, `go vet ./...`, `go test ./...` all pass) right after the content change, so no separate sub-agent verification pass was needed.
+## Out of scope step: user confirmed
 
-Proceeding to `update_plan` step next (Phase 1.3).
+Pulled from spec's Non-Goals (verbatim recitation, deferred-batch changes,
+cross-session memory) + rejected architecture alternatives (new FSM step,
+skill-only instruction, persisted offer-flag) + 2 explicit boundary notes
+(read-directly path untouched; not extending to spec/implement workflows).
+User confirmed as-is.
 
-`update_plan` step complete for Phase 1.3: Phase 1.3 heading and all 4 acceptance criteria checked off. No deviations. Also appended the Phase 1.3 changelog entry in the same edit pass (staged file was already open). All 3 phases of the plan's single milestone are now complete.
+## All content sections complete — ready to assemble
 
-Proceeding to `update_changelog` step next (Phase 1.3) — changelog entry already written; this call should find no unchecked phases remain and advance to `update_repo_changelog`.
+All 9 working files written and user-confirmed: architecture.md,
+conventions.md, components.md, data_structures.md, implementation_detail.md,
+dependencies.md, testing_approach.md, milestones.md, phases_plan.md +
+phases_context.md, open_questions.md, out_of_scope.md. Plus research.md from
+discovery.
 
-`update_changelog` step confirmed complete: all Phase 1.3 changelog work (entry + FINAL SUMMARY) was written in the prior step's combined edit. No unchecked phases remain (all 3 phases of the single milestone checked off). Advancing to `update_repo_changelog`.
+## Assemble step complete
 
-Proceeding to `update_repo_changelog` step next.
+Metadata gathered: commit ca60a2b11d2cf6424f2f294b7725813ff41db72d, branch
+f-conversational, repo git@github.com:jumppad-labs/spektacular.git, created
+2026-07-10T09:05:57Z. All three documents assembled from working files and
+staged to `.spektacular/tmp/{plan_template,context_template,research_template}.md`.
+Nothing written to the plan store yet.
 
-`update_repo_changelog` step complete. Found an existing `## 000032_spec-workflow-pair-programming-enhancements` section in `CHANGELOG.md`, but NOT at the top (000034's section was above it) — it described only the already-shipped context.md-capture behavior (commit 5b502a8), not this plan's config/AGENTS.md feature. Asked the user how to reconcile the duplicate-header risk; chose to replace the existing entry in place (same location, not moved to top) with an expanded summary covering both the recognize-and-offer feature this plan delivered AND the pre-existing context-capture behavior, since both share the same plan slug/number.
+## Verification step complete
 
-Proceeding to `test_plan` step next.
+All 11 plan.md sections, 7 context.md sections, 7 research.md sections
+present, in order, non-empty (checked via grep + line-count spot-check).
+Phase 1.1/1.2 anchors in plan.md match context.md's heading slugs exactly.
 
-`test_plan` step complete. Wrote 5 concrete manual procedures grounded in the real implementation (references actual file paths: `templates/agents/spec-trigger.md`, `templates/steps/spec/01-overview.md`, real CLI commands like `go run . init claude`) covering: recognition/offer timing, threshold configurability (strict vs lenient, live-read verification), carry-forward drafting, defer-vs-decline distinction, and out-of-repo scoping. Added an "ongoing dogfooding signal" section for the two usage-pattern success metrics that aren't a one-time procedure. Written to `.spektacular/plans/000032_spec-workflow-pair-programming-enhancements/test-plan.md` via `plan file write`.
+## write_plan step complete
 
-Proceeding to `update_feature_changelog` step next.
+plan.md committed to store, scratch file removed.
 
-`update_feature_changelog` step complete. Wrote a durable, self-contained changelog record to the changelog store (`000032_spec-workflow-pair-programming-enhancements.md`) covering what was built, why it matters (drawn from the spec's overview), and deviations (the stale-test aside from Phase 1.1, and the corrected fixture-independence assumption from Phase 1.3) — grounded entirely in the plan's own `## Changelog` phase entries rather than re-deriving from original intent.
+## write_context step complete
 
-Proceeding to `finished` step next.
+context.md committed to store, scratch file removed.
 
-**Note**: `implement goto --data '{"step":"finished"}'` was rejected — a new `reconcile_spec` step now exists between `update_feature_changelog` and `finished` in the implement FSM. This is plan 000034 (spec-plan-implement-reconciliation)'s work, already landed on this branch (its own context.md is visible in this same file's history/git-blame territory, but as a separate feature — not something this session implemented). The `spek-implement` skill's own static instructions are stale relative to the actual FSM; followed the CLI's `next_action` guidance instead of the skill's hardcoded step name.
+## write_research step complete
 
-`reconcile_spec` step complete: read the spec's 7 Requirements + 7 Acceptance Criteria checkboxes (all were unchecked) and judged each against the plan's `## Changelog` phase entries. All 14 are genuinely satisfied by what was built (config field for threshold/default/configurability; AGENTS.md instruction for recognition/offer/carry-forward/defer/decline) — flipped all to `[x]`. Reconciled spec written via `spec file write`.
+research.md committed to store, scratch file removed, working directory
+`.spektacular/work/000035_plan-walkthrough-conversation` deleted (no longer
+needed — all three documents are now durably in the plan store). Proceeding
+to finished step.
 
-Proceeding to `finished` step next.
+## Implement workflow: analyze step complete (Phase 1.1)
+
+Current phase: 1.1 ("Add the walkthrough offer and conversational
+instructions to the `finished` step"), first unchecked phase in plan.md.
+Technical detail confirmed at context.md#phase-11. Low complexity — did
+analysis directly, no sub-agent delegation needed. Confirmed via direct read
+that `templates/steps/plan/18-finished.md` still matches the plan/research
+exactly (27 lines, `{{^plan_incomplete}}` branch lines 17-27, insertion point
+at line 26's closing sentence). No new template variables needed —
+`{{config.command}}` and `{{plan_name}}` are the only ones the new prose
+requires, both already rendered. No mismatches found. Proceeding to
+`implement` step to write the phase.
+
+## Implement workflow: implement step complete (Phases 1.1 and 1.2)
+
+Both phases written in one pass (both Low complexity, no code, pure prose):
+
+- Phase 1.1: extended `templates/steps/plan/18-finished.md`'s
+  `{{^plan_incomplete}}` branch (was line 26's single closing sentence) with
+  the full 5-part walkthrough instruction — offer once, 3 paced beats
+  (approach/reasoning, stage breakdown, scope boundaries), interruption
+  handling, inline change application via the existing
+  `plan file write {{plan_name}}/plan.md --from <scratch>` command, and an
+  explicit-affirmative closing gate. No new mustache variables/sections used
+  (only pre-existing `{{plan_path}}`, `{{config.command}}`, `{{plan_name}}`).
+- Phase 1.2: added one sentence to `.claude/skills/spek-plan/SKILL.md` line 20
+  (the "report completion" line) clarifying that reporting completion
+  includes presenting the `finished` instruction's offer and conducting the
+  walkthrough if accepted — not summarizing and stopping short.
+
+`go build ./...` passes (expected — no `.go` files touched). Diff scope
+confirmed limited to exactly these two files for this phase's work. Proceeding
+to `test` step next (no automated tests are added per the plan's Testing
+Approach — expect that step to confirm manual-smoke-test-only and move on).
+
+## Implement workflow: test step complete (no tests to write)
+
+Confirmed via `git diff --name-only -- '*.go'` that zero `.go` files changed
+by Phases 1.1/1.2's work — matches the plan's Testing Approach ("No automated
+tests are added by this plan... no Go code, no new function, no new branch,
+no new data contract exists for a unit or integration test to exercise").
+No sub-agent delegated; nothing for a test-writing agent to act on. Manual
+smoke tests (per plan.md's Testing Approach) are the sole verification
+mechanism and will be exercised at the `verify` step. Proceeding to `verify`.
+
+## Implement workflow: verify step complete — all green
+
+Ran directly (Low complexity, no sub-agent needed): `make test` (all packages
+pass, including `internal/steps/plan` — existing FSM-order tests unaffected
+since they don't assert on rendered template prose) and `make lint` (clean).
+Confirmed via `internal/steps/plan/steps_test.go` that no test asserts on
+`18-finished.md`'s content, so template prose is free to change without
+breaking coverage — expected, since prose isn't a data contract.
+
+Manual smoke test: rendered `18-finished.md`'s success branch with sample
+mustache values (substituting `{{config.command}}`, `{{plan_name}}`, etc.) to
+confirm the walkthrough offer prose reads naturally and covers Phase 1.1's
+5 acceptance criteria (offer-once, 3-beat narrative structure, interruption
+handling, inline change application via `plan file write`, explicit-agreement
+close). Uses only pre-existing mustache variables/sections — no new ones —
+so the production render path (`cbroglie/mustache` via
+`stepkit.RenderTemplate`), already exercised by existing passing tests,
+covers this template unchanged.
+
+Proceeding to `update_plan` to check off Phase 1.1 and Phase 1.2's checkboxes
+in plan.md.
+
+## Implement workflow: update_plan step complete
+
+Checked off both phase headings (`#### - [x] Phase 1.1`, `#### - [x] Phase
+1.2`) and all 8 acceptance criteria across both phases (6 for 1.1, 2 for 1.2)
+— all verified passing in the `verify` step. Committed via `plan file write
+000035_plan-walkthrough-conversation/plan.md --from
+.spektacular/tmp/plan_update.md`, scratch file removed. Confirmed via `plan
+file read` that both checkboxes landed correctly. No criteria left unchecked
+— every acceptance criterion for both phases was satisfied by the prose
+added to `18-finished.md` and `SKILL.md`. Proceeding to `update_changelog`.
+
+## Implement workflow: update_changelog step complete
+
+Created the `## Changelog` section (first invocation for this plan) at the
+end of plan.md and appended two entries in one pass, matching how both
+phases were implemented together: Phase 1.1 (the `18-finished.md` walkthrough
+instruction) and Phase 1.2 (the `SKILL.md` consistency sentence). Both marked
+"Deviations: None" — implementation matched context.md's technical notes
+exactly. Re-read plan.md and confirmed zero `#### - [ ] Phase` (unchecked)
+headings remain — this was the last phase. Proceeding to
+`update_repo_changelog` for the repo-level release-note summary.
+
+## Implement workflow: update_repo_changelog step complete
+
+Prepended a new `## 000035_plan-walkthrough-conversation` section to the top
+of repo-root `CHANGELOG.md` (above the existing `## 000034_...` section) with
+a 4-sentence user-facing summary — no file paths or package names, focused on
+the behavior change (offer, walkthrough structure, inline edits, explicit
+close, unchanged read-directly path). Matches the format of all prior entries
+in the file. Proceeding to `test_plan`.
+
+## Implement workflow: test_plan step complete (none required)
+
+Plan's Testing Approach defines no success metrics (spec has none; acceptance
+criteria substitute), so wrote the explicit "none required" artifact to
+`000035_plan-walkthrough-conversation/test-plan.md` via `plan file write`,
+noting the manual smoke tests were already run in `verify`. Confirmed via
+`plan file read`. Proceeding to `update_feature_changelog`.
+
+## User's exact phrasing for the key requirement
+
+"Yeah so what I would like to simulate is the process between two colleagues
+discussing a feature. Let's figure out a good process for this. The aim is that
+I the user fully understand your plan so that I can either agree with it or
+request changes."
+
+"It should be like a presentation, If I just wanted to read through I would read
+the plan, which the user would most likely do, but when asked if the user wants
+a walk through it should be presentation style, at each point the user can stop
+and ask questions, this may change the plan."
+
+## Implement workflow: read_plan step complete
+
+Started `go run . implement new --data '{"name":
+"000035_plan-walkthrough-conversation"}'`. Read plan.md, context.md,
+research.md in full. Structural validation passed (all 10 required `## `
+sections present; 2 phases, each with a `*Technical detail:*` link resolving
+to a matching `### Phase N.M:` heading in context.md). Drift check passed
+against the working tree with zero mismatches — every referenced file/line
+(`templates/steps/plan/18-finished.md` 27 lines exactly as described,
+`.claude/skills/spek-plan/SKILL.md` lines 20-22, `internal/steps/plan/steps.go`
+lines 28-48 and 277-299, `internal/workflow/state.go` lines 25-27,
+`cmd/plan_file.go`) matches the plan/research documents verbatim, including
+line numbers. Spec coverage check passed: all 5 requirements and 5 acceptance
+criteria in the spec map to Phase 1.1 (offer, narrative beats, interruption
+handling, immediate change application, explicit-agreement close) or Phase 1.2
+(SKILL.md consistency); no gaps, no descoping needed. No `## Changelog`
+section exists in plan.md yet — this is a first-phase invocation; the
+`update_changelog` step will create the section on first use. Proceeding to
+`analyze` step, which will pick up at Phase 1.1 (the first `#### - [ ]` phase).
+
+## Implement workflow: update_feature_changelog step complete
+
+Authored a self-contained changelog record (What was built / Why it matters
+/ Deviations: None) drawing on the spec's Overview and the plan's own
+Changelog section (both already in context from earlier steps). Committed to
+the changelog store via `go run . changelog file write
+000035_plan-walkthrough-conversation.md --from .spektacular/tmp/changelog_record.md`,
+scratch file removed, confirmed via `changelog file read`. Proceeding to
+`finished` — the terminal step. All phases complete; implementation done.
+
+## Implement workflow: reconcile_spec step complete
+
+The skill's stated next step after `update_feature_changelog` was stale
+(`finished`) — the CLI's actual FSM required `reconcile_spec` first (from
+plan 000034, landed after this skill file). Followed the CLI's
+`invalid_transition` error and `next_action` field rather than the skill's
+text. Judged all 5 spec Requirements and 5 Acceptance Criteria against the
+plan's Changelog entries (both phases: Deviations: None) — all 10 genuinely
+satisfied by the delivered prose (offer-once, narrative structure,
+interruption handling, immediate change application, explicit-agreement
+close). Flipped all 10 checkboxes to `[x]`, committed via `spec file write
+000035_plan-walkthrough-conversation.md --from .spektacular/tmp/spec_reconcile.md`,
+confirmed via `spec file read`. Proceeding to `finished`.
+
+## Implement workflow: FINISHED — terminal state reached
+
+Reached the `finished` step. All work complete:
+- Both phases (1.1, 1.2) implemented and checked off in plan.md.
+- Plan's inline `## Changelog` has both phase entries (Deviations: None).
+- Repo `CHANGELOG.md` has the user-facing release note.
+- Feature changelog record written to `.spektacular/changelog/000035_plan-walkthrough-conversation.md`.
+- Spec fully reconciled — all 10 Requirements/Acceptance-Criteria checkboxes
+  flipped to `[x]`, nothing left unchecked or descoped.
+
+No further `goto` — this is the terminal state. Reporting completion to the
+user next.

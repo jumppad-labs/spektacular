@@ -148,6 +148,18 @@ func TestInstallSpecTriggerSection_CrossAgentIdempotency(t *testing.T) {
 	memoryContextCount := strings.Count(string(body), "## Memory & Context")
 	require.Equal(t, 1, memoryContextCount, "exactly one Memory & Context heading expected, got %d in:\n%s", memoryContextCount, body)
 
+	draftPresentationCount := strings.Count(string(body), "## Presenting Drafts and Confirmations")
+	require.Equal(t, 1, draftPresentationCount, "exactly one Presenting Drafts and Confirmations heading expected, got %d in:\n%s", draftPresentationCount, body)
+
+	// Headings must appear in the order Memory & Context -> Spec-Worthy
+	// Discussion Recognition -> Presenting Drafts and Confirmations.
+	memoryContextIdx := strings.Index(string(body), "## Memory & Context")
+	specTriggerIdx := strings.Index(string(body), "## Spec-Worthy Discussion Recognition")
+	draftPresentationIdx := strings.Index(string(body), "## Presenting Drafts and Confirmations")
+	require.True(t, memoryContextIdx < specTriggerIdx && specTriggerIdx < draftPresentationIdx,
+		"expected heading order Memory & Context (%d) < Spec-Worthy Discussion Recognition (%d) < Presenting Drafts and Confirmations (%d) in:\n%s",
+		memoryContextIdx, specTriggerIdx, draftPresentationIdx, body)
+
 	// Each agent's skill directory should still be present, confirming the
 	// shared AGENTS.md write did not displace any earlier per-agent install.
 	for _, dir := range []string{".claude/skills/spek-new", ".agents/skills/spek-new", ".bob/skills/spek-new"} {

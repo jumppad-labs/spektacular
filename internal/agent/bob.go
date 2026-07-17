@@ -20,7 +20,10 @@ func (bobAgent) Install(projectPath string, cfg config.Config, out io.Writer) er
 	if err := installMemoryContextSection(projectPath, cfg, out); err != nil {
 		return err
 	}
-	return installSpecTriggerSection(projectPath, cfg, out)
+	if err := installSpecTriggerSection(projectPath, cfg, out); err != nil {
+		return err
+	}
+	return installHistoricalArtifactsSection(projectPath, cfg, out)
 }
 
 func bobCommandFilename(skillName string) string {

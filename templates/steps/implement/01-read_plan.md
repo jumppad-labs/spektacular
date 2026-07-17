@@ -4,7 +4,7 @@ This step is the **validation and drift gate** for the implement workflow. Nothi
 
 ### Step 1: Full plan read
 
-Read the three plan documents **in full** through the plan store. The plan documents are owned by spektacular — always read them with `{{config.command}} plan file read`, never with the `Read` tool, which bypasses the CLI:
+Read the three plan documents **in full** through the plan store. The plan documents are the implement workflow's own live artifact — this workflow owns them while it is actively running, which is why reading them here fits the AGENTS.md "specs and plans are historical" rule rather than breaking it. The plan documents are owned by spektacular — always read them with `{{config.command}} plan file read`, never with the `Read` tool, which bypasses the CLI:
 
 ```
 {{config.command}} plan file read {{plan_name}}/plan.md

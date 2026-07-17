@@ -124,29 +124,29 @@ No integration or end-to-end tests are added. The unit tests over the installer 
 
 **Validation point.** Running `spektacular init` in a fresh temp directory writes an `AGENTS.md` that contains exactly one instance of the new managed section, with the rule prose rendered against the configured command name. Running it again in the same directory produces byte-identical output. Running each of the three registered agents' full `Install()` paths in sequence into the same directory converges on a single instance of the section. `make test` and `make lint` pass, with the new installer's six-case unit-test set green alongside the existing two installers' test suites.
 
-#### - [ ] Phase 1.1: Author the Historical Artifacts template and its installer
+#### - [x] Phase 1.1: Author the Historical Artifacts template and its installer
 
 Add the third `AGENTS.md`-managed section to the codebase: a Markdown template file carrying the rule prose (heading, managed-by disclaimer, rule body with archaeology and owning-workflow exceptions), a Go install function that reads the template from the embedded FS and writes it into `AGENTS.md` idempotently, and a test file that mirrors the six-case shape used by the two prior installers. The template and installer are added together because neither is meaningful without the other, and the tests exercise the installer against the real embedded template so the full write path is covered end-to-end within the phase.
 
 *Technical detail:* [context.md#phase-11](./context.md#phase-11-author-the-historical-artifacts-template-and-its-installer)
 
 **Acceptance criteria**:
-- [ ] The template file exists under `templates/agents/` and carries the same structural shape as the other two managed-section templates (heading, managed-by disclaimer blockquote, rule body).
-- [ ] The installer function exists in the `internal/agent` package and reuses the shared `writeAGENTSAtomic` / `writeFileAtomic` helpers rather than re-implementing them.
-- [ ] The six-case unit test set for the new installer (create-from-missing, append-after-tessl-block, idempotent, preserves-surrounding-content, picks-up-template-change, cross-agent-idempotency) is present and green.
-- [ ] `make test` and `make lint` pass.
+- [x] The template file exists under `templates/agents/` and carries the same structural shape as the other two managed-section templates (heading, managed-by disclaimer blockquote, rule body).
+- [x] The installer function exists in the `internal/agent` package and reuses the shared `writeAGENTSAtomic` / `writeFileAtomic` helpers rather than re-implementing them.
+- [x] The six-case unit test set for the new installer (create-from-missing, append-after-tessl-block, idempotent, preserves-surrounding-content, picks-up-template-change, cross-agent-idempotency) is present and green.
+- [x] `make test` and `make lint` pass.
 
-#### - [ ] Phase 1.2: Wire the installer into all three registered agents
+#### - [x] Phase 1.2: Wire the installer into all three registered agents
 
 Add a single call to the new installer inside each of the Claude, Bob, and Codex agent `Install()` methods, slotted in alongside the existing calls to `installMemoryContextSection` and `installSpecTriggerSection`. The wiring order preserves existing behaviour: the new call runs as one more managed-section installer, and Claude's `ensureClaudeImportsAGENTS` continues to run last so `CLAUDE.md`'s `@AGENTS.md` import remains intact. After this phase, running `spektacular init` in a fresh repo lands the new section automatically; re-running it converges without duplication.
 
 *Technical detail:* [context.md#phase-12](./context.md#phase-12-wire-the-installer-into-all-three-registered-agents)
 
 **Acceptance criteria**:
-- [ ] Each of the three agent `Install()` methods calls the new installer exactly once.
-- [ ] Running each agent's full `Install()` path in sequence against the same temp directory produces exactly one instance of the new section in `AGENTS.md`.
-- [ ] The existing cross-agent idempotency tests for `Memory & Context` and `Spec-Worthy Discussion Recognition` remain green (proving the new call did not disturb prior sections).
-- [ ] `make test` and `make lint` pass.
+- [x] Each of the three agent `Install()` methods calls the new installer exactly once.
+- [x] Running each agent's full `Install()` path in sequence against the same temp directory produces exactly one instance of the new section in `AGENTS.md`.
+- [x] The existing cross-agent idempotency tests for `Memory & Context` and `Spec-Worthy Discussion Recognition` remain green (proving the new call did not disturb prior sections).
+- [x] `make test` and `make lint` pass.
 
 ### Milestone 2 — The two step templates whose existing wording could look contradictory read consistently with the new rule
 
@@ -154,18 +154,18 @@ Add a single call to the new installer inside each of the Claude, Bob, and Codex
 
 **Validation point.** Both edited step templates render cleanly under the existing template loader (no mustache errors, no forbidden instruction-surface patterns introduced), and reading each template top-to-bottom the treatment of specs and plans is internally consistent with the AGENTS.md rule shipped in Milestone 1. `make test` and `make lint` pass, and the existing `TestEmbeddedTemplatesAvoidStdinInstructionSurface` guard remains green.
 
-#### - [ ] Phase 2.1: Reframe the read instructions in the two affected step templates
+#### - [x] Phase 2.1: Reframe the read instructions in the two affected step templates
 
 Update the plan workflow's discovery step so its instruction to read prior plans and specs is framed as *historical archaeology in service of new-plan research*, not as current-state discovery. Update the implement workflow's read-plan step so its initial read of the plan documents and spec is framed as the *owning workflow reading its own live artifact* — the exception the AGENTS.md rule explicitly permits. Both are prose-only edits; no CLI commands, template variables, or workflow transitions change.
 
 *Technical detail:* [context.md#phase-21](./context.md#phase-21-reframe-the-read-instructions-in-the-two-affected-step-templates)
 
 **Acceptance criteria**:
-- [ ] Reading `templates/steps/plan/02-discovery.md` top-to-bottom, the prior-plans/specs read reads as historical archaeology in service of new-plan research and does not appear to contradict the AGENTS.md rule.
-- [ ] Reading `templates/steps/implement/01-read_plan.md` top-to-bottom, the initial plan/spec read reads as the owning workflow's own live artifact and does not appear to contradict the AGENTS.md rule.
-- [ ] No new template variables, CLI commands, or workflow transitions are introduced by either edit.
-- [ ] The existing `TestEmbeddedTemplatesAvoidStdinInstructionSurface` guard remains green.
-- [ ] `make test` and `make lint` pass.
+- [x] Reading `templates/steps/plan/02-discovery.md` top-to-bottom, the prior-plans/specs read reads as historical archaeology in service of new-plan research and does not appear to contradict the AGENTS.md rule.
+- [x] Reading `templates/steps/implement/01-read_plan.md` top-to-bottom, the initial plan/spec read reads as the owning workflow's own live artifact and does not appear to contradict the AGENTS.md rule.
+- [x] No new template variables, CLI commands, or workflow transitions are introduced by either edit.
+- [x] The existing `TestEmbeddedTemplatesAvoidStdinInstructionSurface` guard remains green.
+- [x] `make test` and `make lint` pass.
 
 ### Milestone 3 — The changelog entry that ships with this feature flags the website-documentation follow-up so it is not lost
 
@@ -173,7 +173,7 @@ Update the plan workflow's discovery step so its instruction to read prior plans
 
 **Validation point.** The written changelog artifact under `.spektacular/changelog/` for this feature contains a clearly-identifiable sentence flagging the "process document, not product document" concept for future website-documentation work, verifiable by reading the file directly.
 
-#### - [ ] Phase 3.1: Ship the website-documentation follow-up note in the feature's changelog entry
+#### - [x] Phase 3.1: Ship the website-documentation follow-up note in the feature's changelog entry
 
 When the implement workflow reaches its `update_feature_changelog` step for this feature, the per-feature changelog entry it writes under `.spektacular/changelog/` must explicitly state that the "process document, not product document" concept should be added to the user-facing website documentation in a future update. The step template itself is unchanged; the requirement is prose content in the written entry, called out here so the note is neither buried in the code-changes milestones nor lost when the spec's checkboxes close.
 
@@ -201,3 +201,56 @@ There are no impl-time-only uncertainties. Every design question this plan raise
 - **Changes to the remaining implement-workflow read sites.** Only `templates/steps/implement/01-read_plan.md` receives a framing clarifier. The other implement-workflow steps that read specs or plans (`02-analyze`, `06-update_plan`, `07-update_changelog`, `09-test_plan`, `10-update_feature_changelog`, `11-reconcile_spec`, `12-finished`) are deliberately left untouched — they inherit the owning-workflow framing from the first step and from `AGENTS.md`, and per-step clarifiers would add maintenance surface without extending coverage.
 
 - **A new "who owns this artifact right now" runtime signal.** No code-level ownership tracking, workflow-state field, or CLI flag is introduced to enforce the owning-workflow exception. The exception is behaviourally self-evident because only the owning workflow reaches for `spec file` / `plan file` CLI commands during its run; that is enough for the prose enforcement model chosen here.
+
+## Changelog
+
+### 2026-07-17 — Phase 1.1: Author the Historical Artifacts template and its installer
+
+**What was done**: Added a third `AGENTS.md`-managed section covering "specs and plans are historical archaeology, not current-state docs" with the archaeology-on-user-intent and owning-workflow-live-artifact exceptions. New Markdown template at `templates/agents/historical-artifacts.md`, new Go installer at `internal/agent/historical_artifacts.go` mirroring `internal/agent/memory_context.go` case-for-case (constants + install + locate/append/replace helpers, all reusing the shared `writeAGENTSAtomic` and `writeFileAtomic` writers), and new test file at `internal/agent/historical_artifacts_test.go` covering the same six cases as the two prior installers.
+
+**Deviations**: None from the phase's own scope. See Phase 1.2's entry for the co-landing note.
+
+**Files changed**:
+
+- `templates/agents/historical-artifacts.md` (new)
+- `internal/agent/historical_artifacts.go` (new)
+- `internal/agent/historical_artifacts_test.go` (new)
+
+**Discoveries**: The six-case shape borrowed from `memory_context_test.go` includes a cross-agent idempotency test that exercises all three registered agents' real `Install()` paths. That test cannot go green until the installer is wired into `claude.go`, `bob.go`, and `codex.go` — i.e. until Phase 1.2. Since Phase 1.1's own acceptance criterion requires "the six-case unit test set is present and **green**", Phase 1.1 cannot honestly close without Phase 1.2 landing in the same iteration. See Phase 1.2's entry for how this was resolved.
+
+### 2026-07-17 — Phase 1.2: Wire the installer into all three registered agents
+
+**What was done**: Added a single call to `installHistoricalArtifactsSection` inside each of the Claude, Bob, and Codex agent `Install()` methods, slotted in after the existing `installSpecTriggerSection` call. For Claude, the new call sits before `ensureClaudeImportsAGENTS` so `CLAUDE.md`'s `@AGENTS.md` import continues to run last. For Bob and Codex, the terminal `return installSpecTriggerSection(...)` was reshaped into a guarded call followed by `return installHistoricalArtifactsSection(...)`, matching Claude's existing per-installer-guarded pattern.
+
+**Deviations**: Landed together with Phase 1.1 in a single implement iteration under Auto Mode. Phase 1.1's cross-agent idempotency test requires the wire-in to be present to go green, so splitting the two phases into separate iterations would leave Phase 1.1's own acceptance criterion visibly unmet at close. Both checkboxes were ticked in the same `update_plan` write.
+
+**Files changed**:
+
+- `internal/agent/claude.go`
+- `internal/agent/bob.go`
+- `internal/agent/codex.go`
+
+**Discoveries**: None. `make test` and `make lint` both green after the co-landing; all six new tests pass alongside every existing agent-package test.
+
+### 2026-07-17 — Phase 2.1: Reframe the read instructions in the two affected step templates
+
+**What was done**: Prose-only reframing of two existing step-template read instructions so they read consistently with the new `## Historical Artifacts` rule shipped by Phase 1.1. In `templates/steps/plan/02-discovery.md`, the "Prior research" bullet under Step 2 now opens with an explicit framing sentence: prior plans and specs are historical archaeology explaining *why* past decisions were made, not descriptions of what the codebase does today, and are consulted here to inform the new plan — not to derive current-state behaviour. In `templates/steps/implement/01-read_plan.md`, the Step-1 read instruction now leads with a one-sentence acknowledgment that the plan documents are the implement workflow's own live artifact — the owning-workflow exception the AGENTS.md rule explicitly permits — before the existing "read them through the plan store" instruction.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `templates/steps/plan/02-discovery.md`
+- `templates/steps/implement/01-read_plan.md`
+
+**Discoveries**: The `TestEmbeddedTemplatesAvoidStdinInstructionSurface` guard in `internal/agent/instruction_surface_test.go:33-48` walks `templates/steps/` and rejects a fixed set of forbidden stdin/heredoc CLI patterns; both new sentences respect that surface (no new CLI patterns, no stdin references), so the guard stays green with no test authoring. No template variables, CLI commands, or workflow transitions were added or removed by either edit — the changes are purely narrative.
+
+### 2026-07-17 — Phase 3.1: Ship the website-documentation follow-up note in the feature's changelog entry
+
+**What was done**: Zero code, template, or configuration changes were made in this phase — by design. Phase 3.1 exists to make it an explicit, tracked acceptance requirement that the per-feature changelog entry authored by the later `update_feature_changelog` step (step 10 of the implement workflow) contains a clearly-identifiable sentence flagging the "process document, not product document" concept for future website-documentation work. The phase's actual output ships when `update_feature_changelog` writes the entry under `.spektacular/changelog/`; the sentence will be placed in the "What was built" or "Why it matters" section — somewhere a reader scanning the entry lands on it — and verified as content on the shipped artifact.
+
+**Deviations**: The phase's three acceptance criteria all reference the shipped changelog artifact, which does not yet exist at this update_plan invocation. Only the phase's own `#### - [ ] Phase 3.1:` heading was ticked to `- [x]`; the three acceptance-criterion checkboxes were left `- [ ]` and will be ticked by hand once `update_feature_changelog` writes the entry with the note in place. This preserves the "only tick if verified" invariant while still advancing the workflow past the phase-loop counter, which counts `#### - [ ] Phase` headings (not per-AC checkboxes).
+
+**Files changed**: None in this phase. The actual file that will change — `.spektacular/changelog/<n>_<name>.md` — is authored later by `update_feature_changelog`.
+
+**Discoveries**: The reconciliation step (`reconcile_spec`, step 11) reads the plan's accumulated Changelog record and matches against spec-level requirements/ACs, so the spec's own AC #9 ("Changelog entry contains the documentation follow-up note") will be ticked based on the entry produced by `update_feature_changelog`, not based on Phase 3.1's per-AC checkboxes. Leaving those unchecked here does not block spec reconciliation.

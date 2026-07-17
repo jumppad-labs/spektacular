@@ -24,28 +24,28 @@ Establish a clear rule for agents working in this repository: historical specifi
 -->
 ## Requirements
 
-- [ ] **Specs and plans are treated as historical, not current**
+- [x] **Specs and plans are treated as historical, not current**
   Agents recognize that files in the specs and plans stores describe past intent behind changes, not current-state behavior of the codebase, and never cite them as authoritative for what the codebase does today.
 
-- [ ] **Agents do not read specs or plans during general codebase discovery**
+- [x] **Agents do not read specs or plans during general codebase discovery**
   When exploring the codebase, searching for features, or answering questions about current behavior, agents do not open spec or plan files through any available channel.
 
-- [ ] **Historical archaeology is the only allowed reason to read a spec or plan**
+- [x] **Historical archaeology is the only allowed reason to read a spec or plan**
   Agents may read a historical spec or plan only when the user is investigating why a past change was made the way it was, and never in service of describing what the codebase currently does.
 
-- [ ] **The rule applies everywhere agents operate, not just inside specific workflows**
+- [x] **The rule applies everywhere agents operate, not just inside specific workflows**
   The guidance binds every agent operating in the repository — during ad-hoc questions, unrelated skills, and general exploration — not only when a workflow step happens to touch on spec/plan handling.
 
-- [ ] **Agents ground current-state answers in code**
+- [x] **Agents ground current-state answers in code**
   When asked what the codebase does today, agents derive the answer from source files, tests, and configuration — not from spec or plan documents that may describe features that were reshaped or never shipped.
 
-- [ ] **The rule is durably communicated so agents encounter it without being prompted**
+- [x] **The rule is durably communicated so agents encounter it without being prompted**
   The rule is captured somewhere every agent working in this repository picks up automatically, so users do not have to restate it in each session.
 
-- [ ] **Specs and plans are operational only within their active workflow**
+- [x] **Specs and plans are operational only within their active workflow**
   A spec or plan is a live, authoritative artifact only while the workflow that owns it is actively driving it. During that time, the workflow itself must read and update the artifact; outside of that window — after completion, or by any agent that isn't the owning workflow — the artifact is historical and subject to the same rules as any other historical spec/plan.
 
-- [ ] **The changelog entry flags the concept for future website documentation**
+- [x] **The changelog entry flags the concept for future website documentation**
   The changelog note that ships with this change explicitly calls out that the "process document, not product document" concept should also be added to the user-facing website documentation in a future update, so the follow-up is not lost when this spec closes.
 
 <!--
@@ -73,31 +73,31 @@ Establish a clear rule for agents working in this repository: historical specifi
 -->
 ## Acceptance Criteria
 
-- [ ] **Agent describes current-state features by citing code**
+- [x] **Agent describes current-state features by citing code**
   In a fresh session, when asked "how does feature X work?", the agent's response cites paths under source, test, or configuration directories — not paths under `.spektacular/specs/` or `.spektacular/plans/`.
 
-- [ ] **No spec/plan reads during discovery-flavored tasks**
+- [x] **No spec/plan reads during discovery-flavored tasks**
   During a session where the user asks the agent to explore, summarize, or explain the codebase with no historical intent expressed, the agent's tool-call log contains no read of any file under `.spektacular/specs/` or `.spektacular/plans/`, nor any `spec file read` / `plan file read` invocation.
 
-- [ ] **Historical questions unlock spec/plan access**
+- [x] **Historical questions unlock spec/plan access**
   When the user explicitly asks "why was X built this way?" or a similar historical/intent question, the agent then reads the relevant spec or plan and cites it as historical context for the past decision — not as a description of current behavior.
 
-- [ ] **The rule persists outside workflow steps**
+- [x] **The rule persists outside workflow steps**
   When the agent is not inside a spec/plan/implement workflow step (e.g., ad-hoc questions, unrelated skills, general exploration), the same restriction on spec/plan reading still applies, verifiable by prompting the agent in a session where no such workflow is active.
 
-- [ ] **Current-state answers cite code artifacts**
+- [x] **Current-state answers cite code artifacts**
   When asked "what does the codebase do today?", the agent's response cites paths under source, test, or configuration directories, and does not cite any file under `.spektacular/specs/` or `.spektacular/plans/`.
 
-- [ ] **A fresh agent session already knows the rule**
+- [x] **A fresh agent session already knows the rule**
   In a fresh agent session started in the repository, the agent already knows the rule without any user prompt — verifiable by asking the agent to summarize the rule and receiving an accurate answer.
 
-- [ ] **Workflow may access its own live artifact**
+- [x] **Workflow may access its own live artifact**
   During an actively running spec, plan, or implement workflow, the owning workflow successfully reads and updates the artifact it owns without violating the rule.
 
-- [ ] **Completed workflow artifacts do not appear in current-state answers**
+- [x] **Completed workflow artifacts do not appear in current-state answers**
   After a workflow closes, any agent session asked "what does this feature do?" answers from code and does not cite the completed spec or plan.
 
-- [ ] **Changelog entry contains the documentation follow-up note**
+- [x] **Changelog entry contains the documentation follow-up note**
   The changelog entry that ships with this change contains an explicit note that the "process document, not product document" concept should be added to the user-facing website documentation in a future update.
 
 <!--

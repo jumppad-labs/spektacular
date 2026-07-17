@@ -23,7 +23,10 @@ func (codexAgent) Install(projectPath string, cfg config.Config, out io.Writer) 
 	if err := installDiscoveryGroundingSection(projectPath, cfg, out); err != nil {
 		return err
 	}
-	return installDraftPresentationSection(projectPath, cfg, out)
+	if err := installDraftPresentationSection(projectPath, cfg, out); err != nil {
+		return err
+	}
+	return installHistoricalArtifactsSection(projectPath, cfg, out)
 }
 
 func init() {

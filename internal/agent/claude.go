@@ -34,6 +34,9 @@ func (claudeAgent) Install(projectPath string, cfg config.Config, out io.Writer)
 	if err := installDraftPresentationSection(projectPath, cfg, out); err != nil {
 		return err
 	}
+	if err := installHistoricalArtifactsSection(projectPath, cfg, out); err != nil {
+		return err
+	}
 	return ensureClaudeImportsAGENTS(projectPath, out)
 }
 

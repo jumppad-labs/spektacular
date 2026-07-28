@@ -8,7 +8,7 @@ description: Create a new Plan from an approved Specification.
 
 # What this skill does
 
-This skill drives a **multi-step interactive workflow** that produces a complete implementation plan in `.spektacular/plans/<name>.md` from an existing spec. The workflow is owned by the `{{command}}` CLI, not by you — the CLI is the state machine and you are the executor.
+This skill drives a **multi-step interactive workflow** that produces a complete implementation plan — the assembled `plan.md`, `context.md`, and `research.md` documents committed to the plan store — from an existing spec. The workflow is owned by the `{{command}}` CLI, not by you — the CLI is the state machine and you are the executor, and the CLI (not the filesystem) is how you reach every plan document.
 
 On each turn, the CLI returns JSON containing an `instruction` field. That instruction describes exactly one step (e.g. discovery, data structures, phases, testing approach, …). You must:
 
@@ -39,7 +39,7 @@ The working sidecar `.spektacular/context.md` (at the repo's `.spektacular/` roo
 
 # How to start
 
-Ask the user which spec to plan against before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
+Ask the user which spec to plan against before proceeding. To enumerate the available specs, run `{{command}} spec file list` — the CLI's list is the source of truth for what counts as a spec. **Do not** use `ls`, `find`, or the `Read` tool against `.spektacular/specs/` to discover specs; those bypass Spektacular's configured spec directory and may show entries the CLI does not consider valid. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 Start the plan workflow by running:
 

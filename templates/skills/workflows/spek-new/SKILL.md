@@ -54,7 +54,7 @@ This reads the project's single workflow state and changes nothing on disk. One 
 
 Only once you know there is no workflow to resume:
 
-Ask the user for a spec name now. Then run:
+Ask the user for a spec name now. If the user needs to see what names already exist to avoid collisions, run `{{command}} spec file list` — **do not** use `ls`, `find`, or the `Read` tool against `.spektacular/specs/`; the CLI's list is the source of truth for what counts as a spec. Then run:
 
 ```
 {{command}} spec new --data '{"name": "<spec_name>"}'

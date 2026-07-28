@@ -8,7 +8,7 @@ description: Create a new Plan from an approved Specification.
 
 # What this skill does
 
-This skill drives a **multi-step interactive workflow** that produces a complete implementation plan in `.spektacular/plans/<name>.md` from an existing spec. The workflow is owned by the `go run .` CLI, not by you — the CLI is the state machine and you are the executor.
+This skill drives a **multi-step interactive workflow** that produces a complete implementation plan — the assembled `plan.md`, `context.md`, and `research.md` documents committed to the plan store — from an existing spec. The workflow is owned by the `go run .` CLI, not by you — the CLI is the state machine and you are the executor, and the CLI (not the filesystem) is how you reach every plan document.
 
 On each turn, the CLI returns JSON containing an `instruction` field. That instruction describes exactly one step (e.g. discovery, data structures, phases, testing approach, …). You must:
 
@@ -17,7 +17,7 @@ On each turn, the CLI returns JSON containing an `instruction` field. That instr
 3. When the step is complete, run the `goto` command named at the bottom of the instruction to advance the state machine.
 4. Read the next `instruction` from the new JSON response and repeat.
 
-**This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user. Reporting completion includes presenting whatever offer the `finished` instruction contains — e.g. an offer to walk the user through the finished plan conversationally — and, if accepted, conducting that walkthrough. Don't summarize the instruction and stop short of actually presenting it.
+**This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user.
 
 **Concretely: do not stop after `plan new`.** That command only starts the workflow — it returns the *first* instruction (the `overview` step), not a finished plan. Seeing a clean JSON response with no `error` is not a signal to stop; it is the signal to keep going. Reporting success, summarizing "plan initialized," or handing control back to the user at this point is the single most common way this skill is executed incorrectly — do not do it.
 
@@ -39,7 +39,7 @@ The working sidecar `.spektacular/context.md` (at the repo's `.spektacular/` roo
 
 # How to start
 
-Ask the user which spec to plan against before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
+Ask the user which spec to plan against before proceeding. To enumerate the available specs, run `go run . spec file list` — the CLI's list is the source of truth for what counts as a spec. **Do not** use `ls`, `find`, or the `Read` tool against `.spektacular/specs/` to discover specs; those bypass Spektacular's configured spec directory and may show entries the CLI does not consider valid. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 Start the plan workflow by running:
 

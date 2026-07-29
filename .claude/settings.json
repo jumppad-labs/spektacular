@@ -12,7 +12,12 @@
       "Bash(sort -t_ -k1 -n)",
       "Bash(grep -n \"write\\\\|Write\\\\|spec file\" /home/nicj/code/github.com/jumppad-labs/spektacular/templates/spec-steps/*.md)",
       "Bash(gh pr *)",
-      "Bash(GIT_EDITOR=true git rebase --continue)"
+      "Bash(GIT_EDITOR=true git rebase --continue)",
+      "Bash(ls /home/nicj/code/github.com/jumppad-labs/../daggerverse 2>&1; echo \"---\"; find /home/nicj/code/github.com/jumppad-labs/daggerverse -maxdepth 1 2>&1)",
+      "Read(//home/nicj/code/github.com/**)",
+      "Bash(dagger --help)",
+      "Bash(dagger update *)",
+      "Bash(dagger functions *)"
     ],
     "additionalDirectories": [
       "/home/nicj/code/github.com/nicholasjackson/spektacular",

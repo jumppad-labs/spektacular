@@ -43,3 +43,11 @@ This rule applies everywhere you operate in the repository, not only
 inside spec, plan, or implement workflow steps. It binds ad-hoc
 questions, unrelated skills, and general exploration alike. Users
 should not have to restate it in each session.
+
+More broadly, the rest of `.spektacular/` — knowledge entries,
+`context.md`, changelog records — is generated output *about* the
+codebase, not the codebase itself. A broad grep or file scan run to
+understand current-state behavior should treat all of `.spektacular/`
+as out of scope, the same way it treats `.spektacular/specs/` and
+`.spektacular/plans/` above, unless the task explicitly concerns specs,
+plans, or knowledge.

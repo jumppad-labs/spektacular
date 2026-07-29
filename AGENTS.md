@@ -96,3 +96,23 @@ This rule applies everywhere you operate in the repository, not only
 inside spec, plan, or implement workflow steps. It binds ad-hoc
 questions, unrelated skills, and general exploration alike. Users
 should not have to restate it in each session.
+
+More broadly, the rest of `.spektacular/` — knowledge entries,
+`context.md`, changelog records — is generated output *about* the
+codebase, not the codebase itself. A broad grep or file scan run to
+understand current-state behavior should treat all of `.spektacular/`
+as out of scope, the same way it treats `.spektacular/specs/` and
+`.spektacular/plans/` above, unless the task explicitly concerns specs,
+plans, or knowledge.
+
+## Presenting Drafts and Confirmations
+
+> Managed by `go run . init` — edit `templates/agents/draft-presentation.md`
+> in the Spektacular source, not this section in place. Hand edits will not
+> survive the next init.
+
+When you have drafted substantial content for the user to review — an architecture write-up, a set of options, a written section, a summary, a plan or spec excerpt — always present that draft as normal, readable chat text first, in full. Never embed the draft itself inside a structured yes/no or multiple-choice dialog element: that kind of UI truncates or compresses long text, making it hard for the user to actually read what you're proposing.
+
+Once the draft has been shown in full as plain text, you may then ask a short, direct confirmation question — e.g. "does this look right, or should anything change?" — using a structured yes/no or multiple-choice element if one is available. That confirmation step comes strictly after the content has already been presented as text, and is never a substitute for showing it.
+
+This rule applies across every workflow step that follows a draft-then-confirm pattern — spec, plan, and implement workflows alike — not just one. If a specific step's own instructions don't repeat this explicitly, this standing rule still applies.

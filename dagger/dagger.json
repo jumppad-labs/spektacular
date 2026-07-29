@@ -8,12 +8,12 @@
     {
       "name": "brew",
       "source": "https://github.com/jumppad-labs/daggerverse/brew@main",
-      "pin": "d949672adab8fe692916f8e08e885b45bb53502c"
+      "pin": "5b338912a8399e911cff305425aba338df35c320"
     },
     {
       "name": "checksum",
       "source": "https://github.com/jumppad-labs/daggerverse/checksum@main",
-      "pin": "45014437f1e4b2474e632a7daf14e5aa8744680f"
+      "pin": "5b338912a8399e911cff305425aba338df35c320"
     },
     {
       "name": "deb",
@@ -28,7 +28,7 @@
     {
       "name": "jumppad",
       "source": "https://github.com/jumppad-labs/daggerverse/jumppad@main",
-      "pin": "49c310ce1df9ba68278458e0d09ea4324db45cea"
+      "pin": "5b338912a8399e911cff305425aba338df35c320"
     },
     {
       "name": "notorize",

@@ -1,3 +1,8 @@
+---
+created_date: "2026-07-28"
+status: in-progress
+---
+
 # Plan: 000037_artifact_metadata
 
 <!-- Metadata -->
@@ -264,69 +269,69 @@ Every metric in the spec's Success Metrics section is carried through here — t
 
 **Validation point.** Run each of the three top-level workflows (spec, plan, implement) end-to-end against a temp store; open the resulting artifacts and confirm each carries frontmatter with a `created_date` matching the run date, `status: completed`, and a `closed_date` matching the run date. Additionally, run a workflow to an intermediate step (short of `finished`) and confirm the same artifacts show `status: in-progress` and no `closed_date`. Existing tests for spec/plan/changelog/implement continue to pass — this milestone is additive, not destructive.
 
-#### - [ ] Phase 1.1: Author the `internal/metadata` package
+#### - [x] Phase 1.1: Author the `internal/metadata` package
 
 Stand up the single Go module that owns the artifact-metadata schema, its YAML on-disk shape, and its invariants. This is the foundation every subsequent phase calls into: it exposes helpers to split a stored artifact into `(frontmatter, body)`, render a struct + body back to the fenced form, and merge caller-supplied field updates into an existing store blob while preserving `created_date`, enforcing the four-value status enum, and stamping `closed_date` on transition. All logic is table-tested against representative inputs — fresh writes, subsequent updates, malformed hand-edited frontmatter, and each status transition.
 
 *Technical detail:* [context.md#phase-11](./context.md#phase-11-author-the-internalmetadata-package)
 
 **Acceptance criteria**:
-- [ ] A new `internal/metadata` package exists with `Split`, `Render`, `Merge`, `UpdateOptions`, `Metadata`, and `Status` symbols publicly available to the rest of the codebase.
-- [ ] `Merge` on an input that already has metadata never re-stamps `created_date`.
-- [ ] `Merge` on an input transitioning from `in-progress` to any closed status stamps `closed_date` exactly once.
-- [ ] `Merge` rejects a status value outside the four-value enum with an actionable error.
-- [ ] `Merge` on an input with malformed frontmatter returns an actionable error rather than silently discarding it.
-- [ ] Unit tests cover fresh-write, subsequent-update, malformed-input, and enum-violation cases, and pass under a caller-injected clock.
+- [x] A new `internal/metadata` package exists with `Split`, `Render`, `Merge`, `UpdateOptions`, `Metadata`, and `Status` symbols publicly available to the rest of the codebase.
+- [x] `Merge` on an input that already has metadata never re-stamps `created_date`.
+- [x] `Merge` on an input transitioning from `in-progress` to any closed status stamps `closed_date` exactly once.
+- [x] `Merge` rejects a status value outside the four-value enum with an actionable error.
+- [x] `Merge` on an input with malformed frontmatter returns an actionable error rather than silently discarding it.
+- [x] Unit tests cover fresh-write, subsequent-update, malformed-input, and enum-violation cases, and pass under a caller-injected clock.
 
-#### - [ ] Phase 1.2: Make the plan scaffold check frontmatter-tolerant
+#### - [x] Phase 1.2: Make the plan scaffold check frontmatter-tolerant
 
 Update the plan workflow's byte-comparison that verifies an agent has not half-written a plan-store sibling. Once the write path in Phase 1.3 begins attaching frontmatter to plan documents, the current byte-for-byte comparison against the rendered scaffold would false-fail on every plan run. This phase narrows the comparison to compare bodies only — a leading frontmatter block on the store side is stripped before the compare — so the check continues to answer the question it was asked without changing its outward behaviour. This must land before Phase 1.3 so the plan workflow does not regress between phases.
 
 *Technical detail:* [context.md#phase-12](./context.md#phase-12-make-the-plan-scaffold-check-frontmatter-tolerant)
 
 **Acceptance criteria**:
-- [ ] The plan workflow's scaffold-verification check treats a store artifact with a leading frontmatter block the same as one without, comparing bodies rather than raw blobs.
-- [ ] A unit test asserts the check returns the same verdict for a bare rendered scaffold and for the same rendered scaffold with a well-formed frontmatter block prepended.
-- [ ] A unit test asserts the check still fails on a body that materially differs from the rendered scaffold, regardless of whether frontmatter is present.
+- [x] The plan workflow's scaffold-verification check treats a store artifact with a leading frontmatter block the same as one without, comparing bodies rather than raw blobs.
+- [x] A unit test asserts the check returns the same verdict for a bare rendered scaffold and for the same rendered scaffold with a well-formed frontmatter block prepended.
+- [x] A unit test asserts the check still fails on a body that materially differs from the rendered scaffold, regardless of whether frontmatter is present.
 
-#### - [ ] Phase 1.3: Attach metadata on every `<kind> file write`
+#### - [x] Phase 1.3: Attach metadata on every `<kind> file write`
 
 Wire the shared CLI write handler that backs `spec file write`, `plan file write`, and `changelog file write` to route its content through the metadata package before touching the store. On a first-ever write the handler stamps `created_date=today`, `status=in-progress` (or a caller-supplied status), and no `closed_date`. On a subsequent write it preserves `created_date` and reflects any status change (stamping `closed_date` iff the transition is into a closed state). A new `--status` flag on the write command carries the caller's chosen status; without it, status is unchanged on updates and defaults to `in-progress` on first writes. Existing tests for the write command continue to pass byte-for-byte in the no-frontmatter/no-flag case only when they are exercised against pre-shipping artifacts; new tests cover the metadata attachment behaviour across the three kinds.
 
 *Technical detail:* [context.md#phase-13](./context.md#phase-13-attach-metadata-on-every-kind-file-write)
 
 **Acceptance criteria**:
-- [ ] Writing a new artifact through `spec file write`, `plan file write`, or `changelog file write` produces a stored file whose top begins with a YAML frontmatter block containing `created_date` set to the current date and `status: in-progress`.
-- [ ] Writing an existing artifact through the same commands preserves the `created_date` it already had.
-- [ ] Writing with `--status completed` on an artifact currently `in-progress` transitions the status and stamps `closed_date` set to the current date.
-- [ ] Writing an existing artifact that has no prior frontmatter is treated as a first write — the artifact gains a metadata block on its next write, and no error is raised.
-- [ ] Integration tests exercise the write behaviour for all three per-kind write commands.
+- [x] Writing a new artifact through `spec file write`, `plan file write`, or `changelog file write` produces a stored file whose top begins with a YAML frontmatter block containing `created_date` set to the current date and `status: in-progress`.
+- [x] Writing an existing artifact through the same commands preserves the `created_date` it already had.
+- [x] Writing with `--status completed` on an artifact currently `in-progress` transitions the status and stamps `closed_date` set to the current date.
+- [x] Writing an existing artifact that has no prior frontmatter is treated as a first write — the artifact gains a metadata block on its next write, and no error is raised.
+- [x] Integration tests exercise the write behaviour for all three per-kind write commands.
 
-#### - [ ] Phase 1.4: Add a metadata-only `<kind> file set-status` subcommand
+#### - [x] Phase 1.4: Add a metadata-only `<kind> file set-status` subcommand
 
 Ship a new subcommand — mirrored under `spec file`, `plan file`, and `changelog file` — that mutates only the frontmatter block of a stored artifact. This is the surface a workflow's terminal step uses (from Phase 1.5) to flip its own artifacts to `completed` without a body rewrite, and the surface a user or a future workflow uses to move a document into `superseded` or `archived` without touching content. The subcommand enforces the same enum validation as the write path and stamps `closed_date` at the transition.
 
 *Technical detail:* [context.md#phase-14](./context.md#phase-14-add-a-metadata-only-kind-file-set-status-subcommand)
 
 **Acceptance criteria**:
-- [ ] `spec file set-status <path> --status <s>`, `plan file set-status <path> --status <s>`, and `changelog file set-status <path> --status <s>` each mutate only the frontmatter block of the target artifact and leave the body byte-identical.
-- [ ] Running `set-status` with a value outside the four-value enum returns an actionable error and does not modify the file.
-- [ ] Running `set-status` on an artifact with no prior frontmatter attaches a block with `created_date=today` and the requested status, and (if the status is a closed value) `closed_date=today`.
-- [ ] Running `set-status` twice with the same value is idempotent — the second call leaves the file unchanged including its `closed_date`.
-- [ ] Integration tests cover each of the three per-kind `set-status` variants.
+- [x] `spec file set-status <path> --status <s>`, `plan file set-status <path> --status <s>`, and `changelog file set-status <path> --status <s>` each mutate only the frontmatter block of the target artifact and leave the body byte-identical.
+- [x] Running `set-status` with a value outside the four-value enum returns an actionable error and does not modify the file.
+- [x] Running `set-status` on an artifact with no prior frontmatter attaches a block with `created_date=today` and the requested status, and (if the status is a closed value) `closed_date=today`.
+- [x] Running `set-status` twice with the same value is idempotent — the second call leaves the file unchanged including its `closed_date`.
+- [x] Integration tests cover each of the three per-kind `set-status` variants.
 
-#### - [ ] Phase 1.5: Wire each workflow to attach on first write and close on finish
+#### - [x] Phase 1.5: Wire each workflow to attach on first write and close on finish
 
 Route the three workflows' write paths and terminal steps through the metadata helper so each workflow owns the lifecycle of the artifacts it produces. In the spec workflow, the scaffold write done by the workflow itself gains metadata (`created_date=today`, `status=in-progress`), and the terminal `finished` step flips the spec to `completed` and stamps `closed_date`. The plan and implement workflows write through the CLI already covered by Phase 1.3, so they need only close their own artifacts at the terminal step — plan closes its three sibling documents, implement closes the test-plan artifact and the changelog entry. After this phase, running any workflow to completion produces artifacts that carry `status: completed` at rest, and no other workflow's artifacts are touched.
 
 *Technical detail:* [context.md#phase-15](./context.md#phase-15-wire-each-workflow-to-attach-on-first-write-and-close-on-finish)
 
 **Acceptance criteria**:
-- [ ] Running the spec workflow to `finished` produces a spec file with `status: completed` and a `closed_date` matching the run date, whose `created_date` matches the run's start date.
-- [ ] Running the plan workflow to `finished` produces `plan.md`, `context.md`, and `research.md` in the plan directory with `status: completed` and matching `closed_date`s.
-- [ ] Running the implement workflow to `finished` produces a `test-plan.md` and a changelog entry with `status: completed` and matching `closed_date`s.
-- [ ] Running any workflow to an intermediate step short of `finished` produces artifacts with `status: in-progress` and no `closed_date`.
-- [ ] A workflow's terminal step does not touch any artifact produced by a different workflow.
+- [x] Running the spec workflow to `finished` produces a spec file with `status: completed` and a `closed_date` matching the run date, whose `created_date` matches the run's start date.
+- [x] Running the plan workflow to `finished` produces `plan.md`, `context.md`, and `research.md` in the plan directory with `status: completed` and matching `closed_date`s.
+- [x] Running the implement workflow to `finished` produces a `test-plan.md` and a changelog entry with `status: completed` and matching `closed_date`s.
+- [x] Running any workflow to an intermediate step short of `finished` produces artifacts with `status: in-progress` and no `closed_date`.
+- [x] A workflow's terminal step does not touch any artifact produced by a different workflow.
 
 ### Milestone 2: Users and agents can list artifacts filtered by metadata
 
@@ -334,32 +339,32 @@ Route the three workflows' write paths and terminal steps through the metadata h
 
 **Validation point.** Seed a temp store with a mix of artifacts across statuses and dates; run per-kind filtered queries and the cross-kind aggregator and confirm each returns exactly the set the filters describe, that intersecting filters (e.g. status *and* a date range) return the intersection rather than the union, and that pre-metadata bare documents are present in unfiltered lists but absent from filtered ones. Additionally, invoke each `file list` command with no flags and confirm the pre-existing output shape is unchanged.
 
-#### - [ ] Phase 2.1: Add filter flags to per-kind `<kind> file list`
+#### - [x] Phase 2.1: Add filter flags to per-kind `<kind> file list`
 
 Extend the shared `list` subcommand — used by `spec file list`, `plan file list`, and `changelog file list` — with five typed cobra flags: `--status`, `--created-after`, `--created-before`, `--closed-after`, `--closed-before`. When any filter flag is set, the command reads each candidate artifact's frontmatter through the metadata package and returns only artifacts whose metadata matches all supplied filters (intersecting, not unioning). Artifacts with no frontmatter (pre-shipping documents) are still returned when no filter is set, but naturally drop out of any filtered query. The output shape gains the metadata fields per entry so the caller does not have to re-read each file to see status.
 
 *Technical detail:* [context.md#phase-21](./context.md#phase-21-add-filter-flags-to-per-kind-kind-file-list)
 
 **Acceptance criteria**:
-- [ ] `spec file list --status in-progress`, `plan file list --status in-progress`, and `changelog file list --status in-progress` each return only artifacts whose stored status matches.
-- [ ] Filtering by a creation-date range with `--created-after` and `--created-before` returns only artifacts whose `created_date` falls inclusively within the range.
-- [ ] Filtering by a closed-date range with `--closed-after` and `--closed-before` returns only artifacts whose `closed_date` falls inclusively within the range.
-- [ ] Combining filter flags in one query returns the intersection — an artifact must satisfy every specified filter to appear.
-- [ ] An unfiltered `<kind> file list` invocation returns the same set of artifacts as before this phase, with metadata fields added per entry where present.
-- [ ] Bare (pre-shipping) artifacts appear in unfiltered lists but do not appear in any list that sets a metadata filter.
+- [x] `spec file list --status in-progress`, `plan file list --status in-progress`, and `changelog file list --status in-progress` each return only artifacts whose stored status matches.
+- [x] Filtering by a creation-date range with `--created-after` and `--created-before` returns only artifacts whose `created_date` falls inclusively within the range.
+- [x] Filtering by a closed-date range with `--closed-after` and `--closed-before` returns only artifacts whose `closed_date` falls inclusively within the range.
+- [x] Combining filter flags in one query returns the intersection — an artifact must satisfy every specified filter to appear.
+- [x] An unfiltered `<kind> file list` invocation returns the same set of artifacts as before this phase, with metadata fields added per entry where present.
+- [x] Bare (pre-shipping) artifacts appear in unfiltered lists but do not appear in any list that sets a metadata filter.
 
-#### - [ ] Phase 2.2: Ship a cross-kind `spektacular artifacts list` aggregator
+#### - [x] Phase 2.2: Ship a cross-kind `spektacular artifacts list` aggregator
 
 Register a new top-level command that lists artifacts across all four covered classes at once. It scans the specs directory, every plan directory (surfacing each of the four sibling documents as its own entry), and the changelog directory; loads each candidate's frontmatter; applies the same five-flag filter set as Phase 2.1; and returns one JSON envelope tagged per-hit with a `kind` discriminant so the caller can attribute results. An additional `--kind` flag narrows the scan to one or more classes at the caller's discretion.
 
 *Technical detail:* [context.md#phase-22](./context.md#phase-22-ship-a-cross-kind-spektacular-artifacts-list-aggregator)
 
 **Acceptance criteria**:
-- [ ] `spektacular artifacts list` with no filters returns one entry per artifact across specs, plan-directory siblings, and changelog entries, each tagged with its `kind`.
-- [ ] Each entry in the result carries `kind`, `name`, `path`, and (where present) `created_date`, `status`, and `closed_date`.
-- [ ] Passing any of the five filter flags applies the same intersection semantics as Phase 2.1, across all classes in a single query.
-- [ ] Passing `--kind plan.context` (or any other class discriminant) narrows the result to only that class.
-- [ ] The command produces the same output shape whether invoked from an empty store or a fully populated one — the envelope's structure does not depend on how many hits it contains.
+- [x] `spektacular artifacts list` with no filters returns one entry per artifact across specs, plan-directory siblings, and changelog entries, each tagged with its `kind`.
+- [x] Each entry in the result carries `kind`, `name`, `path`, and (where present) `created_date`, `status`, and `closed_date`.
+- [x] Passing any of the five filter flags applies the same intersection semantics as Phase 2.1, across all classes in a single query.
+- [x] Passing `--kind plan.context` (or any other class discriminant) narrows the result to only that class.
+- [x] The command produces the same output shape whether invoked from an empty store or a fully populated one — the envelope's structure does not depend on how many hits it contains.
 
 ## Open Questions
 
@@ -389,3 +394,104 @@ Chosen-design exclusions surfaced during the architecture step:
 Deliberately deferred from a strict reading of the spec:
 
 - **The manual `supersede` and `archive` CLI shortcuts.** The user's answer to the plan-phase interview steered v1 toward "schema-only" for these two states, reachable via the metadata-only `set-status` subcommand rather than dedicated verbs. If a future feature needs `spektacular <kind> supersede <old> --by <new>` (which also mutates the newer artifact to reference the older one), it is a follow-up spec.
+
+## Changelog
+
+### 2026-07-28 — Phase 1.1: Author the `internal/metadata` package
+
+**What was done**: Introduced a new Go package `internal/metadata` that owns the artifact-frontmatter schema, its YAML on-disk shape, and its invariants. Exposes `Split`, `Render`, `Merge`, `Metadata`, `Status`, and `UpdateOptions`; internal helpers `validateStatus` and `isClosed` enforce the four-value enum and the closed-status classification. Every write site downstream will route through `Merge` so the schema stays consistent across sites.
+
+**Deviations**: None. The plan's Data Structures section shows `Metadata` with `time.Time` fields; the implementation keeps that public shape and enforces `YYYY-MM-DD` day precision by attaching `MarshalYAML`/`UnmarshalYAML` to `Metadata` with an unexported `yamlShape` intermediate (rather than a public `Date` wrapper type). Same on-disk contract, cleaner public API.
+
+**Files changed**:
+- `internal/metadata/metadata.go` (new) — `Status`, four consts, `Metadata`, `MarshalYAML`/`UnmarshalYAML`, `validateStatus`, `isClosed`.
+- `internal/metadata/frontmatter.go` (new) — `Split`, `Render`.
+- `internal/metadata/merge.go` (new) — `Merge`, `UpdateOptions`.
+- `internal/metadata/metadata_test.go` (new) — table-driven tests for all three functions plus the enum boundary and the injected-clock assertion.
+
+**Discoveries**: `yaml.v3` quotes date-shaped strings when they are typed as `string` in a marshaled struct (e.g. `created_date: "2026-07-01"`). This is a schema-safe choice — the parser round-trips them as strings rather than reinterpreting them as YAML `!!timestamp` values, which is exactly what we want for day precision. Downstream tests should assert on the *value* rather than pin the quoting style. Also: `Metadata.UnmarshalYAML` enforces the enum at parse time, so `Split` on frontmatter with a bogus status returns a wrapped `malformed frontmatter:` error rather than a valid `Metadata` with a bad status — dual enforcement (Split + Merge) is intentional so agents cannot slip a bad status through either surface.
+
+### 2026-07-28 — Phase 1.2: Make the plan scaffold check frontmatter-tolerant
+
+**What was done**: Narrowed `planDocStillScaffold` in `internal/steps/plan/steps.go` so it strips a leading YAML frontmatter block from the stored bytes before comparing to the rendered scaffold. When `metadata.Split` returns a non-nil `*Metadata`, the returned body slice is compared instead of the raw store bytes; otherwise the raw bytes are used unchanged. This preserves the pre-existing verdict semantics on bare artifacts and prevents a false-fail once Phase 1.3 begins attaching frontmatter on write.
+
+**Deviations**: None. Change is exactly what the phase context called for — one helper, one comparison, one new import.
+
+**Files changed**:
+- `internal/steps/plan/steps.go` — imported `internal/metadata`; `planDocStillScaffold` now strips frontmatter via `metadata.Split` before comparison.
+- `internal/steps/plan/planstill_test.go` (new) — table-driven coverage across all three `planDocs` entries: bare scaffold, scaffold-with-frontmatter, filled body without frontmatter, filled body with frontmatter, missing file.
+
+**Discoveries**: `metadata.Split` swallowing its error and falling through to the raw-bytes branch is a deliberate design choice — a malformed frontmatter block that cannot parse should not silently make the check say "not scaffold"; the check answers the narrower question "did the agent commit real content?" so treating unparseable bytes as raw content and letting the downstream write path surface the parse error is the correct layering. If a future phase changes this contract, it should surface the malformed-frontmatter error to the caller.
+
+### 2026-07-28 — Phase 1.3: Attach metadata on every `<kind> file write`
+
+**What was done**: Routed the shared `newStoreFileCmd` write handler through `metadata.Merge` before writing to the store, so `spec file write`, `plan file write`, and `changelog file write` all attach (or update) frontmatter automatically. Added a `--status` flag on the write command, plumbed through a new `metadataOptsForStatus` helper that enum-validates the value and returns an `UpdateOptions` payload. First-writes stamp `created_date=today, status=in-progress`; subsequent writes preserve `created_date`; `--status completed` on an in-progress artifact stamps `closed_date=today`. Bare pre-shipping artifacts are treated as first-writes on their next `<kind> file write`.
+
+**Deviations**: None from plan scope. Adjusted three pre-existing byte-identity assertions in `cmd/file_test.go`, `cmd/plan_file_test.go`, and `cmd/changelog_file_test.go` to strip frontmatter via `metadata.Split` before comparing bodies — the intent of those tests (body preservation) still holds, only the shape assertion moved above the metadata layer.
+
+**Files changed**:
+- `cmd/storefile.go` — imported `internal/metadata`; added `metadataOptsForStatus` helper; wired write handler to read existing store content, call `metadata.Merge`, and write the merged result; added `--status` flag on `write`.
+- `cmd/file_test.go` — updated `TestSpecFileWrite_ResolvesConfiguredDirectory` and `TestSpecFileWrite_PreservesProblematicCharacters` to strip frontmatter before body assertion.
+- `cmd/plan_file_test.go` — same treatment for `TestPlanFileWrite_ResolvesConfiguredDirectory`, `TestPlanFileWrite_PreservesProblematicCharacters`, `TestPlanFileWrite_AcceptsCounterIDPrefix`.
+- `cmd/changelog_file_test.go` — updated `TestChangelogFileWriteRead_RoundTrips` to strip frontmatter from the read output.
+- `cmd/storefile_metadata_test.go` (new) — table-driven Phase 1.3 acceptance tests across all three kinds: fresh-write stamps, existing-artifact preservation, status-flag transition, bare-artifact upgrade, fresh-write-with-closed-status, invalid-status rejection.
+
+**Discoveries**: Cobra flag state on `--status` is *package-global* through the closure-captured `statusFlag` string inside `newStoreFileCmd`. A test that sets `--status` and does not reset it leaks the value into the next `rootCmd.Execute()` call in the same process — hurt one test until the sub-agent added a `resetWriteStatusFlag` helper with `t.Cleanup` to walk `rootCmd.Find([]string{kind, "file", "write"})` and clear the flag. Production is unaffected (each real invocation is a fresh process), but every new test that touches `--status` must reset the flag afterwards. Also: `metadata.Merge` bubbles up as an `output.NewError("metadata_merge_failed", …)` so agents see the actionable error envelope rather than a bare Go error string.
+
+### 2026-07-29 — Phase 1.4: Add a metadata-only `<kind> file set-status` subcommand
+
+**What was done**: Added a `set-status <path>` subcommand to `newStoreFileCmd` so `spec file`, `plan file`, and `changelog file` all expose the same metadata-only transition surface. The handler reuses `validateIDPrefix` (gated by the same `requireID` flag as write), reads the current file, splits out its body via `metadata.Split`, then calls `metadata.Merge(existing, body, opts)` with a required `--status` flag value. On success it emits `{"error": false, "path": "<path>", "status": "<new>", "closed_date": "<if any>"}`. Missing files return `not_found`; a missing `--status` returns `missing_status` (belt-and-braces alongside cobra's `MarkFlagRequired`); an invalid enum value returns `invalid_status`.
+
+**Deviations**: None to the plan. During this phase's own workflow run I discovered a genuine Phase 1.3 bug — repeated `plan file write --from <src>` on a source that already carries a frontmatter block accumulates blocks (the write handler was merging over the raw source bytes, so each round added a fresh block on top of the source's existing one). Fixed by adding `stripLeadingFrontmatterBlocks` in `cmd/storefile.go` which loops `metadata.Split` until no leading block remains, then passes the result as `newBody` to `metadata.Merge`. Idempotency of `<kind> file write` under repeated invocations is now enforced by `TestStoreFileWrite_IdempotentUnderRepeatedWrites`. Also cleaned up the three accumulated frontmatter blocks that this bug had left at the top of this very plan.md.
+
+**Files changed**:
+- `cmd/storefile.go` — added `set-status` subcommand and a `stripLeadingFrontmatterBlocks` helper; write handler now strips source-side frontmatter before Merge to guarantee idempotency.
+- `cmd/storefile_metadata_test.go` — extended with six new set-status acceptance tests (all three kinds via table-driven scaffold) plus `TestStoreFileWrite_IdempotentUnderRepeatedWrites` regression guard; added a `resetSetStatusFlag` helper and a `seedArtifactWithMetadata` helper.
+
+**Discoveries**: The set-status flag has the same cobra package-global state hazard as the write flag; `resetSetStatusFlag` mirrors `resetWriteStatusFlag` and additionally clears the flag's `Changed` bit so `MarkFlagRequired`'s "was set" gate re-arms between tests. The Phase 1.3 idempotency bug surfaced immediately when the implement workflow's own `plan file write` calls started stacking frontmatter blocks on plan.md — the workflow effectively dogfooded its own change into a regression signal in under a minute. Worth remembering for any future feature that adds a file-mutating CLI whose output feeds back into its own input.
+
+### 2026-07-29 — Phase 1.5: Wire each workflow to attach on first write and close on finish
+
+**What was done**: Each of the three top-level workflows now owns the lifecycle of the artifacts it produces. Spec workflow's `new()` routes its scaffold write through `metadata.Merge` so the very first spec write carries `created_date=today, status=in-progress`; its `finished()` calls `metadata.Close(...)` on the spec file when the scaffold check confirms it was written. Plan workflow's `finished()` iterates `planDocs` and closes plan.md / context.md / research.md — gated by the same scaffold check that already surfaced `plan_incomplete=true` warnings. Implement workflow's `finished()` closes both artifacts it owns: `<PlanDir>/<name>/test-plan.md` and `<ChangelogDir>/<name>.md`. A shared `metadata.Close(store, path, status)` helper in the new `internal/metadata/close.go` wraps the read → split → merge → write pattern; it accepts a minimal `StoreReadWriter` interface so `internal/metadata` stays dependency-free from `internal/store`. Spec's `specStillScaffold` also gained the frontmatter-tolerant compare that `planDocStillScaffold` grew in Phase 1.2.
+
+**Deviations**: None. Three parallel agents split the work (one per workflow) plus a single-agent test-writing pass — matches the plan's suggested "2-3 parallel agents" fan-out and shares the choke-point (`metadata.Close`) I authored inline before dispatch.
+
+**Files changed**:
+- `internal/metadata/close.go` (new) — `Close`, `StoreReadWriter` interface.
+- `internal/metadata/close_test.go` (new) — four unit tests for `Close` (transition, bare-artifact upgrade, idempotency, read-error propagation) against an in-file `fakeStore`.
+- `internal/steps/spec/steps.go` — `new()` merges scaffold through metadata; `finished()` closes the spec; `specStillScaffold` strips leading frontmatter before compare.
+- `internal/steps/spec/steps_test.go` — four new callback-level tests.
+- `internal/steps/plan/steps.go` — `finished()` closes all three plan siblings on non-incomplete runs; no other callback changed.
+- `internal/steps/plan/steps_test.go` — three new tests covering close-all, incomplete-gate, no-mutation-when-incomplete.
+- `internal/steps/implement/steps.go` — `finished()` closes test-plan.md and the changelog entry; treats `store.ErrNotFound` as no-op so a skipped test_plan step doesn't crash the terminal transition.
+- `internal/steps/implement/steps_test.go` — two new tests for close-both and skip-missing.
+
+**Discoveries**: The plan workflow's incomplete-doc gate was already tracking scaffold-vs-committed for the `plan_incomplete` warning, so it was the natural signal to reuse for "should we close?" — same predicate, opposite verdict, no new state. This means a plan whose author committed some but not all siblings will *not* have its written siblings closed at finished — that avoids half-completing the metadata lifecycle when the doc set itself is incomplete. `metadata.Close`'s minimal `StoreReadWriter` interface lets tests use a two-line in-memory fake instead of instantiating a `FileStore` on a temp dir; keeps the unit tests genuinely unit-scoped and independent of any store implementation.
+
+### 2026-07-29 — Phase 2.1: Add filter flags to per-kind `<kind> file list`
+
+**What was done**: Grew the shared `<kind> file list` command with five typed cobra flags — `--status`, `--created-after`, `--created-before`, `--closed-after`, `--closed-before` — combinable in a single query with AND semantics. When any filter is active, each candidate is read, its frontmatter split via `metadata.Split`, and only artifacts satisfying every predicate are returned. Bare (no-frontmatter) artifacts drop out of any filtered query but still surface in unfiltered listings. The output shape moved from bare strings (`["a.md","b.md"]`) to structured entries carrying `name`, `path`, and (when metadata is present) `created_date`, `status`, `closed_date`. Directory entries expose only `name` and `path`. Extracted the filter parse/match logic into a new `cmd/artifactfilter.go` so Phase 2.2's cross-kind aggregator can reuse the exact same predicate without duplication.
+
+**Deviations**: None. Output shape change was accompanied by an update to the only in-tree consumer (`cmd/changelog_file_test.go`'s round-trip test) — its assertion was rewritten to accept the new struct-per-entry shape by name-projecting into a `[]string` for the ElementsMatch comparison.
+
+**Files changed**:
+- `cmd/storefile.go` — added five list flags and rewrote the `list` handler to read+filter+emit-structured; delegates filter parsing/matching to `parseListFilter`.
+- `cmd/artifactfilter.go` (new) — `artifactFilter` struct, `active`, `matches`, `parseListFilter`. Owns date-boundary inclusivity semantics and enum validation. Intentionally private to `cmd` since it is glue for the CLI surface, not a domain type.
+- `cmd/artifactfilter_test.go` (new) — 11 unit tests for the filter helper (zero-value inactive, per-filter parse, boundary inclusivity, closed-date filters reject zero closed_date, combined intersection, invalid-status and invalid-date error codes).
+- `cmd/storefile_list_filter_test.go` (new) — 7 integration tests across spec/plan/changelog via a `listFilterFixtures` table plus a plan-specific top-level directory-entry test; introduces a `resetListFilterFlags` helper for the same cobra-global-state hazard the write/set-status tests already contend with.
+- `cmd/changelog_file_test.go` — updated the round-trip test to parse the new struct-per-entry envelope and project a `[]string` of names for the ElementsMatch comparison.
+
+**Discoveries**: The plan directory's top-level `list` returns directory entries (each plan is a sub-folder), not files — the new list handler correctly emits `{name, path}` for those without attempting a frontmatter read. This means `plan file list` at the top level shows plans by folder name, while `plan file list <plan_name>` shows the four sibling docs inside a plan with their metadata. Also: date filters use `time.Time.Before`/`After`, which are strict (not inclusive) — the boundary-inclusive semantics required by the acceptance criteria fall out naturally because a date equals another date is neither Before nor After, so an equal date matches automatically.
+
+### 2026-07-29 — Phase 2.2: Ship a cross-kind `spektacular artifacts list` aggregator
+
+**What was done**: Added a new top-level `spektacular artifacts list` command that scans all three configured store subtrees (specs, plans/<plan>/sibling-docs, changelog) and returns a single JSON envelope `{"artifacts": [...]}` where each entry carries a `kind` discriminant — one of `spec`, `plan.plan`, `plan.context`, `plan.research`, `plan.test-plan`, `changelog` — plus `name`, `path`, and (when metadata is present) `created_date`, `status`, `closed_date`. Reuses the exact `parseListFilter`/`artifactFilter` from Phase 2.1 so the five filter flags carry identical semantics across the per-kind and cross-kind surfaces. A `--kind` flag accepts a comma-separated list of discriminants; invalid values return `invalid_kind`. Missing configured directories are treated as empty (defence-in-depth for fresh workspaces).
+
+**Deviations**: The initial implementation passed an absolute path to `store.FileStore.List`, but that helper internally re-joins its argument with the store root — the aggregator was silently returning empty results in every real scenario. Caught by the Phase 2.2 acceptance tests immediately and fixed inside this phase: the three `append*Artifacts` helpers now pass the store-relative directory (e.g. `cfg.Spec.Config.Directory`, i.e. `"docs/specs"`) to `st.List`. `scanArtifact`'s pre-existing `TrimPrefix(storePath, st.Root()+…)` becomes a no-op on the now-relative path, which is what we want because that relative form is also the desired `path` field.
+
+**Files changed**:
+- `cmd/artifacts.go` (new) — `artifactsCmd`, its `list` subcommand, three `append*Artifacts` helpers, `scanArtifact` helper, `parseKindFlag` helper, kind constants, `planSiblingKinds` map.
+- `cmd/root.go` — registered `artifactsCmd` under the root command.
+- `cmd/artifacts_test.go` (new) — 12 tests: unfiltered/kind/status/date/combined coverage across all classes, bare-artifact handling, empty-store shape, missing-directory tolerance, plus three `parseKindFlag` unit tests.
+
+**Discoveries**: `store.FileStore.List` accepts a store-relative path and internally joins with `root` — passing an absolute path double-joins into a nonsense location that `os.ReadDir` reports as ErrNotExist, which then trips the "empty directory" fallback silently. This affected the aggregator's whole-tree scan (it returned empty in real usage) and was invisible without a proper end-to-end integration test. The write handler in `cmd/storefile.go` gets away with `filepath.Join(storeDir, args[0])` because `storeDir` there is the store-relative dir (`dir(cfg)`), not absolute — the aggregator's mistake was passing `filepath.Join(st.Root(), cfg.X.Config.Directory)` at all. The pattern to remember: `store.Store.List` and `store.Store.Read`/`Write` always take store-relative paths; `st.Root()` is for building on-disk assertions (e.g. `os.ReadFile`), not for feeding back into store calls.

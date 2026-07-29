@@ -1,3 +1,8 @@
+---
+created_date: "2026-07-29"
+status: in-progress
+---
+
 # Feature: 000037_artifact_metadata
 
 <!--
@@ -24,31 +29,31 @@ Attach metadata to each workflow document that Spektacular writes — the specif
 -->
 ## Requirements
 
-- [ ] **Every workflow document Spektacular writes has associated metadata**
+- [x] **Every workflow document Spektacular writes has associated metadata**
   Each specification, plan document (including every sibling document within a plan directory, whatever those are today), changelog entry, and test plan that Spektacular writes as part of any workflow has its own associated metadata, independent of any other document's metadata.
 
-- [ ] **Metadata records when the document was created**
+- [x] **Metadata records when the document was created**
   The metadata on every document identifies the date the document was first written by its workflow.
 
-- [ ] **Metadata records the document's current status**
+- [x] **Metadata records the document's current status**
   The metadata on every document identifies its current status as one of: in-progress (workflow still open), completed (workflow closed successfully), superseded (replaced by a later document), or archived (removed from active view).
 
-- [ ] **Metadata records when the document reached a closed status**
+- [x] **Metadata records when the document reached a closed status**
   When a document's status transitions from in-progress to any closed status, its metadata records the date of that transition.
 
-- [ ] **The workflow keeps metadata current as it transitions the document's state**
+- [x] **The workflow keeps metadata current as it transitions the document's state**
   When a workflow that owns a document opens it, completes it, or supersedes it, the workflow updates the document's metadata to reflect the new state, so metadata does not drift relative to the document's actual lifecycle.
 
-- [ ] **Metadata is accessible through the same channel as the artifact itself**
+- [x] **Metadata is accessible through the same channel as the artifact itself**
   Anyone consuming an artifact through its normal channel (opening the file, calling an API, etc.) can obtain the metadata through that same channel — no separate credentials, service, or tooling beyond what accessing the artifact already requires.
 
-- [ ] **Metadata is structured and machine-readable**
+- [x] **Metadata is structured and machine-readable**
   Automated processes (e.g., archival sweeps, age-based triage) can extract every field of an artifact's metadata as structured data, without parsing prose or applying heuristics.
 
-- [ ] **Metadata is written only on documents produced after this feature ships**
+- [x] **Metadata is written only on documents produced after this feature ships**
   Existing documents in the specs, plans, and changelog stores at the time this feature ships remain bare — no backfill is attempted, and downstream consumers accept that pre-existing documents carry no metadata.
 
-- [ ] **Users and agents can list artifacts by metadata**
+- [x] **Users and agents can list artifacts by metadata**
   A user or agent can list artifacts filtered by metadata fields — status, creation date range, and closed date range — with filters combinable in a single query and applicable across all covered artifact classes (specifications, plans, changelog entries, test plans).
 
 <!--
@@ -76,37 +81,37 @@ None.
 -->
 ## Acceptance Criteria
 
-- [ ] **New workflow documents have associated metadata on write**
+- [x] **New workflow documents have associated metadata on write**
   When any workflow writes a new document, obtaining that document through its normal access channel returns the document with associated metadata present.
 
-- [ ] **The metadata includes a creation date**
+- [x] **The metadata includes a creation date**
   Every newly-written document's metadata contains a field identifying the date the document was first written.
 
-- [ ] **The metadata includes the current status**
+- [x] **The metadata includes the current status**
   Every document's metadata contains a status field, whose value is one of: in-progress, completed, superseded, archived.
 
-- [ ] **Metadata records the closing date when status transitions to a closed state**
+- [x] **Metadata records the closing date when status transitions to a closed state**
   When a workflow closes a document (marks it completed, superseded, or archived), retrieving the document afterwards shows a closed-date field in the metadata identifying the date of that transition.
 
-- [ ] **Metadata reflects the actual lifecycle state after each transition**
+- [x] **Metadata reflects the actual lifecycle state after each transition**
   After a workflow performs an operation that changes the document's state (completing, superseding, archiving), the metadata retrieved for that document reflects the new state — status and any related date fields are updated in the same operation.
 
-- [ ] **Metadata is retrievable through the same channel as the document**
+- [x] **Metadata is retrievable through the same channel as the document**
   Fetching a document through its normal access channel returns its metadata alongside the document — no separate call, service, or credential beyond what fetching the document already required.
 
-- [ ] **Metadata is extractable as structured data**
+- [x] **Metadata is extractable as structured data**
   An automated process can extract every field of a document's metadata as structured data using a parser appropriate to that document's storage substrate — no natural-language parsing or heuristic detection required.
 
-- [ ] **Existing documents remain bare after this feature ships**
+- [x] **Existing documents remain bare after this feature ships**
   Documents that existed in the specs, plans, and changelog stores prior to this feature shipping are unchanged after the release — their content, file structure, and associated metadata are identical to what they were before.
 
-- [ ] **Filtering by status returns matching artifacts**
+- [x] **Filtering by status returns matching artifacts**
   A query filtered by status returns the set of artifacts whose current status matches the requested value(s), and excludes artifacts whose status does not match.
 
-- [ ] **Filtering by date range returns matching artifacts**
+- [x] **Filtering by date range returns matching artifacts**
   A query filtered by a date range on creation date or closed date returns the set of artifacts whose date falls within that range, and excludes those outside.
 
-- [ ] **Combined filters intersect correctly**
+- [x] **Combined filters intersect correctly**
   A query that specifies multiple filters (e.g., status and a date range together) returns only artifacts satisfying all of the filters simultaneously — not the union of their individual matches.
 
 <!--

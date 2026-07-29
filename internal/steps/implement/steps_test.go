@@ -4,11 +4,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
+
+// today returns time.Now().UTC() truncated to day, matching the value the
+// metadata package stamps when UpdateOptions.Today is unset. Used by the
+// Phase 1.5 finish-step tests to assert closed_date without pinning wall time.
+func today() time.Time {
+	return time.Now().UTC().Truncate(24 * time.Hour)
+}
 
 type testData struct {
 	values map[string]any
@@ -379,4 +388,78 @@ func TestReconcileSpecStepMentionsSourcesAndCommitCommand(t *testing.T) {
 	require.Contains(t, out, "plan file read test/plan.md", "reconcile_spec must read the plan's implementation history via `plan file read`")
 	require.Contains(t, out, ".spektacular/tmp/spec_reconcile.md", "reconcile_spec must stage its record at the scratch path")
 	require.Contains(t, out, "spec file write test.md --from .spektacular/tmp/spec_reconcile.md", "reconcile_spec must commit the record via `spec file write`")
+}
+
+// --- Phase 1.5: terminal-step closure of test-plan and changelog artifacts ---
+
+// TestImplementFinished_ClosesTestPlanAndChangelog seeds both terminal
+// artifacts (test-plan.md under PlanDir and <name>.md under ChangelogDir) with
+// in-progress metadata dated in the past, then asserts finished() transitions
+// both to completed with today's closed_date while preserving created_date.
+func TestImplementFinished_ClosesTestPlanAndChangelog(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	cfg := workflow.Config{
+		Command:      "spektacular",
+		PlanDir:      "plans",
+		ChangelogDir: "changelog",
+		SpecDir:      "specs",
+	}
+	planName := "fixture"
+
+	created := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
+	changelogPath := filepath.Join(cfg.ChangelogDir, planName+".md")
+
+	for _, p := range []string{testPlanPath, changelogPath} {
+		seed, err := metadata.Render(metadata.Metadata{
+			CreatedDate: created,
+			Status:      metadata.StatusInProgress,
+		}, []byte("# Body of "+p+"\n"))
+		require.NoError(t, err)
+		require.NoError(t, st.Write(p, seed))
+	}
+
+	data := &testData{values: map[string]any{"name": planName}}
+	writer := &captureWriter{}
+
+	_, err := finished()(data, writer, st, cfg)
+	require.NoError(t, err)
+
+	for _, p := range []string{testPlanPath, changelogPath} {
+		raw, err := st.Read(p)
+		require.NoError(t, err, "%s must remain readable after finished()", p)
+		meta, _, err := metadata.Split(raw)
+		require.NoError(t, err)
+		require.NotNil(t, meta, "%s must carry frontmatter", p)
+		require.Equal(t, metadata.StatusCompleted, meta.Status, "%s must be completed", p)
+		require.True(t, meta.CreatedDate.Equal(created), "%s created_date must be preserved, got %s", p, meta.CreatedDate)
+		require.True(t, meta.ClosedDate.Equal(today()), "%s closed_date must be today, got %s", p, meta.ClosedDate)
+	}
+}
+
+// TestImplementFinished_SkipsMissingArtifacts asserts finished() treats
+// store.ErrNotFound as a no-op — it must return cleanly without creating
+// either artifact when neither is present in the store.
+func TestImplementFinished_SkipsMissingArtifacts(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	cfg := workflow.Config{
+		Command:      "spektacular",
+		PlanDir:      "plans",
+		ChangelogDir: "changelog",
+		SpecDir:      "specs",
+	}
+	planName := "fixture"
+
+	data := &testData{values: map[string]any{"name": planName}}
+	writer := &captureWriter{}
+
+	_, err := finished()(data, writer, st, cfg)
+	require.NoError(t, err, "finished() must not error when the artifacts are missing")
+
+	testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
+	changelogPath := filepath.Join(cfg.ChangelogDir, planName+".md")
+	require.False(t, st.Exists(testPlanPath), "finished() must not create test-plan.md when it was missing")
+	require.False(t, st.Exists(changelogPath), "finished() must not create the changelog when it was missing")
 }

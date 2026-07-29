@@ -1,75 +1,82 @@
-# Plan: 000037_artifact_metadata — working context
+# Implement: 000037_artifact_metadata — working context
 
 ## Workflow
 
-- Discovery step complete. Research written to `.spektacular/work/000037_artifact_metadata/research.md`.
-- Spec path: `.spektacular/specs/000037_artifact_metadata.md`.
-- Plan output path: `.spektacular/plans/000037_artifact_metadata/plan.md`.
+- Implement workflow started against plan `000037_artifact_metadata` on 2026-07-28.
+- Plan store: `.spektacular/plans/000037_artifact_metadata/{plan.md,context.md,research.md}`.
+- Source spec: `.spektacular/specs/000037_artifact_metadata.md`.
+- Read all three plan documents via `go run . plan file read` (never with `Read` tool).
 
-## Spec at a glance
+## Read-plan step outcomes
 
-Attach machine-readable per-document metadata (created_date, status ∈ {in-progress, completed, superseded, archived}, closed_date on transition) to every workflow-produced document — specs, plan-directory siblings, changelog entries, test plans. YAML frontmatter is the natural fit for markdown artifacts. No backfill of pre-existing docs. Filtering artifacts by status + creation-date range + closed-date range must be combinable in one query, applicable per-kind and across all classes.
+- **Structural validation:** plan.md has all 10 required top-level sections (Overview, Architecture & Design Decisions, Component Breakdown, Data Structures & Interfaces, Implementation Detail, Dependencies, Testing Approach, Milestones & Phases, Open Questions, Out of Scope). Seven `#### - [ ]` phases across two milestones, each with a `context.md#phase-*` link that resolves.
+- **Drift check: NO DRIFT.** Every file path, symbol, template path, and CLI command referenced in the plan exists at its stated location. `internal/metadata/` correctly does NOT exist yet (it's a new package). No existing `spektacular artifacts` command wired.
+- **Spec coverage:** every Requirement and Acceptance Criterion in the spec is covered somewhere under `## Milestones & Phases` in the plan. No descoped items.
+- **Changelog mode: FIRST-PHASE INVOCATION.** No `## Changelog` section in plan.md. Pick up at Phase 1.1.
 
-## Decisions (user interview + judgment calls)
+## Open Question resolutions (from drift check)
 
-1. **Close semantics — owner-workflow closes.** The workflow that writes a document is the one that stamps its `completed` status and `closed_date` at its terminal step. Spec workflow → spec.md. Plan workflow → plan.md/context.md/research.md. Implement workflow → test-plan.md + its changelog entry. Later mutations by a downstream workflow (e.g. implement ticking checkboxes in a shipped spec) do not re-open metadata.
+**Open Question #1 — consumers of `{"files": [...]}` list shape (relevant for Phase 2.1):**
 
-2. **Update mechanism — two surfaces.**
-   - **Implicit on `<kind> file write`.** Every `spec/plan/changelog file write` reads existing store frontmatter if present (preserving `created_date`), enforces the enum on `status`, and stamps `closed_date` iff transitioning to a closed status. First-write path (no existing file) stamps `created_date = today`, `status = in-progress`. Also applies to the direct `st.Write()` inside `internal/steps/spec/steps.go new()` and any other in-Go write site.
-   - **Metadata-only subcommand** — `<kind> file set-status <path> --status <s>` — mutates only the frontmatter block (no body rewrite). Covers the workflow terminal-step "flip to completed" case and later manual `superseded` / `archived` moves.
+- **Only one producer:** `cmd/storefile.go:159` — `return output.Write(cmd.OutOrStdout(), map[string]any{"files": names}, "")`.
+- **Only one code test consumer:** `cmd/changelog_file_test.go:54` — unmarshals into `struct { Files []string }`. Will need update to accept the new struct-per-entry shape.
+- **Template/skill references** (call the command, don't parse the shape): `templates/skills/workflows/spek-{new,plan,implement}/SKILL.md`, `templates/steps/plan/02-discovery.md`, `templates/skill_list_command_test.go`.
 
-3. **List / filter surface — per-kind flags + cross-kind aggregator.**
-   - Extend `spec/plan/changelog file list` with typed cobra flags: `--status`, `--created-after`, `--created-before`, `--closed-after`, `--closed-before` (RFC3339 date-only, i.e. `YYYY-MM-DD`). Combinable in one query.
-   - Add a new top-level `spektacular artifacts list` that returns hits from all four artifact classes tagged with a `kind` discriminant; accepts the same filter flags.
+**Open Question #2 — in-Go `st.Write` call sites (relevant for Phase 1.5):**
 
-4. **Superseded / archived** — schema-only in v1; enum accepts all four values day one. Workflows only write `in-progress` and `completed`. `superseded` and `archived` are only reachable via the metadata-only subcommand from step 2.
+Production writers via `git grep -n 'st\.Write' internal/steps/ cmd/`:
 
-## Judgment calls I made without asking
+1. `cmd/storefile.go:97` — the shared `newStoreFileCmd` write subcommand (covered by Phase 1.3).
+2. `internal/steps/spec/steps.go:79` — spec workflow `new()` scaffold write (Phase 1.5 routes through `metadata.Merge`).
 
-- **Schema fields core only** — `created_date` (YAML date), `status` (enum), `closed_date` (YAML date, absent while `in-progress`). No `kind` field embedded in frontmatter (the containing store already tells us the kind; embedding it would duplicate + risk drift).
-- **YAML native date format `YYYY-MM-DD`.** Matches spec wording ("date"), renders cleanly through `yaml.v3`.
-- **No backfill.** Existing bare docs stay bare. `file read` returns them unchanged. `file list --status X` naturally excludes bare docs (they have no metadata to match) — correct behaviour per spec AC.
-- **`internal/metadata/` new package** as the shared writer helper. Called by every write site (both Go callbacks and the CLI write path).
-- **Store interface stays byte-oriented.** Metadata lives above the substrate — parsed on `list`, injected on `write`. Preserves the spec's "substrate delegated per file writer" direction.
+The implement and plan workflows do NOT call `st.Write` directly from step callbacks — they emit template instructions telling the agent to call `plan file write` / `changelog file write` via the CLI, which flows through the storefile.go write handler. The finished-step close in Phase 1.5 therefore needs to go through the CLI (or through the shared metadata helper called from Go with the store handle the callback already has) — no additional in-Go `st.Write` sites to worry about.
 
-## Open assumptions worth watching (STOP if any wrong)
+## Key decisions carried from plan authorship
 
-- Four artifact classes are exhaustive for "workflow output" (specs / plan-dir siblings [plan.md, context.md, research.md, test-plan.md] / changelog entries). No other doc types produced by any workflow today.
-- `planDocStillScaffold()` at `internal/steps/plan/steps.go:215-225` — its byte-compare against the scaffold must be reworked to ignore leading frontmatter, otherwise adding frontmatter on write will break plan verification.
-- `spektacular artifacts` is a fresh root verb — confirm no clash at architecture step.
-- Malformed hand-edited frontmatter produces an actionable error rather than silently re-stamping `created_date`. Required for the user's "implicit on write" choice to keep created_date stable.
+1. **Owner-workflow closes.** Spec workflow → spec.md at `finished`. Plan workflow → plan.md/context.md/research.md at `finished`. Implement workflow → test-plan.md + changelog entry at `finished`. Downstream body mutations do NOT re-open metadata (spec 000034 checkbox ticking pattern).
+2. **Two update surfaces:** implicit on `<kind> file write` + explicit metadata-only `<kind> file set-status`.
+3. **Enum accepts all four values day one:** `in-progress`, `completed`, `superseded`, `archived`. Workflows only write `in-progress` and `completed`; `superseded`/`archived` reachable only via `set-status`.
+4. **Store interface stays byte-oriented.** Metadata sits above the substrate. No new fields on `DirEntry` / `Hit`.
+5. **YAML dates are `YYYY-MM-DD`** (day precision, no time-of-day). Custom `MarshalYAML`/`UnmarshalYAML` on a date wrapper enforces this.
+6. **No backfill.** Pre-shipping bare docs stay byte-identical; excluded from any filtered list query.
 
-## Key files (architecture step will fold these into components)
+## Load-bearing gotchas
 
-- `internal/store/store.go` — byte-oriented Store interface + FileStore.
-- `internal/workflow/state.go` — `State.InProgress()` signal for owner-workflow close.
-- `internal/steps/spec/steps.go` — spec workflow steps (`new`, `finished`, verification).
-- `internal/steps/plan/steps.go` — plan workflow steps + `planDocStillScaffold` byte-compare.
-- `internal/steps/implement/steps.go` — implement steps (test_plan, update_feature_changelog, finished).
-- `cmd/storefile.go` — shared `newStoreFileCmd` — the choke point for `<kind> file write/read/list/delete`; also where `set-status` and filter flags attach.
-- `cmd/file.go`, `cmd/plan_file.go`, `cmd/changelog_file.go` — per-kind command factories.
-- `cmd/root.go` — mount point for a new `artifactsCmd`.
-- `internal/output/writer.go` — CLI envelope for filtered / cross-kind results.
-- `internal/config/config.go` — existing `gopkg.in/yaml.v3` import.
+- **`planDocStillScaffold` byte-compare (Phase 1.2)** at `internal/steps/plan/steps.go:215-225`. MUST land before Phase 1.3 or plan workflow regresses.
+- **Malformed hand-edited frontmatter** must produce actionable error, never silent re-stamp of `created_date`.
+- **List output shape change in Phase 2.1** — update `cmd/changelog_file_test.go:54` and check the two template test files.
 
-## Sections drafted so far (working files under `.spektacular/work/000037_artifact_metadata/`)
+## Phase execution order
 
-- `architecture.md` — four-paragraph body covering substrate (YAML frontmatter + `internal/metadata`), two-surface update, two-surface list/filter, two load-bearing gotchas (`planDocStillScaffold` byte-compare; malformed-frontmatter error).
-- `conventions.md` — project conventions category is currently README-only; two `AGENTS.md`-level house rules noted.
-- `components.md` — eight components: `internal/metadata` (new), Store (unchanged, deliberately), `newStoreFileCmd` (grows two subcommands + filter flags), per-kind factories, spec/plan/implement step packages (small terminal-close changes + `planDocStillScaffold` fix), new `spektacular artifacts` root command, output writer (unchanged).
-- `data_structures.md` — YAML frontmatter contract (three fields), `Metadata` Go type + Status enum, `internal/metadata` API (Split/Render/Merge + UpdateOptions), CLI subcommand signatures, filter-flag set, JSON output envelopes (`files` for per-kind, `artifacts` with `kind` discriminant for cross-kind).
-- `implementation_detail.md` — the one new module boundary (`internal/metadata`), existing patterns everywhere else, the one exception (`spektacular artifacts` new root command), code-shape UX for readers, one existing helper altered (`planDocStillScaffold`).
-- `dependencies.md` — `gopkg.in/yaml.v3` already available; internal deps consumed unchanged; new package + new `cmd/artifacts.go`; two prior specs (000034, 000036) as context, no blocking predecessors.
-- `testing_approach.md` — three tiers (unit on `internal/metadata`, integration on CLI write/list + cross-kind, workflow tests on terminal-step close); five success metrics mapped, three behavioural + two manual (in test plan).
-- `milestones.md` — two milestones (documents carry metadata; users can list-filter).
-- `phases_plan.md` and `phases_context.md` — five phases in M1 (metadata pkg; scaffold-check fix; implicit write; set-status subcommand; wire three workflows), two phases in M2 (per-kind filter flags; cross-kind aggregator).
+Milestone 1: 1.1 → 1.2 → 1.3 → 1.4 → 1.5.
+Milestone 2: 2.1 → 2.2.
 
-## All three store documents committed
+Phase 1.5 is the fan-out candidate (three workflow packages, same pattern). Others are single-agent.
 
-- `plans/000037_artifact_metadata/plan.md`, `context.md`, and `research.md` are in the plan store.
-- Working files under `.spektacular/work/000037_artifact_metadata/` removed after commit.
-- Scratch files under `.spektacular/tmp/` removed after commit.
+## Current phase
+
+**Phase 1.1: Author the `internal/metadata` package** — code written and compiling.
+
+Design decisions made during implementation:
+
+- Chose `Metadata.MarshalYAML/UnmarshalYAML` with an unexported `yamlShape` (string-typed date fields) rather than a public `Date` wrapper. Public API keeps `time.Time` fields as the plan's Data Structures section specifies; day precision enforced at marshal boundary.
+- Enum validation lives on `UnmarshalYAML` AND on `Merge` (via `validateStatus`). Both paths reject non-enum values with an actionable error.
+- `Split` returns `(nil, raw, nil)` for bare artifacts (no leading `---\n`); wrapped `malformed frontmatter:` error for unterminated block, non-newline after closing `---`, or yaml.Unmarshal failure.
+- `Render` writes `---\n<yaml>---\n\n<body>`. Note yaml.Marshal already emits a trailing newline on its own output, so the sequence is `---\n` + yaml + `---\n\n` + body.
+- `Merge` `ClosedDate` semantics: preserves existing ClosedDate if already set (idempotent for closed→same-closed and closed→different-closed); stamps today only on in-progress→closed transition; clears on closed→in-progress. First-write with `opts.Status = closed` stamps ClosedDate=today.
+
+Files created:
+
+- `internal/metadata/metadata.go` — `Metadata`, `Status`, four consts, MarshalYAML/UnmarshalYAML, private `validateStatus`/`isClosed`.
+- `internal/metadata/frontmatter.go` — `Split`, `Render`.
+- `internal/metadata/merge.go` — `Merge`, `UpdateOptions`.
+
+## Autonomous mode
+
+User authorized "run all remaining phases without asking" on 2026-07-28 after Phase 1.1 committed. Do NOT ask between phases; loop analyze → implement → test → verify → update_plan → update_changelog → analyze until all seven phases are ticked, then advance to `update_repo_changelog`.
 
 ## Session state
 
-- Ready to advance: `go run . plan goto --data '{"step":"finished"}'`.
+- Phase 1.1 complete and committed (plan ticked, changelog entry added). Advance next: loop back to `analyze` for Phase 1.2.
+
+Note on YAML quoting: `yaml.v3` quotes date-shaped string fields (e.g. `created_date: "2026-07-01"`) — tests assert the presence of the value without pinning quote style.

@@ -1,10 +1,12 @@
 package spec
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -76,7 +78,11 @@ func new() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		if err := st.Write(SpecFilePath(cfg.SpecDir, name), []byte(rendered)); err != nil {
+		merged, err := metadata.Merge(nil, []byte(rendered), metadata.UpdateOptions{})
+		if err != nil {
+			return "", err
+		}
+		if err := st.Write(SpecFilePath(cfg.SpecDir, name), merged); err != nil {
 			return "", err
 		}
 		
@@ -161,6 +167,10 @@ func finished() workflow.StepCallback {
 			}
 			if unwritten {
 				extra = map[string]any{"spec_unwritten": true}
+			} else {
+				if err := metadata.Close(st, SpecFilePath(cfg.SpecDir, stepkit.GetString(data, "name")), metadata.StatusCompleted); err != nil && !errors.Is(err, store.ErrNotFound) {
+					return "", err
+				}
 			}
 		}
 		return "", writeStep("finished", "", "steps/spec/09-finished.md", data, out, st, cfg, extra)
@@ -170,7 +180,10 @@ func finished() workflow.StepCallback {
 // specStillScaffold reads the spec file back through the store and reports
 // whether it still holds the unfilled scaffold — i.e. the completed spec was
 // never committed with `spec file write`. A spec that cannot be read is also
-// treated as unwritten.
+// treated as unwritten. A leading YAML frontmatter block on the stored artifact
+// is stripped before the comparison so the check answers "is the body still the
+// scaffold?", tolerating the metadata block that Spektacular now prepends on
+// every write.
 func specStillScaffold(st store.Store, cfg workflow.Config, specName string) (bool, error) {
 	stored, err := st.Read(SpecFilePath(cfg.SpecDir, specName))
 	if err != nil {
@@ -180,5 +193,9 @@ func specStillScaffold(st store.Store, cfg workflow.Config, specName string) (bo
 	if err != nil {
 		return false, err
 	}
-	return string(stored) == scaffold, nil
+	body := stored
+	if fm, split, splitErr := metadata.Split(stored); splitErr == nil && fm != nil {
+		body = split
+	}
+	return string(body) == scaffold, nil
 }

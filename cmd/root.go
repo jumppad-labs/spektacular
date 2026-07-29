@@ -225,4 +225,5 @@ func init() {
 	rootCmd.AddCommand(knowledgeCmd)
 	rootCmd.AddCommand(skillCmd)
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(artifactsCmd)
 }

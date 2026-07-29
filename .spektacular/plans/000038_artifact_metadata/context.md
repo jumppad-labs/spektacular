@@ -1,4 +1,4 @@
-# Context: 000037_artifact_metadata
+# Context: 000038_artifact_metadata
 
 ## Current State Analysis
 
@@ -14,7 +14,7 @@ The three top-level workflows share the `finished` terminal step convention. `in
 
 The shared CLI factory `newStoreFileCmd` at `cmd/storefile.go:71-165` is the choke point every agent-driven write flows through, and every per-kind `<kind> file` command tree is built from it — see `cmd/file.go:8-12` (spec), `cmd/plan_file.go:8-14` (plan), and `cmd/changelog_file.go` (changelog). It also owns the ID-prefix validation at lines 27-41 that this feature's new `set-status` subcommand reuses. The `list` subcommand at lines 138-161 currently returns `{"files": ["name1.md", …]}` — a bare-string array; Phase 2.1 changes this to a struct-per-entry.
 
-There are no prior plans in `.spektacular/plans/` on the topic of artifact metadata, frontmatter, or artifact lifecycle. Two shipped specs are contextually relevant but not gating: `000034_spec-plan-implement-reconciliation` established the precedent of the implement workflow ticking checkboxes in a shipped spec (a *body* mutation, not a metadata one), and `000036_spec_plan_historical_artifacts` established the archaeology / owning-workflow distinction that this plan takes as foundational.
+There are no prior plans in `.spektacular/plans/` on the topic of artifact metadata, frontmatter, or artifact lifecycle. Two shipped specs are contextually relevant but not gating: `000034_spec-plan-implement-reconciliation` established the precedent of the implement workflow ticking checkboxes in a shipped spec (a *body* mutation, not a metadata one), and `000037_spec_plan_historical_artifacts` established the archaeology / owning-workflow distinction that this plan takes as foundational.
 
 ## Per-Phase Technical Notes
 
@@ -159,9 +159,9 @@ External and internal references used to build this plan. The full evidence trai
 
 **Prior specs consulted**:
 
-- `.spektacular/specs/000037_artifact_metadata.md` — the source of truth for this plan.
+- `.spektacular/specs/000038_artifact_metadata.md` — the source of truth for this plan.
 - `.spektacular/specs/000034_spec-plan-implement-reconciliation.md` — established the implement-workflow-mutates-shipped-spec pattern (checkbox ticks).
-- `.spektacular/specs/000036_spec_plan_historical_artifacts.md` — established the archaeology / owning-workflow distinction.
+- `.spektacular/specs/000037_spec_plan_historical_artifacts.md` — established the archaeology / owning-workflow distinction.
 - `.spektacular/specs/000033_spec-workflow-output-changelog.md` — established the one-file-per-feature changelog shape.
 
 **External references**:

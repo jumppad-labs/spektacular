@@ -4,7 +4,7 @@ status: completed
 closed_date: "2026-07-29"
 ---
 
-# Feature: 000037_artifact_metadata — Per-artifact lifecycle metadata and cross-kind discovery
+# Feature: 000038_artifact_metadata — Per-artifact lifecycle metadata and cross-kind discovery
 
 ## What was built
 
@@ -21,7 +21,7 @@ Existing pre-shipping artifacts stay byte-identical to what they were before thi
 
 ## Why it matters
 
-Before this feature, anyone triaging accumulated workflow output had to inspect git history or read document bodies to work out how old an artifact was or whether its workflow had ever completed. Downstream automation had no signal at all — no way for a future auto-archive sweep, a stale-plan report, or an oncall who needs to know "is this spec still active?" to answer that question without a per-file investigation. Agents doing archaeological reads on historical specs and plans (a pattern established by `000036_spec_plan_historical_artifacts`) now have machine-readable evidence of an artifact's age and lifecycle, and can weight information accordingly rather than treating a two-year-old superseded plan as equally authoritative to yesterday's completed one.
+Before this feature, anyone triaging accumulated workflow output had to inspect git history or read document bodies to work out how old an artifact was or whether its workflow had ever completed. Downstream automation had no signal at all — no way for a future auto-archive sweep, a stale-plan report, or an oncall who needs to know "is this spec still active?" to answer that question without a per-file investigation. Agents doing archaeological reads on historical specs and plans (a pattern established by `000037_spec_plan_historical_artifacts`) now have machine-readable evidence of an artifact's age and lifecycle, and can weight information accordingly rather than treating a two-year-old superseded plan as equally authoritative to yesterday's completed one.
 
 The cross-kind `spektacular artifacts list` closes a specific gap that the per-kind commands alone could not: a single query that answers "what is in flight right now?" or "what completed in the last week?" across every artifact class, without a scripted union in the caller.
 

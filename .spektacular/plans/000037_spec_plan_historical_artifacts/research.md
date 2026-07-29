@@ -1,10 +1,10 @@
-# Research: 000036_spec_plan_historical_artifacts
+# Research: 000037_spec_plan_historical_artifacts
 
 ## Alternatives considered and rejected
 
-- **Filesystem-level or tool-level access blocks on `.spektacular/specs/` and `.spektacular/plans/`.** Would trivially satisfy the "no discovery reads" requirement but breaks the archaeology exception (requirement #3) and the "workflow may access its own live artifact" exception (requirement #7). Explicitly rejected by the spec's Constraint (`.spektacular/specs/000036_spec_plan_historical_artifacts.md:63`).
-- **Storing the rule in `.spektacular/config.yaml` under a new `agent_rules` key.** The config file is not surfaced to fresh agent sessions the way `AGENTS.md` is (`AGENTS.md:1-52` is auto-loaded via `CLAUDE.md`'s `@AGENTS.md` import at `internal/agent/claude.go:38`). Storing rules in config would create a second, hidden instruction surface and violate the spec's "durable, session-auto-picked-up" requirement (`.spektacular/specs/000036_spec_plan_historical_artifacts.md:42-43`).
-- **Only patching every affected step template (no AGENTS.md change).** Would leave ad-hoc, unrelated-skill, and general-exploration sessions uncovered (requirement #4 — "applies everywhere", `.spektacular/specs/000036_spec_plan_historical_artifacts.md:36-37`). Step templates are only reached inside their own workflow steps, so this approach cannot satisfy the "fresh agent session already knows the rule" acceptance criterion (`.spektacular/specs/000036_spec_plan_historical_artifacts.md:91-92`).
+- **Filesystem-level or tool-level access blocks on `.spektacular/specs/` and `.spektacular/plans/`.** Would trivially satisfy the "no discovery reads" requirement but breaks the archaeology exception (requirement #3) and the "workflow may access its own live artifact" exception (requirement #7). Explicitly rejected by the spec's Constraint (`.spektacular/specs/000037_spec_plan_historical_artifacts.md:63`).
+- **Storing the rule in `.spektacular/config.yaml` under a new `agent_rules` key.** The config file is not surfaced to fresh agent sessions the way `AGENTS.md` is (`AGENTS.md:1-52` is auto-loaded via `CLAUDE.md`'s `@AGENTS.md` import at `internal/agent/claude.go:38`). Storing rules in config would create a second, hidden instruction surface and violate the spec's "durable, session-auto-picked-up" requirement (`.spektacular/specs/000037_spec_plan_historical_artifacts.md:42-43`).
+- **Only patching every affected step template (no AGENTS.md change).** Would leave ad-hoc, unrelated-skill, and general-exploration sessions uncovered (requirement #4 — "applies everywhere", `.spektacular/specs/000037_spec_plan_historical_artifacts.md:36-37`). Step templates are only reached inside their own workflow steps, so this approach cannot satisfy the "fresh agent session already knows the rule" acceptance criterion (`.spektacular/specs/000037_spec_plan_historical_artifacts.md:91-92`).
 - **Adding a paragraph to each `spek-*/SKILL.md` (top-of-skill notes).** Duplicative once AGENTS.md carries the rule — the SKILL.md files are consumed inside their own workflow context, and AGENTS.md already reaches every session. Rejected as maintenance surface without additional coverage.
 - **Retroactive metadata / status markers on the 36 existing specs and ~30 existing plans.** Out of scope by spec framing (this spec is behavioral, not artifact-format). The archaeology framing works on today's file layout without markers because agents can distinguish current-state questions from historical questions via user intent.
 
@@ -62,7 +62,7 @@ None. This feature is entirely an internal instruction-surface change; no extern
 
 ## Prior plans / specs consulted
 
-- `.spektacular/specs/000036_spec_plan_historical_artifacts.md:1-144` — the spec being planned. Establishes the eight requirements, one Constraint (no filesystem blocks), nine acceptance criteria, one Non-Goal (website-docs update deferred), and three Success Metrics that must land in the Testing Approach step.
+- `.spektacular/specs/000037_spec_plan_historical_artifacts.md:1-144` — the spec being planned. Establishes the eight requirements, one Constraint (no filesystem blocks), nine acceptance criteria, one Non-Goal (website-docs update deferred), and three Success Metrics that must land in the Testing Approach step.
 - `.spektacular/changelog/000035_plan-walkthrough-conversation.md:1-32` — most recent per-feature changelog entry; used as the shape reference for the "changelog entry contains the follow-up note" requirement.
 - No prior *plan* documents in `.spektacular/plans/` are directly relevant — this is a new instruction surface, not a follow-on to a prior plan. (`plan file list` was consulted but returned only unrelated plans.)
 
@@ -76,7 +76,7 @@ None. This feature is entirely an internal instruction-surface change; no extern
 
 ## Rehydration cues
 
-- Re-read the spec: `go run . spec file read 000036_spec_plan_historical_artifacts.md`
+- Re-read the spec: `go run . spec file read 000037_spec_plan_historical_artifacts.md`
 - Re-inspect the template pattern to model against: `Read templates/agents/memory-context.md`, `Read templates/agents/spec-trigger.md`
 - Re-inspect the install function pattern to mirror: `Read internal/agent/memory_context.go`, `Read internal/agent/spec_trigger.go`
 - Re-inspect the three wire-in points: `Read internal/agent/claude.go`, `Read internal/agent/bob.go`, `Read internal/agent/codex.go`

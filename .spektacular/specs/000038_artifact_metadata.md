@@ -3,7 +3,7 @@ created_date: "2026-07-29"
 status: in-progress
 ---
 
-# Feature: 000037_artifact_metadata
+# Feature: 000038_artifact_metadata
 
 <!--
   OVERVIEW

@@ -1,4 +1,4 @@
-# Context: 000036_spec_plan_historical_artifacts
+# Context: 000037_spec_plan_historical_artifacts
 
 ## Current State Analysis
 
@@ -14,7 +14,7 @@ The spec/plan/implement workflows already access their artifacts through dedicat
 
 The changelog surface consists of the existing `templates/steps/implement/10-update_feature_changelog.md` step and the resulting per-feature entries under `.spektacular/changelog/` (`000032`–`000035` today). Prior entries follow a stable "What was built / Why it matters / Deviations from the plan" shape (`.spektacular/changelog/000035_plan-walkthrough-conversation.md:1-32`). The changelog note this feature must ship — flagging the "process document, not product document" concept for future website-documentation work — is prose content the existing step will author; no template change is required.
 
-The embedded FS carrying all templates (`templates/templates.go`) uses `//go:embed all:*`, so any new file dropped under `templates/agents/` is auto-included; there is no manifest to update. The `mustache` library (`github.com/cbroglie/mustache`, imported at `internal/agent/memory_context.go:12`) is the only rendering dependency and already handles the `{{command}}` placeholder used across existing templates. The spec being planned is `.spektacular/specs/000036_spec_plan_historical_artifacts.md` — eight requirements, one Constraint, nine acceptance criteria, one Non-Goal (website-docs update deferred), and three runtime-behavioural Success Metrics.
+The embedded FS carrying all templates (`templates/templates.go`) uses `//go:embed all:*`, so any new file dropped under `templates/agents/` is auto-included; there is no manifest to update. The `mustache` library (`github.com/cbroglie/mustache`, imported at `internal/agent/memory_context.go:12`) is the only rendering dependency and already handles the `{{command}}` placeholder used across existing templates. The spec being planned is `.spektacular/specs/000037_spec_plan_historical_artifacts.md` — eight requirements, one Constraint, nine acceptance criteria, one Non-Goal (website-docs update deferred), and three runtime-behavioural Success Metrics.
 
 ## Per-Phase Technical Notes
 
@@ -154,7 +154,7 @@ Load-bearing references the implementer will want open while working through the
   - `templates/templates.go` — carries `//go:embed all:*`; the new template under `templates/agents/` is auto-included without any manifest edit. Worth opening once to confirm the pattern before Phase 1.1.
 
 - **Spec being planned**
-  - `.spektacular/specs/000036_spec_plan_historical_artifacts.md` — the source of truth for requirements, acceptance criteria, constraints, non-goals, and success metrics. The reconciliation and changelog steps at implement-time both read this file directly.
+  - `.spektacular/specs/000037_spec_plan_historical_artifacts.md` — the source of truth for requirements, acceptance criteria, constraints, non-goals, and success metrics. The reconciliation and changelog steps at implement-time both read this file directly.
 
 ## Token Management Strategy
 

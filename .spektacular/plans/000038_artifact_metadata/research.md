@@ -1,4 +1,4 @@
-# Research: 000037_artifact_metadata
+# Research: 000038_artifact_metadata
 
 ## Alternatives considered and rejected
 
@@ -37,9 +37,9 @@
 
 ## Files examined
 
-- `.spektacular/specs/000037_artifact_metadata.md` — the spec being planned; core fields (created, status enum, closed_date), no backfill, YAML frontmatter is "natural fit", substrate delegated per writer, filters combinable across classes.
+- `.spektacular/specs/000038_artifact_metadata.md` — the spec being planned; core fields (created, status enum, closed_date), no backfill, YAML frontmatter is "natural fit", substrate delegated per writer, filters combinable across classes.
 - `.spektacular/specs/000034_spec-plan-implement-reconciliation.md` — established precedent for the implement workflow mutating spec content (checkbox ticks); relevant because it's another cross-workflow write path but does not itself change spec metadata.
-- `.spektacular/specs/000036_spec_plan_historical_artifacts.md` — established the archaeology / owning-workflow distinction. Confirms that the workflow that owns a doc is the natural owner for lifecycle transitions.
+- `.spektacular/specs/000037_spec_plan_historical_artifacts.md` — established the archaeology / owning-workflow distinction. Confirms that the workflow that owns a doc is the natural owner for lifecycle transitions.
 - `internal/store/store.go:1-152` — Store interface (Read/Write/List/Search/Exists/Delete/Root), `DirEntry{Name, IsDir}` (no metadata), `Hit{Scope, Path, Title, Excerpts, Score, Category, Checksum}` (no metadata), `FileStore` implementation. Byte-oriented; substrate-agnostic.
 - `internal/workflow/state.go:14-27` — `State{Kind, CurrentStep, CompletedSteps, CreatedAt, UpdatedAt, Data}`, `InProgress()` (line 26). Terminal state hardcoded to `"finished"`. This is the signal for owner-workflow close.
 - `internal/steps/spec/steps.go:66-93` — `new()` step: renders scaffold via `stepkit.RenderTemplate("scaffold/spec.md", …)` and calls `st.Write(SpecFilePath(cfg.SpecDir, name), …)`. First-write site for specs. Metadata injection needed here.
@@ -73,7 +73,7 @@
 ## Prior plans / specs consulted
 
 - **Spec `000034_spec-plan-implement-reconciliation`** — established the precedent that the implement workflow ticks checkboxes in a shipped spec. That precedent is *body* mutation of a shipped doc, not metadata mutation; it doesn't touch this feature's design directly but confirms cross-workflow mutation of shipped documents is already an accepted pattern in the codebase.
-- **Spec `000036_spec_plan_historical_artifacts`** — established the archaeology / owning-workflow distinction. Confirms our decision that the owning workflow closes its own docs. Also flags a light constraint: this feature must not accidentally require historical (metadata-less) docs to be read en masse during discovery.
+- **Spec `000037_spec_plan_historical_artifacts`** — established the archaeology / owning-workflow distinction. Confirms our decision that the owning workflow closes its own docs. Also flags a light constraint: this feature must not accidentally require historical (metadata-less) docs to be read en masse during discovery.
 - **Spec `000033_spec-workflow-output-changelog`** — established that a changelog entry is one `.md` per feature under `.spektacular/changelog/`. Confirms shape assumed in the plan.
 - **No prior *plan* directly consulted** (nothing about metadata, frontmatter, or artifact status has been planned before).
 
@@ -94,10 +94,10 @@ If any of these turn out wrong, the implement workflow must STOP and ask:
 
 If this file is being read cold in a future session:
 
-- `go run . spec file read 000037_artifact_metadata.md` — the source spec.
-- `go run . plan file read 000037_artifact_metadata/plan.md` — this feature's own plan (may not be committed yet).
+- `go run . spec file read 000038_artifact_metadata.md` — the source spec.
+- `go run . plan file read 000038_artifact_metadata/plan.md` — this feature's own plan (may not be committed yet).
 - Read `.spektacular/context.md` for the running decision log and the summary of the user interview.
-- Read `.spektacular/work/000037_artifact_metadata/*.md` for per-section drafts written en route.
+- Read `.spektacular/work/000038_artifact_metadata/*.md` for per-section drafts written en route.
 - `cat internal/store/store.go` for the byte-oriented store interface (metadata layer sits above this).
 - `cat cmd/storefile.go` for the `newStoreFileCmd` factory used by `spec file`, `plan file`, `changelog file` — where write/read/list/delete/set-status subcommands all attach.
 - `cat internal/workflow/state.go` for `State.InProgress()` — the signal a workflow uses to know it's still open.

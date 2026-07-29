@@ -4,7 +4,7 @@ status: completed
 closed_date: "2026-07-29"
 ---
 
-# Test Plan: 000037_artifact_metadata
+# Test Plan: 000038_artifact_metadata
 
 The automated test suite (unit + integration + workflow tests across `internal/metadata`, `cmd/`, and `internal/steps/{spec,plan,implement}`) covers three of the five success metrics from the spec. The remaining two require manual verification against real workflow output — an artifact-carries-metadata spot check and a design-longevity review that no unit test can prove.
 

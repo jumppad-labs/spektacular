@@ -1,4 +1,4 @@
-# Test Plan: 000036_spec_plan_historical_artifacts
+# Test Plan: 000037_spec_plan_historical_artifacts
 
 All three of the spec's success metrics are runtime-behavioural observations of how agents cite sources during real user sessions. They cannot be asserted from within the Go test suite, so the plan's Testing Approach classified every one as **Manual — captured in the implementation test plan**. The procedures below are grounded in the actual shipped surface: the new `## Historical Artifacts: Specs and Plans as Archaeology` section in `AGENTS.md` (injected by `spektacular init`), plus the two step-template clarifiers in `templates/steps/plan/02-discovery.md` and `templates/steps/implement/01-read_plan.md`.
 

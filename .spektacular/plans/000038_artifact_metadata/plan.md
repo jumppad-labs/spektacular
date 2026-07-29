@@ -3,7 +3,7 @@ created_date: "2026-07-28"
 status: in-progress
 ---
 
-# Plan: 000037_artifact_metadata
+# Plan: 000038_artifact_metadata
 
 <!-- Metadata -->
 <!-- Created: 2026-07-17T12:20:00Z -->
@@ -212,9 +212,9 @@ The plan introduces one new package (`internal/metadata`) and grows the shared C
 
 **Upstream specifications and prior plans**
 
-- **Spec `000037_artifact_metadata`** — the source of truth for this plan. Its Requirements, Acceptance Criteria, and Success Metrics dictate every plan decision.
+- **Spec `000038_artifact_metadata`** — the source of truth for this plan. Its Requirements, Acceptance Criteria, and Success Metrics dictate every plan decision.
 - **Spec `000034_spec-plan-implement-reconciliation`** (already shipped) — established the precedent that the implement workflow mutates a shipped spec's body (ticking checkboxes). This plan does **not** re-open that spec's metadata when the implement workflow ticks its boxes; the spec is closed by its *own* workflow finishing, and post-close body mutations do not reset lifecycle state. Called out here so the interaction between the two features is explicit and does not have to be rediscovered later.
-- **Spec `000036_spec_plan_historical_artifacts`** (already shipped) — established the archaeology / owning-workflow distinction that this plan takes as foundational. No changes to that spec's shipped surface are required.
+- **Spec `000037_spec_plan_historical_artifacts`** (already shipped) — established the archaeology / owning-workflow distinction that this plan takes as foundational. No changes to that spec's shipped surface are required.
 - **No prior plan** on artifact metadata, frontmatter, or lifecycle status exists in the plans store — this is a greenfield plan.
 
 **No blocking predecessors**

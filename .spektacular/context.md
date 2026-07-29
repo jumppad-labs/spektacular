@@ -1,10 +1,10 @@
-# Implement: 000037_artifact_metadata — working context
+# Implement: 000038_artifact_metadata — working context
 
 ## Workflow
 
-- Implement workflow started against plan `000037_artifact_metadata` on 2026-07-28.
-- Plan store: `.spektacular/plans/000037_artifact_metadata/{plan.md,context.md,research.md}`.
-- Source spec: `.spektacular/specs/000037_artifact_metadata.md`.
+- Implement workflow started against plan `000038_artifact_metadata` on 2026-07-28.
+- Plan store: `.spektacular/plans/000038_artifact_metadata/{plan.md,context.md,research.md}`.
+- Source spec: `.spektacular/specs/000038_artifact_metadata.md`.
 - Read all three plan documents via `go run . plan file read` (never with `Read` tool).
 
 ## Read-plan step outcomes

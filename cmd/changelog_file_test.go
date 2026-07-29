@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,13 @@ func TestChangelogFileWriteRead_RoundTrips(t *testing.T) {
 	rootCmd.SetArgs([]string{"changelog", "file", "read", "20260709000000-release-notes.md"})
 
 	require.NoError(t, rootCmd.Execute())
-	require.Equal(t, "changelog body", stdout.String())
+	// The stored file now carries a frontmatter block; read returns the raw
+	// bytes, so strip the block before asserting on body preservation.
+	meta, body, err := metadata.Split(stdout.Bytes())
+	require.NoError(t, err)
+	require.NotNil(t, meta, "write must produce a frontmatter block")
+	require.Equal(t, metadata.StatusInProgress, meta.Status)
+	require.Equal(t, "changelog body", string(body))
 }
 
 func TestChangelogFileList_ShowsAllWrittenRecords(t *testing.T) {
@@ -51,8 +58,14 @@ func TestChangelogFileList_ShowsAllWrittenRecords(t *testing.T) {
 	require.NoError(t, rootCmd.Execute())
 
 	var result struct {
-		Files []string `json:"files"`
+		Files []struct {
+			Name string `json:"name"`
+		} `json:"files"`
 	}
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-	require.ElementsMatch(t, []string{"20260709000000-alpha.md", "20260709000001-beta.md"}, result.Files)
+	names := make([]string, len(result.Files))
+	for i, f := range result.Files {
+		names[i] = f.Name
+	}
+	require.ElementsMatch(t, []string{"20260709000000-alpha.md", "20260709000001-beta.md"}, names)
 }

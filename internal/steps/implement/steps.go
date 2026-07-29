@@ -1,6 +1,10 @@
 package implement
 
 import (
+	"errors"
+	"path/filepath"
+
+	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -152,6 +156,21 @@ func reconcileSpec() workflow.StepCallback {
 
 func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		if !cfg.DryRun && st != nil {
+			planName := stepkit.GetString(data, "name")
+			artifactPaths := []string{
+				filepath.Join(cfg.PlanDir, planName, "test-plan.md"),
+				filepath.Join(cfg.ChangelogDir, planName+".md"),
+			}
+			for _, p := range artifactPaths {
+				if err := metadata.Close(st, p, metadata.StatusCompleted); err != nil {
+					if errors.Is(err, store.ErrNotFound) {
+						continue
+					}
+					return "", err
+				}
+			}
+		}
 		return "", writeStep("finished", "", "steps/implement/12-finished.md", data, out, st, cfg, nil)
 	}
 }

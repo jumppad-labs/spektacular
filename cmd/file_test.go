@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
@@ -29,12 +30,19 @@ func TestSpecFileWrite_ResolvesConfiguredDirectory(t *testing.T) {
 
 	content, err := os.ReadFile(filepath.Join(dir, "docs", "specs", "feature.md"))
 	require.NoError(t, err)
-	require.Equal(t, "spec body", string(content))
+	meta, body, err := metadata.Split(content)
+	require.NoError(t, err)
+	require.NotNil(t, meta, "write must produce a frontmatter block")
+	require.Equal(t, metadata.StatusInProgress, meta.Status)
+	require.Equal(t, "spec body", string(body))
 }
 
-// TestSpecFileWrite_PreservesProblematicCharacters asserts that the bytes
-// written to the destination are byte-identical to the source bytes, even when
-// the source contains shell-sensitive characters and embedded newlines.
+// TestSpecFileWrite_PreservesProblematicCharacters asserts that the body
+// portion written to the destination is byte-identical to the source bytes,
+// even when the source contains shell-sensitive characters and embedded
+// newlines. Since Phase 1.3 introduced a frontmatter layer, the on-disk bytes
+// carry a metadata block before the body — this test strips it and asserts on
+// the body portion only.
 func TestSpecFileWrite_PreservesProblematicCharacters(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -52,7 +60,11 @@ func TestSpecFileWrite_PreservesProblematicCharacters(t *testing.T) {
 	dstPath := filepath.Join(dir, "docs", "specs", "feature.md")
 	content, err := os.ReadFile(dstPath)
 	require.NoError(t, err)
-	require.Equal(t, body, content)
+	meta, gotBody, err := metadata.Split(content)
+	require.NoError(t, err)
+	require.NotNil(t, meta, "write must produce a frontmatter block")
+	require.Equal(t, metadata.StatusInProgress, meta.Status)
+	require.Equal(t, body, gotBody)
 }
 
 // TestSpecFileWrite_MissingSourceErrors asserts that pointing `--from` at a

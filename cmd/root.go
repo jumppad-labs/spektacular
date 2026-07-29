@@ -15,7 +15,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.1.0"
+// version and sha are set at build time via -ldflags
+// (see dagger/main.go's Build function).
+var (
+	version = "0.1.0"
+	sha     = ""
+)
 
 // globalFields holds the raw --fields JSON array string, available to all subcommands.
 var globalFields string
@@ -23,7 +28,17 @@ var globalFields string
 var rootCmd = &cobra.Command{
 	Use:     "spektacular",
 	Short:   "Agent-driven tool for spec-driven development",
-	Version: version,
+	Version: versionString(),
+}
+
+// versionString combines the build-time version and sha into the string
+// Cobra prints for --version. sha is omitted when unset (e.g. local go
+// build/go run, which never pass -ldflags).
+func versionString() string {
+	if sha == "" {
+		return version
+	}
+	return fmt.Sprintf("%s (%s)", version, sha)
 }
 
 func Execute() {

@@ -149,7 +149,7 @@ func (d *Spektacular) Build(
 				WithExec([]string{
 					"go", "build",
 					"-o", path,
-					"-ldflags", fmt.Sprintf("-X main.version=%s -X main.sha=%s", version, sha),
+					"-ldflags", fmt.Sprintf("-X github.com/jumppad-labs/spektacular/cmd.version=%s -X github.com/jumppad-labs/spektacular/cmd.sha=%s", version, sha),
 				}).
 				Sync(ctx)
 

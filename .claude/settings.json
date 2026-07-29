@@ -17,7 +17,8 @@
       "Read(//home/nicj/code/github.com/**)",
       "Bash(dagger --help)",
       "Bash(dagger update *)",
-      "Bash(dagger functions *)"
+      "Bash(dagger functions *)",
+      "Bash(/tmp/spektacular-version-test --version)"
     ],
     "additionalDirectories": [
       "/home/nicj/code/github.com/nicholasjackson/spektacular",

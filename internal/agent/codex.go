@@ -20,6 +20,9 @@ func (codexAgent) Install(projectPath string, cfg config.Config, out io.Writer) 
 	if err := installSpecTriggerSection(projectPath, cfg, out); err != nil {
 		return err
 	}
+	if err := installDiscoveryGroundingSection(projectPath, cfg, out); err != nil {
+		return err
+	}
 	return installDraftPresentationSection(projectPath, cfg, out)
 }
 

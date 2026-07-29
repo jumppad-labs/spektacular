@@ -50,3 +50,44 @@ go run . spec new --data '{"name":"..."}'
 Then drive its existing steps — the "ask the user..." prompts in `templates/steps/spec/*.md` are unchanged and still apply — but answer each one from the conversation you already had instead of asking cold. For every step where the discussion already established an answer (e.g. the overview step's "describe this feature in 2-3 sentences"), propose a draft based on what was said and ask the user to confirm or refine it, rather than posing the question as if from scratch. Only ask a step's question directly when the conversation genuinely didn't cover it. The user's confirmation or correction is still the final word — never silently record your own draft as accepted without it.
 
 This behavior is scoped to the current, single conversation: it does not persist across sessions, and it does not apply outside a Spektacular-initialized repository.
+
+## Discovery Grounding
+
+> Managed by `go run . init` — edit `templates/agents/discovery-grounding.md`
+> in the Spektacular source, not this section in place. Hand edits will not
+> survive the next init.
+
+When investigating this codebase — answering "how does X work" or "why does
+Y look like this" outside of a structured spec/plan/implement workflow —
+ground your discovery in the current code and conversation context, not in
+specs or plans. Source code is the source of truth for what the system
+*does*; a spec or plan can be stale, partially implemented, or superseded,
+so treating one as ground truth risks investigating a fiction instead of
+the actual system. If a spec or plan is genuinely relevant to a question
+the code can't answer (an intentional but non-obvious constraint or
+tradeoff), it's fine to read it — but verify what it claims against the
+code before relying on it.
+
+The `.spektacular/` directory is not part of the codebase for this purpose.
+It holds generated artifacts *about* the codebase — specs, plans, knowledge
+entries, context, changelogs — not the system itself. Don't sweep it in
+when asked to search or read "the codebase"; a broad grep or file scan
+should treat `.spektacular/` as out of scope unless the task explicitly
+concerns specs, plans, or knowledge.
+
+This does not apply to the spec/plan/implement workflows themselves, which
+read `.spektacular/` deliberately and by design (e.g. `spek-implement`
+reading the approved plan, or a discovery step's own prior-research lookup)
+— those steps already say when to consult it.
+
+## Presenting Drafts and Confirmations
+
+> Managed by `go run . init` — edit `templates/agents/draft-presentation.md`
+> in the Spektacular source, not this section in place. Hand edits will not
+> survive the next init.
+
+When you have drafted substantial content for the user to review — an architecture write-up, a set of options, a written section, a summary, a plan or spec excerpt — always present that draft as normal, readable chat text first, in full. Never embed the draft itself inside a structured yes/no or multiple-choice dialog element: that kind of UI truncates or compresses long text, making it hard for the user to actually read what you're proposing.
+
+Once the draft has been shown in full as plain text, you may then ask a short, direct confirmation question — e.g. "does this look right, or should anything change?" — using a structured yes/no or multiple-choice element if one is available. That confirmation step comes strictly after the content has already been presented as text, and is never a substitute for showing it.
+
+This rule applies across every workflow step that follows a draft-then-confirm pattern — spec, plan, and implement workflows alike — not just one. If a specific step's own instructions don't repeat this explicitly, this standing rule still applies.

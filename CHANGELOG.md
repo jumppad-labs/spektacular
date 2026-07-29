@@ -1,3 +1,7 @@
+## 000036_present-drafts-as-text-not-dialog
+
+The assistant now always shows you a drafted piece of content — an architecture write-up, a set of options, a written section, a summary — as plain, readable chat text before asking you to confirm it, instead of sometimes embedding the draft itself inside a compressed yes/no or multiple-choice dialog. Once the draft has been shown in full, a short confirmation question may follow, but only as a separate step afterward, never as a substitute for showing the draft itself. This applies consistently across every workflow — spec, plan, and implement alike — for every Spektacular-managed project, regardless of which coding agent you're using (Claude, Codex, or Bob).
+
 ## 000035_plan-walkthrough-conversation
 
 After Spektacular finishes generating an implementation plan, the assistant now offers to walk you through it conversationally instead of just handing you the documents. If you accept, it explains the plan the way a colleague would — the reasoning behind the chosen approach, how the work breaks into stages, and what was deliberately left out — as a short back-and-forth rather than reading the plan aloud. You can interrupt at any point with a question or a change request; any change you ask for is applied to the plan immediately and confirmed before the conversation continues, and the walkthrough only wraps up once you explicitly say the plan looks right. Reading the documents yourself remains just as valid as before — the offer is made once, and declining it changes nothing about how the workflow finishes.

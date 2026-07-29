@@ -17,7 +17,7 @@ On each turn, the CLI returns JSON containing an `instruction` field. That instr
 3. When the step is complete, run the `goto` command named at the bottom of the instruction to advance the state machine.
 4. Read the next `instruction` from the new JSON response and repeat.
 
-**This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user. Reporting completion includes presenting whatever offer the `finished` instruction contains — e.g. an offer to walk the user through the finished plan conversationally — and, if accepted, conducting that walkthrough. Don't summarize the instruction and stop short of actually presenting it.
+**This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user.
 
 **Concretely: do not stop after `plan new`.** That command only starts the workflow — it returns the *first* instruction (the `overview` step), not a finished plan. Seeing a clean JSON response with no `error` is not a signal to stop; it is the signal to keep going. Reporting success, summarizing "plan initialized," or handing control back to the user at this point is the single most common way this skill is executed incorrectly — do not do it.
 

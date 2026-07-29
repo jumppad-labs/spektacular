@@ -5,11 +5,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/metadata"
+	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
+
+// today returns time.Now().UTC() truncated to day, matching the value the
+// metadata package stamps when UpdateOptions.Today is unset. Used by the
+// Phase 1.5 finish-step tests to assert closed_date without pinning wall time.
+func today() time.Time {
+	return time.Now().UTC().Truncate(24 * time.Hour)
+}
 
 type testData struct {
 	values map[string]any
@@ -258,6 +268,163 @@ func TestNewStep_InstructionIncludesDetailedFormat(t *testing.T) {
 	require.Contains(t, instruction, "constraints", "instruction should specify capturing constraints")
 	require.Contains(t, instruction, "alternatives", "instruction should specify capturing alternatives")
 	require.Contains(t, instruction, "exact phrasing", "instruction should specify capturing exact phrasing")
+}
+
+// --- Phase 1.5: metadata stamping and terminal-step closure ---
+
+// setupNewStepEnv creates a temp dir with `.spektacular/context.md` and chdirs
+// into it, returning the dir and a cleanup func that restores the original
+// working directory. new() writes context.md to a relative path off the cwd,
+// so callers exercising new() must run inside a suitable working directory.
+func setupNewStepEnv(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	spektacularDir := filepath.Join(tmp, ".spektacular")
+	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
+
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmp))
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	return tmp
+}
+
+// TestSpecNew_StampsMetadataOnFirstWrite asserts new() routes its scaffold
+// write through metadata.Merge so the stored spec carries an in-progress
+// frontmatter block with created_date=today and no closed_date.
+func TestSpecNew_StampsMetadataOnFirstWrite(t *testing.T) {
+	tmp := setupNewStepEnv(t)
+
+	data := &testData{values: map[string]any{"name": "fixture"}}
+	writer := &captureWriter{}
+	st := store.NewFileStore(tmp, "project")
+
+	_, err := new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "specs"})
+	require.NoError(t, err)
+
+	raw, err := st.Read(SpecFilePath("specs", "fixture"))
+	require.NoError(t, err)
+
+	meta, _, err := metadata.Split(raw)
+	require.NoError(t, err)
+	require.NotNil(t, meta, "new() must attach frontmatter to the initial scaffold write")
+	require.Equal(t, metadata.StatusInProgress, meta.Status, "initial write must be in-progress")
+	require.True(t, meta.CreatedDate.Equal(today()), "created_date must be today, got %s", meta.CreatedDate)
+	require.True(t, meta.ClosedDate.IsZero(), "closed_date must be absent on an in-progress artifact")
+}
+
+// TestSpecFinished_ClosesTheSpec seeds the store with a filled (non-scaffold)
+// spec body carrying an in-progress frontmatter block dated in the past and
+// asserts finished() transitions the metadata to completed with today's
+// closed_date while preserving the seeded created_date.
+func TestSpecFinished_ClosesTheSpec(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	cfg := workflow.Config{Command: "spektacular", SpecDir: "specs"}
+
+	// Seed a filled body with in-progress frontmatter dated in the past.
+	created := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	filled, err := metadata.Render(metadata.Metadata{
+		CreatedDate: created,
+		Status:      metadata.StatusInProgress,
+	}, []byte("# Fixture\n\nFilled body that is not the scaffold.\n"))
+	require.NoError(t, err)
+	require.NoError(t, st.Write(SpecFilePath("specs", "fixture"), filled))
+
+	data := &testData{values: map[string]any{"name": "fixture"}}
+	writer := &captureWriter{}
+
+	_, err = finished()(data, writer, st, cfg)
+	require.NoError(t, err)
+
+	raw, err := st.Read(SpecFilePath("specs", "fixture"))
+	require.NoError(t, err)
+
+	meta, _, err := metadata.Split(raw)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.Equal(t, metadata.StatusCompleted, meta.Status, "finished() must transition status to completed")
+	require.True(t, meta.CreatedDate.Equal(created), "created_date must be preserved from seed, got %s", meta.CreatedDate)
+	require.True(t, meta.ClosedDate.Equal(today()), "closed_date must be today, got %s", meta.ClosedDate)
+}
+
+// TestSpecFinished_LeavesUnwrittenSpecAlone writes a scaffold-only spec (still
+// wearing an in-progress frontmatter block from a hypothetical new() call) and
+// asserts finished() does NOT transition it to completed — the still-scaffold
+// gate should prevent the close.
+func TestSpecFinished_LeavesUnwrittenSpecAlone(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	cfg := workflow.Config{Command: "spektacular", SpecDir: "specs"}
+
+	scaffold, err := stepkit.RenderTemplate("scaffold/spec.md", map[string]any{"name": "fixture"})
+	require.NoError(t, err)
+	created := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	seed, err := metadata.Render(metadata.Metadata{
+		CreatedDate: created,
+		Status:      metadata.StatusInProgress,
+	}, []byte(scaffold))
+	require.NoError(t, err)
+	require.NoError(t, st.Write(SpecFilePath("specs", "fixture"), seed))
+
+	data := &testData{values: map[string]any{"name": "fixture"}}
+	writer := &captureWriter{}
+
+	_, err = finished()(data, writer, st, cfg)
+	require.NoError(t, err, "finished() must not crash when the spec is still the scaffold")
+
+	// The stored bytes must be byte-identical to the seed — no metadata mutation.
+	raw, err := st.Read(SpecFilePath("specs", "fixture"))
+	require.NoError(t, err)
+	require.Equal(t, string(seed), string(raw), "still-scaffold gate must prevent any write on finished()")
+
+	meta, _, err := metadata.Split(raw)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.Equal(t, metadata.StatusInProgress, meta.Status, "still-scaffold artifact must remain in-progress")
+	require.True(t, meta.ClosedDate.IsZero(), "still-scaffold artifact must not gain a closed_date")
+}
+
+// TestSpecStillScaffold_FrontmatterTolerant confirms specStillScaffold strips a
+// leading frontmatter block before comparing against the rendered scaffold so
+// the wrapped and bare scaffolds are treated equivalently, and a filled body
+// wrapped in frontmatter is still reported as no-longer-scaffold.
+func TestSpecStillScaffold_FrontmatterTolerant(t *testing.T) {
+	const specName = "fixture"
+	cfg := workflow.Config{Command: "spektacular", SpecDir: "specs"}
+
+	scaffold, err := stepkit.RenderTemplate("scaffold/spec.md", map[string]any{"name": specName})
+	require.NoError(t, err)
+	scaffoldBytes := []byte(scaffold)
+
+	fm := metadata.Metadata{
+		CreatedDate: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Status:      metadata.StatusInProgress,
+	}
+
+	t.Run("scaffold_with_frontmatter_is_still_scaffold", func(t *testing.T) {
+		st := store.NewFileStore(t.TempDir(), "project")
+		wrapped, err := metadata.Render(fm, scaffoldBytes)
+		require.NoError(t, err)
+		require.NoError(t, st.Write(SpecFilePath(cfg.SpecDir, specName), wrapped))
+
+		still, err := specStillScaffold(st, cfg, specName)
+		require.NoError(t, err)
+		require.True(t, still, "scaffold wrapped in frontmatter must be reported as still scaffold")
+	})
+
+	t.Run("filled_body_with_frontmatter_is_not_scaffold", func(t *testing.T) {
+		st := store.NewFileStore(t.TempDir(), "project")
+		filled := append([]byte{}, scaffoldBytes...)
+		filled = append(filled, "\n\n## Real content\n"...)
+		wrapped, err := metadata.Render(fm, filled)
+		require.NoError(t, err)
+		require.NoError(t, st.Write(SpecFilePath(cfg.SpecDir, specName), wrapped))
+
+		still, err := specStillScaffold(st, cfg, specName)
+		require.NoError(t, err)
+		require.False(t, still, "a filled body wrapped in frontmatter must not be reported as still scaffold")
+	})
 }
 
 // TestNewStep_InstructionIncludesCaveat verifies that the instruction includes

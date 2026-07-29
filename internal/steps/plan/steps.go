@@ -1,6 +1,9 @@
 package plan
 
 import (
+	"errors"
+
+	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -211,7 +214,10 @@ var planDocs = []planDoc{
 
 // planDocStillScaffold reads a generated plan document back through the store
 // and reports whether it is missing or still holds the unfilled scaffold — i.e.
-// the agent has not yet committed it with `plan file write`.
+// the agent has not yet committed it with `plan file write`. A leading YAML
+// frontmatter block on the stored artifact is stripped before the comparison
+// so the check answers "is the body still the scaffold?", tolerating the
+// metadata block that Spektacular now prepends on every write.
 func planDocStillScaffold(st store.Store, doc planDoc, planDir, planName string) (bool, error) {
 	stored, err := st.Read(doc.path(planDir, planName))
 	if err != nil {
@@ -221,7 +227,11 @@ func planDocStillScaffold(st store.Store, doc planDoc, planDir, planName string)
 	if err != nil {
 		return false, err
 	}
-	return string(stored) == scaffold, nil
+	body := stored
+	if fm, split, splitErr := metadata.Split(stored); splitErr == nil && fm != nil {
+		body = split
+	}
+	return string(body) == scaffold, nil
 }
 
 // docWarning checks one plan document and returns the template extras: when the
@@ -283,6 +293,7 @@ func finished() workflow.StepCallback {
 		var extra map[string]any
 		if !cfg.DryRun && st != nil {
 			planName := stepkit.GetString(data, "name")
+			incomplete := false
 			for _, doc := range planDocs {
 				unwritten, err := planDocStillScaffold(st, doc, cfg.PlanDir, planName)
 				if err != nil {
@@ -290,7 +301,23 @@ func finished() workflow.StepCallback {
 				}
 				if unwritten {
 					extra = map[string]any{"plan_incomplete": true}
+					incomplete = true
 					break
+				}
+			}
+			// When every plan document is present and filled in, transition
+			// each artifact's metadata status to completed. A missing artifact
+			// here would already have been surfaced above as plan_incomplete,
+			// so treat ErrNotFound defensively as a no-op.
+			if !incomplete {
+				for _, doc := range planDocs {
+					path := doc.path(cfg.PlanDir, planName)
+					if err := metadata.Close(st, path, metadata.StatusCompleted); err != nil {
+						if errors.Is(err, store.ErrNotFound) {
+							continue
+						}
+						return "", err
+					}
 				}
 			}
 		}

@@ -10,7 +10,10 @@
       "Read(//tmp/spek-test/**)",
       "WebFetch(domain:github.com)",
       "Bash(sort -t_ -k1 -n)",
-      "Bash(grep -n \"write\\\\|Write\\\\|spec file\" /home/nicj/code/github.com/jumppad-labs/spektacular/templates/spec-steps/*.md)"
+      "Bash(grep -n \"write\\\\|Write\\\\|spec file\" /home/nicj/code/github.com/jumppad-labs/spektacular/templates/spec-steps/*.md)",
+      "Bash(cd /tmp/test-artifacts && go run github.com/jumppad-labs/spektacular artifacts list 2>&1)",
+      "Read(//tmp/test-artifacts/**)",
+      "Bash(/tmp/spektacular artifacts *)"
     ],
     "additionalDirectories": [
       "/home/nicj/code/github.com/nicholasjackson/spektacular",

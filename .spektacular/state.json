@@ -1,24 +1,21 @@
 {
-  "kind": "implement",
+  "kind": "spec",
   "current_step": "finished",
   "completed_steps": [
     "new",
-    "read_plan",
-    "analyze",
-    "implement",
-    "test",
-    "verify",
-    "update_plan",
-    "update_changelog",
-    "update_repo_changelog",
-    "test_plan",
-    "update_feature_changelog",
-    "reconcile_spec",
+    "overview",
+    "requirements",
+    "acceptance_criteria",
+    "constraints",
+    "technical_approach",
+    "success_metrics",
+    "non_goals",
+    "verification",
     "finished"
   ],
-  "created_at": "2026-07-28T17:53:01.64276214Z",
-  "updated_at": "2026-07-29T08:58:22.056876793Z",
+  "created_at": "2026-07-30T13:01:05.284305372Z",
+  "updated_at": "2026-07-30T13:28:30.025365011Z",
   "data": {
-    "name": "000038_artifact_metadata"
+    "name": "000039_project-level-capabilities"
   }
 }

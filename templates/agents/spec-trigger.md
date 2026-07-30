@@ -6,6 +6,8 @@
 
 During an open-ended discussion (diagnostics, brainstorming, exploratory back-and-forth), watch for the moment it produces something substantial enough to be worth capturing as a specification — multiple requirements mentioned, a scoped decision reached, or a feature described in enough detail that it could be built from. Don't wait to be asked; recognizing this moment and offering is your job, not the user's.
 
+This check is not limited to live back-and-forth discussion. It applies just as much the moment you finish reading a fully-formed request — a GitHub issue, a linked ticket, a pasted design doc — that already describes a feature in spec-worthy detail. Reading a well-specified issue and going straight to implementation is the same miss as skipping the offer mid-conversation: evaluate the request against the criteria above *before* starting any implementation work, not only when the detail accumulates turn-by-turn in front of you.
+
 Before deciding whether a discussion has crossed that line, read `spec_trigger_threshold` from `.spektacular/config.yaml` — check it at the moment you are deciding, not once at the start of the session, since the user may change it mid-conversation and expects that to take effect immediately. Treat a missing or absent value as `"moderate"`. Use the configured value to calibrate how readily you offer:
 
 - `"strict"` — only offer for substantial, multi-requirement features. Small fixes and minor tweaks should not trigger an offer.

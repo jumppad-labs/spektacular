@@ -27,6 +27,8 @@ Outside this repository, continue using your per-user memory store as normal.
 
 During an open-ended discussion (diagnostics, brainstorming, exploratory back-and-forth), watch for the moment it produces something substantial enough to be worth capturing as a specification — multiple requirements mentioned, a scoped decision reached, or a feature described in enough detail that it could be built from. Don't wait to be asked; recognizing this moment and offering is your job, not the user's.
 
+This check is not limited to live back-and-forth discussion. It applies just as much the moment you finish reading a fully-formed request — a GitHub issue, a linked ticket, a pasted design doc — that already describes a feature in spec-worthy detail. Reading a well-specified issue and going straight to implementation is the same miss as skipping the offer mid-conversation: evaluate the request against the criteria above *before* starting any implementation work, not only when the detail accumulates turn-by-turn in front of you.
+
 Before deciding whether a discussion has crossed that line, read `spec_trigger_threshold` from `.spektacular/config.yaml` — check it at the moment you are deciding, not once at the start of the session, since the user may change it mid-conversation and expects that to take effect immediately. Treat a missing or absent value as `"moderate"`. Use the configured value to calibrate how readily you offer:
 
 - `"strict"` — only offer for substantial, multi-requirement features. Small fixes and minor tweaks should not trigger an offer.
@@ -116,3 +118,40 @@ When you have drafted substantial content for the user to review — an architec
 Once the draft has been shown in full as plain text, you may then ask a short, direct confirmation question — e.g. "does this look right, or should anything change?" — using a structured yes/no or multiple-choice element if one is available. That confirmation step comes strictly after the content has already been presented as text, and is never a substitute for showing it.
 
 This rule applies across every workflow step that follows a draft-then-confirm pattern — spec, plan, and implement workflows alike — not just one. If a specific step's own instructions don't repeat this explicitly, this standing rule still applies.
+
+## Knowledge-Worthy Discovery Recognition
+
+> Managed by `go run . init` — edit `templates/agents/knowledge-trigger.md`
+> in the Spektacular source, not this section in place. Hand edits will not
+> survive the next init.
+
+While working — debugging, reading code to understand how something works,
+making a non-obvious choice — watch for the moment you surface something
+durable and non-obvious: a convention inferred from code that isn't written
+down anywhere, a gotcha hit while debugging, the reasoning behind a choice
+that wasn't the obvious one, a term whose meaning had to be worked out from
+context. Recognizing this moment is your job, not the user's — don't wait to
+be asked.
+
+When you recognize the moment, offer — never write to the knowledge base
+unprompted. Something like: "this looks like an undocumented convention —
+want me to save it via `spek-knowledge`?" Say briefly what you'd capture and
+why it's worth keeping. Wait for the user's decision before doing anything
+else.
+
+The user's response falls into one of three outcomes:
+
+- **Accept** — invoke the `spek-knowledge` skill to write the entry. The
+  skill's own propose-then-confirm flow handles scope selection and the
+  actual write from there.
+- **Defer** ("not now", "later", "remind me at the end") — do not invoke the
+  skill. Continue the task normally, and treat this as temporary: if the
+  work keeps surfacing related material, you may raise the offer again later
+  in the same conversation.
+- **Decline** ("no", "not worth saving") — do not invoke the skill, and do
+  not raise the offer again for this discovery for the remainder of the
+  conversation. A decline is final for that discovery, not a "not now."
+
+This is the recognition trigger only; it does not change how a knowledge
+entry gets written once you decide to write one — that is still entirely the
+`spek-knowledge` skill's job, per the Memory & Context section above.

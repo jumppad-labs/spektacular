@@ -151,14 +151,19 @@ func TestInstallSpecTriggerSection_CrossAgentIdempotency(t *testing.T) {
 	draftPresentationCount := strings.Count(string(body), "## Presenting Drafts and Confirmations")
 	require.Equal(t, 1, draftPresentationCount, "exactly one Presenting Drafts and Confirmations heading expected, got %d in:\n%s", draftPresentationCount, body)
 
-	// Headings must appear in the order Memory & Context -> Spec-Worthy
-	// Discussion Recognition -> Presenting Drafts and Confirmations.
+	knowledgeTriggerCount := strings.Count(string(body), "## Knowledge-Worthy Discovery Recognition")
+	require.Equal(t, 1, knowledgeTriggerCount, "exactly one Knowledge-Worthy Discovery Recognition heading expected, got %d in:\n%s", knowledgeTriggerCount, body)
+
+	// Headings must appear in the order Memory & Context -> Knowledge-Worthy
+	// Discovery Recognition -> Spec-Worthy Discussion Recognition ->
+	// Presenting Drafts and Confirmations.
 	memoryContextIdx := strings.Index(string(body), "## Memory & Context")
+	knowledgeTriggerIdx := strings.Index(string(body), "## Knowledge-Worthy Discovery Recognition")
 	specTriggerIdx := strings.Index(string(body), "## Spec-Worthy Discussion Recognition")
 	draftPresentationIdx := strings.Index(string(body), "## Presenting Drafts and Confirmations")
-	require.True(t, memoryContextIdx < specTriggerIdx && specTriggerIdx < draftPresentationIdx,
-		"expected heading order Memory & Context (%d) < Spec-Worthy Discussion Recognition (%d) < Presenting Drafts and Confirmations (%d) in:\n%s",
-		memoryContextIdx, specTriggerIdx, draftPresentationIdx, body)
+	require.True(t, memoryContextIdx < knowledgeTriggerIdx && knowledgeTriggerIdx < specTriggerIdx && specTriggerIdx < draftPresentationIdx,
+		"expected heading order Memory & Context (%d) < Knowledge-Worthy Discovery Recognition (%d) < Spec-Worthy Discussion Recognition (%d) < Presenting Drafts and Confirmations (%d) in:\n%s",
+		memoryContextIdx, knowledgeTriggerIdx, specTriggerIdx, draftPresentationIdx, body)
 
 	// Each agent's skill directory should still be present, confirming the
 	// shared AGENTS.md write did not displace any earlier per-agent install.

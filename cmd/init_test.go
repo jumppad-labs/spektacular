@@ -42,6 +42,33 @@ func TestInit_Claude(t *testing.T) {
 	// Claude surfaces installed skills directly in its slash-command menu, so no
 	// command wrappers are installed — the commands tree must not exist.
 	require.NoDirExists(t, filepath.Join(dir, ".claude", "commands"))
+
+	// The installing version is recorded in .spektacular/version. A fresh
+	// temp dir has no pre-existing version file, so this also covers repos
+	// initialised before the version file existed.
+	versionData, err := os.ReadFile(filepath.Join(dir, ".spektacular", "version"))
+	require.NoError(t, err)
+	require.Equal(t, "0.1.0\n", string(versionData))
+}
+
+func TestInit_RewritesStaleVersionFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	// Simulate an installation recorded by a different binary version.
+	versionPath := filepath.Join(dir, ".spektacular", "version")
+	require.NoError(t, os.WriteFile(versionPath, []byte("9.9.9\n"), 0644))
+
+	// Re-running init replaces the stale record with the current version.
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	versionData, err := os.ReadFile(versionPath)
+	require.NoError(t, err)
+	require.Equal(t, "0.1.0\n", string(versionData))
 }
 
 func TestInit_Bob(t *testing.T) {
@@ -158,6 +185,8 @@ func TestInit_CustomCommand(t *testing.T) {
 	skillData, err := os.ReadFile(skillPath)
 	require.NoError(t, err)
 	require.Contains(t, string(skillData), "go run . spec new")
+	require.Contains(t, string(skillData), "go run . version check",
+		"version-check preamble must render with the custom command")
 	require.NotContains(t, string(skillData), "{{command}}")
 }
 
@@ -181,4 +210,9 @@ func TestInit_Idempotent(t *testing.T) {
 	skillData, err := os.ReadFile(filepath.Join(siblingSkillDir, "SKILL.md"))
 	require.NoError(t, err)
 	require.Equal(t, "keep-skill", string(skillData))
+
+	// Version file still exists with the expected content after the second init.
+	versionData, err := os.ReadFile(filepath.Join(dir, ".spektacular", "version"))
+	require.NoError(t, err)
+	require.Equal(t, "0.1.0\n", string(versionData))
 }

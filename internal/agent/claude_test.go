@@ -35,6 +35,8 @@ func TestClaudeAgent_Install(t *testing.T) {
 		data, err := os.ReadFile(skillPath)
 		require.NoError(t, err)
 		require.Contains(t, string(data), expected)
+		require.Contains(t, string(data), "spektacular version check",
+			"every workflow skill must open with the version-check preamble")
 		require.NotContains(t, string(data), "{{command}}")
 	}
 

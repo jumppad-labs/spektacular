@@ -241,4 +241,5 @@ func init() {
 	rootCmd.AddCommand(skillCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(artifactsCmd)
+	rootCmd.AddCommand(versionCmd)
 }

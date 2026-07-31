@@ -1,82 +1,174 @@
-# Implement: 000038_artifact_metadata — working context
+# Context: implement workflow for 000039_version-check
 
-## Workflow
+## Workflow state
 
-- Implement workflow started against plan `000038_artifact_metadata` on 2026-07-28.
-- Plan store: `.spektacular/plans/000038_artifact_metadata/{plan.md,context.md,research.md}`.
-- Source spec: `.spektacular/specs/000038_artifact_metadata.md`.
-- Read all three plan documents via `go run . plan file read` (never with `Read` tool).
+- Implement workflow started via spek-implement skill; plan chosen by user:
+  000039_version-check. Currently past read_plan, heading into analyze.
+- First-phase invocation: plan.md has no `## Changelog` section yet; start at
+  Phase 1.1 (first unchecked phase).
+- User's standing preference: drive straight through steps, skip per-step
+  confirmations on simple features; only stop for real design decisions.
 
-## Read-plan step outcomes
+## read_plan results
 
-- **Structural validation:** plan.md has all 10 required top-level sections (Overview, Architecture & Design Decisions, Component Breakdown, Data Structures & Interfaces, Implementation Detail, Dependencies, Testing Approach, Milestones & Phases, Open Questions, Out of Scope). Seven `#### - [ ]` phases across two milestones, each with a `context.md#phase-*` link that resolves.
-- **Drift check: NO DRIFT.** Every file path, symbol, template path, and CLI command referenced in the plan exists at its stated location. `internal/metadata/` correctly does NOT exist yet (it's a new package). No existing `spektacular artifacts` command wired.
-- **Spec coverage:** every Requirement and Acceptance Criterion in the spec is covered somewhere under `## Milestones & Phases` in the plan. No descoped items.
-- **Changelog mode: FIRST-PHASE INVOCATION.** No `## Changelog` section in plan.md. Pick up at Phase 1.1.
+- Structural validation passed: all 10 required plan.md sections present;
+  phases 1.1 / 2.1 / 3.1 all have technical-detail links resolving to
+  matching `### Phase N.M:` headings in context.md.
+- Drift check passed: every file/symbol referenced in plan+context exists
+  (cmd/root.go version var :20-23, versionString :37, runInit :21,
+  dataDir :209, loadConfig :196, workflowSkills/installWorkflowSkills in
+  internal/agent/skills.go, schemaProp/schemaObj/commandSchema in cmd/spec.go,
+  runRootCmd cmd/root_test.go:68, envelope contract tests ~:92/:219/:332,
+  4 SKILL.md templates, changelog bare-parent pattern). cmd/version.go does
+  not exist yet — it is the planned new file.
+- Spec coverage check passed: all 6 requirements + 6 acceptance criteria of
+  spec 000039_version-check are covered by phases 1.1/2.1/3.1. No descoping
+  needed.
+- Watch-point from plan: the three envelope contract tests are t.Run-subtest
+  tables; adding a two-word `version check` family should be a trivial
+  subtest addition. STOP and ask only if it needs harness restructuring.
 
-## Open Question resolutions (from drift check)
+## Key design facts (from plan docs)
 
-**Open Question #1 — consumers of `{"files": [...]}` list shape (relevant for Phase 2.1):**
+- `.spektacular/version`: bare version string + newline (no sha), written in
+  runInit after config rewrite; committed to git; re-init overwrites — that's
+  the whole repair path.
+- `version check` (new cmd/version.go): bare cobra parent `version` +
+  `check` subcommand; VersionCheckResult{status, installed_version(omitempty),
+  current_version, action(omitempty)}; exit 0 for all three states
+  (match/mismatch/missing); ErrorResponse (exit 1) only for genuine faults
+  (unreadable file); pure classifyVersion(recorded, current) function;
+  --schema short-circuit per cmd/skill.go pattern; read-only.
+- Preamble: identical ~5-line block after frontmatter in all 4
+  templates/skills/workflows/*/SKILL.md using `{{command}} version check`;
+  no mustache partial. Dogfood re-init (`go run . init claude`) in Phase 3.1.
+- Tests: oracle independence (assert literal "0.1.0" dev default, don't
+  derive via versionString); t.TempDir()+t.Chdir convention; add family to
+  three envelope contract tables.
 
-- **Only one producer:** `cmd/storefile.go:159` — `return output.Write(cmd.OutOrStdout(), map[string]any{"files": names}, "")`.
-- **Only one code test consumer:** `cmd/changelog_file_test.go:54` — unmarshals into `struct { Files []string }`. Will need update to accept the new struct-per-entry shape.
-- **Template/skill references** (call the command, don't parse the shape): `templates/skills/workflows/spek-{new,plan,implement}/SKILL.md`, `templates/steps/plan/02-discovery.md`, `templates/skill_list_command_test.go`.
+## Phase 1.1 — COMPLETE (checked in plan.md, changelog entry written)
 
-**Open Question #2 — in-Go `st.Write` call sites (relevant for Phase 1.5):**
+- cmd/version.go created: versionFilePath(dataDir), writeVersionFile(path,v)
+  writing v+"\n" mode 0644 — Phase 2.1 extends this same file with the
+  version command. cmd/init.go: version file written after config rewrite;
+  output line `  Version:  <path> (<version>)` after the Project line.
+- Tests in cmd/init_test.go: TestInit_Claude extended (version file ==
+  "0.1.0\n"; fresh dir covers pre-feature-repo criterion),
+  TestInit_RewritesStaleVersionFile new, TestInit_Idempotent extended.
+- Verify: go build / go test ./... / go vet all green; Makefile lint = go
+  vet only, no golangci-lint config.
+- plan.md: Phase 1.1 heading + all 4 criteria checked; `## Changelog`
+  section created at end of plan.md with the 1.1 entry.
+- Now looping to analyze for Phase 2.1 (version check command). Remaining
+  unchecked: 2.1, 3.1. Auto-looping per user's standing preference.
 
-Production writers via `git grep -n 'st\.Write' internal/steps/ cmd/`:
+## Phase 2.1 — COMPLETE (checked in plan.md, changelog entry written)
 
-1. `cmd/storefile.go:97` — the shared `newStoreFileCmd` write subcommand (covered by Phase 1.3).
-2. `internal/steps/spec/steps.go:79` — spec workflow `new()` scaffold write (Phase 1.5 routes through `metadata.Merge`).
+- Heading + all 5 criteria checked; changelog entry appended. Verified all
+  green. Now looping to analyze for Phase 3.1 (skill preamble + dogfood
+  re-init) — the final phase.
 
-The implement and plan workflows do NOT call `st.Write` directly from step callbacks — they emit template instructions telling the agent to call `plan file write` / `changelog file write` via the CLI, which flows through the storefile.go write handler. The finished-step close in Phase 1.5 therefore needs to go through the CLI (or through the shared metadata helper called from Go with the store handle the callback already has) — no additional in-Go `st.Write` sites to worry about.
+## Phase 3.1 — COMPLETE (checked in plan.md, changelog entry written)
 
-## Key decisions carried from plan authorship
+- Heading + all 4 criteria checked; changelog entry appended. Zero
+  unchecked phases remain.
 
-1. **Owner-workflow closes.** Spec workflow → spec.md at `finished`. Plan workflow → plan.md/context.md/research.md at `finished`. Implement workflow → test-plan.md + changelog entry at `finished`. Downstream body mutations do NOT re-open metadata (spec 000034 checkbox ticking pattern).
-2. **Two update surfaces:** implicit on `<kind> file write` + explicit metadata-only `<kind> file set-status`.
-3. **Enum accepts all four values day one:** `in-progress`, `completed`, `superseded`, `archived`. Workflows only write `in-progress` and `completed`; `superseded`/`archived` reachable only via `set-status`.
-4. **Store interface stays byte-oriented.** Metadata sits above the substrate. No new fields on `DirEntry` / `Hit`.
-5. **YAML dates are `YYYY-MM-DD`** (day precision, no time-of-day). Custom `MarshalYAML`/`UnmarshalYAML` on a date wrapper enforces this.
-6. **No backfill.** Pre-shipping bare docs stay byte-identical; excluded from any filtered list query.
+## Closing steps
 
-## Load-bearing gotchas
+- CHANGELOG.md (repo root): `## 000039_version-check` section prepended
+  (user-facing summary).
+- test-plan.md committed to plan store: two manual procedures — (1) live
+  agent relays the stale prompt on skill invocation in a mismatched repo
+  (release-manager check per release/agent), (2) field observation of
+  staleness-attributable bug reports. Metric 2 (no false alarms) is
+  automated, not restated.
+- Feature changelog record committed to the changelog store
+  (000039_version-check.md): what was built (3 parts), why it matters,
+  deviations: none (watch-points resolved favorably; resetVersionCheckFlags
+  added for flag hygiene).
+- Spec reconciled: all 6 requirements + 6 acceptance criteria flipped to
+  [x] — every checkbox is delivered by phases 1.1/2.1/3.1 per the plan
+  changelog (live-agent relay verification remains a manual test-plan
+  item, but the mechanism itself shipped). Advancing to finished.
 
-- **`planDocStillScaffold` byte-compare (Phase 1.2)** at `internal/steps/plan/steps.go:215-225`. MUST land before Phase 1.3 or plan workflow regresses.
-- **Malformed hand-edited frontmatter** must produce actionable error, never silent re-stamp of `created_date`.
-- **List output shape change in Phase 2.1** — update `cmd/changelog_file_test.go:54` and check the two template test files.
+## Phase 3.1 analyze results
 
-## Phase execution order
+- No mismatches. Templates: spek-new/plan/implement have STOP blockquote
+  right after frontmatter; spek-knowledge has `# What this skill does`.
+  Preamble inserts between the closing `---` and that first content, in all
+  four, using `{{command}} version check`.
+- Agent tests: claude/bob/codex_test.go each have a skillAssertions loop
+  over installed SKILL.md — extend with a "version check" Contains
+  assertion (test step's job). instruction_surface_test.go walks
+  skills/workflows automatically.
+- Dogfood re-init (`go run . init claude`) happens at the end of the
+  implement step for this phase; review diff before proceeding.
 
-Milestone 1: 1.1 → 1.2 → 1.3 → 1.4 → 1.5.
-Milestone 2: 2.1 → 2.2.
+## Phase 3.1 implement results
 
-Phase 1.5 is the fan-out candidate (three workflow packages, same pattern). Others are single-agent.
+- Identical 4-line blockquote preamble ("Version check first.") inserted
+  after frontmatter in all four templates/skills/workflows/*/SKILL.md,
+  before the STOP block (spek-new/plan/implement) / before "# What this
+  skill does" (spek-knowledge). Uses `{{command}} version check` and
+  `{{command}} init <agent>`.
+- Dogfood re-init run: .claude/skills/*/SKILL.md re-rendered with the
+  preamble (`go run . version check`), .spektacular/version written with
+  0.1.0, AGENTS.md managed sections re-rendered. `go run . version check`
+  in this repo → status match, silent. Note: AGENTS.md and
+  templates/agents/memory-context.md had pre-existing uncommitted user
+  modifications from before this session.
+- Tests (sub-agent): "spektacular version check" containment assertion
+  added inside the skillAssertions loops of claude/bob/codex_test.go (12
+  rendered files); TestInit_CustomCommand asserts "go run . version check"
+  (substitution with non-default command). No template-walking duplicate
+  added. go test ./internal/agent/ ./cmd/ passes.
+- Verify (sub-agent): build/test/vet green; `go run . version check` in
+  this repo → match; every .claude/skills/*/SKILL.md contains the
+  preamble. Phase 3.1 verified.
 
-## Current phase
+## Phase 2.1 analyze results
 
-**Phase 1.1: Author the `internal/metadata` package** — code written and compiling.
+- No mismatches. --schema pattern: cmd/skill.go:28-47 (Bool flag "schema",
+  build commandSchema, output.Write(w, s, "")); schema types cmd/spec.go
+  (schemaProp/schemaObj/commandSchema); success path
+  output.New(cmd.OutOrStdout(), globalFields).WriteResult(result).
+- Watch-point RESOLVED: envelope contract tests are plain t.Run subtests
+  (TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly,
+  TestWrapper_ErrorDiscriminantAndExitCode,
+  TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate in
+  cmd/root_test.go) — add a "version" subtest to each; no harness change.
+- Failure path for contract tests: make .spektacular/version a DIRECTORY →
+  os.ReadFile fails non-IsNotExist → ErrorResponse exit 1.
+- config.NewDefault(): Command "spektacular", Agent "" — action text
+  suggests "`<command> init <agent>`", appending agent only when non-empty.
+- ErrorResponse is returned as error from RunE (runRoot envelope-izes);
+  NewError(...).WithResource(...).WithNextAction(...).
 
-Design decisions made during implementation:
+## Phase 2.1 implement results
 
-- Chose `Metadata.MarshalYAML/UnmarshalYAML` with an unexported `yamlShape` (string-typed date fields) rather than a public `Date` wrapper. Public API keeps `time.Time` fields as the plan's Data Structures section specifies; day precision enforced at marshal boundary.
-- Enum validation lives on `UnmarshalYAML` AND on `Merge` (via `validateStatus`). Both paths reject non-enum values with an actionable error.
-- `Split` returns `(nil, raw, nil)` for bare artifacts (no leading `---\n`); wrapped `malformed frontmatter:` error for unterminated block, non-newline after closing `---`, or yaml.Unmarshal failure.
-- `Render` writes `---\n<yaml>---\n\n<body>`. Note yaml.Marshal already emits a trailing newline on its own output, so the sequence is `---\n` + yaml + `---\n\n` + body.
-- `Merge` `ClosedDate` semantics: preserves existing ClosedDate if already set (idempotent for closed→same-closed and closed→different-closed); stamps today only on in-progress→closed transition; clears on closed→in-progress. First-write with `opts.Status = closed` stamps ClosedDate=today.
+- cmd/version.go extended: VersionCheckResult struct; versionCmd bare
+  parent + versionCheckCmd; runVersionCheck with --schema short-circuit
+  (status enum in schema), dataDir()+os.ReadFile, IsNotExist→missing,
+  other read error→ErrorResponse "version_file_unreadable"; pure
+  classifyVersion(recorded,current) (trim; ""→missing; ==→match; else
+  mismatch); staleAction(status) composes relay text with
+  `<cfg.Command> init [<cfg.Agent>]` (agent appended only when set).
+  init() registers schema flag + subcommand; rootCmd.AddCommand(versionCmd)
+  in cmd/root.go.
+- Smoke-tested all three states + --schema against a built binary in
+  scratch dir: correct status/action/exit 0; build+vet clean.
+- Tests (sub-agent): new cmd/version_test.go — TestClassifyVersion table,
+  TestVersionCheck_{Match,Mismatch,Missing,WhitespaceOnlyFile,
+  UnreadableFileIsGenuineFault,Schema}; read-only guarantee asserted in
+  mismatch test; resetVersionCheckFlags added for --schema flag hygiene.
+  cmd/root_test.go: "version" subtests added to all three wrapper contract
+  tests (failure representative: version file as directory → exit 1).
+  go test ./cmd/ passes.
+- Verify (sub-agent): go build / go test ./... / go vet all green.
+  Phase 2.1 verified.
 
-Files created:
+## Learnings
 
-- `internal/metadata/metadata.go` — `Metadata`, `Status`, four consts, MarshalYAML/UnmarshalYAML, private `validateStatus`/`isClosed`.
-- `internal/metadata/frontmatter.go` — `Split`, `Render`.
-- `internal/metadata/merge.go` — `Merge`, `UpdateOptions`.
-
-## Autonomous mode
-
-User authorized "run all remaining phases without asking" on 2026-07-28 after Phase 1.1 committed. Do NOT ask between phases; loop analyze → implement → test → verify → update_plan → update_changelog → analyze until all seven phases are ticked, then advance to `update_repo_changelog`.
-
-## Session state
-
-- Phase 1.1 complete and committed (plan ticked, changelog entry added). Advance next: loop back to `analyze` for Phase 1.2.
-
-Note on YAML quoting: `yaml.v3` quotes date-shaped string fields (e.g. `created_date: "2026-07-01"`) — tests assert the presence of the value without pinning quote style.
+- Pre-existing bug (out of scope, mention to user at end):
+  templates/agents/memory-context.md:3 hardcodes `spektacular init` instead
+  of `{{command}} init`.

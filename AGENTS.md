@@ -6,7 +6,7 @@
 
 ## Memory & Context
 
-> Managed by `spektacular init` — edit `templates/agents/memory-context.md`
+> Managed by `go run . init` — edit `templates/agents/memory-context.md`
 > in the Spektacular source, not this section in place. Hand edits will not
 > survive the next init.
 

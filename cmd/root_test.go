@@ -207,6 +207,31 @@ func TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.Empty(t, stderr)
 	})
+
+	t.Run("version", func(t *testing.T) {
+		// Success representative: a fresh dir with no .spektacular at all —
+		// missing state is a successful report, not a failure. Failure
+		// representative: the version file exists but is a directory, so
+		// reading it fails with a genuine (non-IsNotExist) error.
+		t.Run("success", func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			resetVersionCheckFlags(t)
+			stdout, stderr, code := runRootCmd(t, "version", "check")
+			require.Equal(t, 0, code)
+			require.NotEmpty(t, stdout)
+			require.Empty(t, stderr)
+		})
+		t.Run("failure", func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular", "version"), 0o755))
+			resetVersionCheckFlags(t)
+			stdout, stderr, code := runRootCmd(t, "version", "check")
+			require.Equal(t, 1, code)
+			require.NotEmpty(t, stdout)
+			require.Empty(t, stderr)
+		})
+	})
 }
 
 // Criterion 2: a failing command's response carries "error": true and
@@ -323,6 +348,23 @@ func TestWrapper_ErrorDiscriminantAndExitCode(t *testing.T) {
 		stdout, _, code := runRootCmd(t, "init", "does-not-exist")
 		assertFailureEnvelope(t, stdout, code)
 	})
+
+	t.Run("version", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			resetVersionCheckFlags(t)
+			stdout, _, code := runRootCmd(t, "version", "check")
+			assertSuccessEnvelope(t, stdout, code)
+		})
+		t.Run("failure", func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular", "version"), 0o755))
+			resetVersionCheckFlags(t)
+			stdout, _, code := runRootCmd(t, "version", "check")
+			assertFailureEnvelope(t, stdout, code)
+		})
+	})
 }
 
 // Criterion 3: a failure is printed exactly once on stdout, with no
@@ -386,6 +428,15 @@ func TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate(t *testing.T)
 		dir := t.TempDir()
 		t.Chdir(dir)
 		stdout, stderr, code := runRootCmd(t, "init", "does-not-exist")
+		assertNoCobraBoilerplate(t, stdout, stderr, code)
+	})
+
+	t.Run("version", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular", "version"), 0o755))
+		resetVersionCheckFlags(t)
+		stdout, stderr, code := runRootCmd(t, "version", "check")
 		assertNoCobraBoilerplate(t, stdout, stderr, code)
 	})
 

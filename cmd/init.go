@@ -44,8 +44,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing config: %w", err)
 	}
 
+	versionPath := versionFilePath(filepath.Join(cwd, ".spektacular"))
+	if err := writeVersionFile(versionPath, version); err != nil {
+		return fmt.Errorf("writing version file: %w", err)
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Spektacular initialised for %s.\n", a.Name())
 	fmt.Fprintf(cmd.OutOrStdout(), "  Project:  %s\n", filepath.Join(cwd, ".spektacular"))
+	fmt.Fprintf(cmd.OutOrStdout(), "  Version:  %s (%s)\n", versionPath, version)
 
 	return a.Install(cwd, cfg, cmd.OutOrStdout())
 }

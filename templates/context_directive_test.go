@@ -88,10 +88,10 @@ func TestContextDirectivePresent(t *testing.T) {
 		require.NoErrorf(t, err, "walking %s", dir)
 	}
 
-	// Floor, not an exact match: spec (8) + plan (16) + implement (8) = 32
+	// Floor, not an exact match: spec (8) + plan (17) + implement (8) = 33
 	// non-terminal templates today, minus 1 exempted (steps/spec/00-new.md).
 	// Kept as a lower bound so adding a step does not break the test, while
 	// still catching a walk that finds nothing.
-	require.GreaterOrEqual(t, directiveBearing, 29,
-		"expected at least 29 directive-bearing step templates across the three workflows")
+	require.GreaterOrEqual(t, directiveBearing, 30,
+		"expected at least 30 directive-bearing step templates across the three workflows")
 }

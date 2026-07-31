@@ -12,28 +12,28 @@ The planning workflow will produce a complete draft plan autonomously and then w
 
 ## Requirements
 
-- [ ] **Autonomous drafting**
+- [x] **Autonomous drafting**
   The system produces a complete draft plan — every section — without asking the user to confirm individual sections along the way.
 
-- [ ] **Assumptions are recorded, not asked**
+- [x] **Assumptions are recorded, not asked**
   When drafting requires a judgement call that has a reasonable default (including the choice of design direction from among the alternatives the agent considered), the system makes the call, records it as an assumption together with its rationale and the alternatives it rejected, and continues drafting.
 
-- [ ] **Blocking questions interrupt immediately**
+- [x] **Blocking questions interrupt immediately**
   When drafting hits a decision with no reasonable default — mutually exclusive directions the agent cannot responsibly choose between, or information only the user has — the system asks the user at that moment rather than deferring the question to the end or guessing.
 
-- [ ] **Assumptions are presented with the final plan**
+- [x] **Assumptions are presented with the final plan**
   When the draft plan is presented for review, the recorded assumptions are presented alongside it as a first-class part of the review, so the user can see every judgement call the agent made and challenge any of them.
 
-- [ ] **Review is a guided walkthrough**
+- [x] **Review is a guided walkthrough**
   After drafting completes, the system walks the user through the plan section by section, inviting comments as it goes rather than asking for a single up-front approval.
 
-- [ ] **Comments produce revisions**
+- [x] **Comments produce revisions**
   When the user comments or requests a change during the walkthrough, the system revises the affected parts of the plan, confirms the revision, and re-summarizes anything the change affected before continuing.
 
-- [ ] **Explicit sign-off ends review**
+- [x] **Explicit sign-off ends review**
   The plan is only treated as approved when the user gives an explicit affirmative answer to a direct closing question; silence, topic changes, or ambiguous replies keep the review open, and the walkthrough can loop through further comment-and-revise rounds until sign-off.
 
-- [ ] **Interrupted drafting can resume**
+- [x] **Interrupted drafting can resume**
   If a drafting session is interrupted before the walkthrough completes, a later session can resume from where it left off without losing already-drafted sections or recorded assumptions.
 
 ## Constraints
@@ -44,25 +44,25 @@ The planning workflow will produce a complete draft plan autonomously and then w
 
 ## Acceptance Criteria
 
-- [ ] **No per-section approval prompts**
+- [x] **No per-section approval prompts**
   Running the plan workflow end to end on a spec with no genuinely blocking decisions produces a complete draft plan with zero confirmation questions asked between starting the draft and beginning the walkthrough.
 
-- [ ] **Assumption log exists and is populated**
+- [x] **Assumption log exists and is populated**
   After drafting completes, a record of the assumptions made during drafting is visible to the user, and each entry states the decision taken, the rationale, and any alternatives that were rejected — including the chosen design direction.
 
-- [ ] **Blocking question stops the draft**
+- [x] **Blocking question stops the draft**
   When the spec being planned contains a decision with no reasonable default (e.g. a choice only the user can make), the user is asked that question during drafting, and the drafting does not proceed past the point that depends on the answer until the user responds.
 
-- [ ] **Walkthrough presents plan and assumptions**
+- [x] **Walkthrough presents plan and assumptions**
   When drafting completes, the user is walked through the draft plan section by section, and the recorded assumptions are presented as part of that walkthrough — not omitted, and not dumped only into a file without being raised.
 
-- [ ] **Comment revises the plan**
+- [x] **Comment revises the plan**
   When the user requests a change during the walkthrough, the saved plan documents are updated to reflect the change before the walkthrough concludes, and the user is shown what was revised.
 
-- [ ] **No sign-off, no approval**
+- [x] **No sign-off, no approval**
   If the user never gives an explicit affirmative answer to the closing question, the plan is not marked approved and the downstream implement workflow does not treat it as ready.
 
-- [ ] **Resume preserves draft state**
+- [x] **Resume preserves draft state**
   Interrupting a session mid-draft and starting a new session resumes the plan workflow with all previously drafted sections and recorded assumptions intact — none are re-asked or re-drafted from scratch.
 
 ## Technical Approach

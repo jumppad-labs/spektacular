@@ -8,7 +8,7 @@ category = "agent-orchestration"
 tags = ["spektacular", "plan-workflow", "multi-step", "cli", "sub-agents", "skills"]
 
 [agent]
-timeout_sec = 900.0
+timeout_sec = 1800.0
 
 [verifier]
 timeout_sec = 120.0

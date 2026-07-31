@@ -52,10 +52,66 @@ func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	return writer.result.Instruction
 }
 
-func TestArchitectureStepContainsOptionsAndAgreementBeat(t *testing.T) {
+// TestArchitectureStepWeighsOptionsAndRecordsAssumption asserts the Phase 2.1
+// shape of the architecture step: options analysis is kept, but the chosen
+// direction is recorded in the assumption log instead of being put to the user
+// for agreement.
+func TestArchitectureStepWeighsOptionsAndRecordsAssumption(t *testing.T) {
 	out := renderStep(t, architecture())
-	require.Contains(t, strings.ToLower(out), "option", "architecture step must prompt the agent to present design options")
-	require.Contains(t, strings.ToLower(out), "agreement", "architecture step must prompt the agent to get user agreement")
+	lower := strings.ToLower(out)
+	require.Contains(t, lower, "option", "architecture step must still weigh design options")
+	require.Contains(t, lower, "assumption log", "architecture step must record the chosen direction in the assumption log")
+	require.Contains(t, out, "do not put the choice to the user", "architecture step must choose the direction itself, not ask the user")
+	require.NotContains(t, lower, "agreement", "architecture step must not gate on user agreement")
+}
+
+// TestGatheringStepsProceedWithoutApprovalGates asserts every plan gathering
+// step (Phase 2.1): carries the shared assumption-log and
+// proceed-unless-blocked block, and no longer contains any per-section
+// wait-for-approval phrasing. The banned-phrase list is a hand-maintained
+// oracle of the gate wording removed in this phase — reintroducing any of it
+// fails this test.
+func TestGatheringStepsProceedWithoutApprovalGates(t *testing.T) {
+	bannedGatePhrases := []string{
+		"Present it to the user for review",
+		"Once the user is happy",
+		"Once the user has agreed",
+		"Once the user agrees",
+		"Get the user's explicit agreement",
+		"Present the milestones to the user",
+		"Present the phases to the user",
+	}
+
+	steps := []struct {
+		name string
+		cb   workflow.StepCallback
+	}{
+		{"discovery", discovery()},
+		{"architecture", architecture()},
+		{"components", components()},
+		{"data_structures", dataStructures()},
+		{"implementation_detail", implementationDetail()},
+		{"dependencies", dependencies()},
+		{"testing_approach", testingApproach()},
+		{"milestones", milestones()},
+		{"phases", phases()},
+		{"open_questions", openQuestions()},
+		{"out_of_scope", outOfScope()},
+	}
+
+	for _, tc := range steps {
+		t.Run(tc.name, func(t *testing.T) {
+			out := renderStep(t, tc.cb)
+			require.Contains(t, out, "assumptions.md",
+				"%s step must instruct recording judgement calls in the assumption log", tc.name)
+			require.Contains(t, out, "proceed without interruption",
+				"%s step must carry the proceed-unless-blocked rule", tc.name)
+			for _, phrase := range bannedGatePhrases {
+				require.NotContains(t, out, phrase,
+					"%s step must not contain the wait-for-approval phrasing %q", tc.name, phrase)
+			}
+		})
+	}
 }
 
 // TestDiscoveryStepUsesKnowledgeCommands asserts the discovery step drives the
@@ -119,6 +175,7 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 		"write_plan",
 		"write_context",
 		"write_research",
+		"walkthrough",
 		"finished",
 	}
 	got := Steps()
@@ -126,6 +183,20 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 	for i, step := range got {
 		require.Equal(t, expected[i], step.Name, "step %d name mismatch", i)
 	}
+}
+
+// TestWalkthroughWiring asserts the walkthrough step sits between
+// write_research and finished, and that finished is reachable only from
+// walkthrough (Phase 1.1, acceptance criterion 1).
+func TestWalkthroughWiring(t *testing.T) {
+	srcs := map[string][]string{}
+	for _, step := range Steps() {
+		srcs[step.Name] = step.Src
+	}
+	require.Equal(t, []string{"write_research"}, srcs["walkthrough"],
+		"walkthrough must be entered only from write_research")
+	require.Equal(t, []string{"walkthrough"}, srcs["finished"],
+		"finished must be reachable only from walkthrough")
 }
 
 func TestFSMWalkFromNewToFinished(t *testing.T) {
@@ -157,6 +228,7 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 		"write_plan",
 		"write_context",
 		"write_research",
+		"walkthrough",
 		"finished",
 	}
 
@@ -335,6 +407,93 @@ func TestPlanFinished_SkipsClose_WhenPlanIncomplete(t *testing.T) {
 		require.NotEqual(t, metadata.StatusCompleted, meta.Status,
 			"%s must not be closed when the plan is incomplete", p)
 	}
+}
+
+// TestWalkthroughStepIsMandatoryGuidedReview asserts the walkthrough step
+// (Phase 1.1, acceptance criterion 2): it drives a section-by-section review of
+// the committed documents, applies requested changes immediately via the
+// existing `plan file write` command, and concludes only on an explicit
+// affirmative answer to a direct closing question — never framed as an
+// optional offer.
+func TestWalkthroughStepIsMandatoryGuidedReview(t *testing.T) {
+	out := renderStep(t, walkthrough())
+	lower := strings.ToLower(out)
+
+	// Guided review of the committed documents, read back through the CLI.
+	require.Contains(t, out, "plan file read", "walkthrough must read the committed documents via `plan file read`")
+	require.Contains(t, lower, "walk the user through", "walkthrough must direct a guided review of the plan")
+
+	// Change requests apply immediately through the document write command.
+	require.Contains(t, out, "plan file write", "walkthrough must apply change requests via `plan file write`")
+	require.Contains(t, lower, "apply it immediately", "walkthrough must apply change requests immediately, not defer them")
+
+	// Sign-off gate: explicit affirmative to a direct closing question only.
+	require.Contains(t, lower, "explicit affirmative", "walkthrough must gate completion on an explicit affirmative answer")
+	require.Contains(t, lower, "not agreement", "walkthrough must state that silence or ambiguity is not agreement")
+
+	// The review is mandatory, not an offer the user can decline.
+	require.Contains(t, lower, "mandatory", "walkthrough must state the review is mandatory")
+	require.Contains(t, lower, "do not offer it as a choice", "walkthrough must not frame the review as an optional offer")
+}
+
+// TestAssembleStepMapsAssumptionLog asserts the assemble step (Phase 2.2) maps
+// the assumption log working file into research.md's `## Drafting assumptions`
+// section, and treats a missing assumptions.md as a fallback line rather than a
+// STOP.
+func TestAssembleStepMapsAssumptionLog(t *testing.T) {
+	out := renderStep(t, assemble())
+	require.Contains(t, out, "assumptions.md", "assemble step must name the assumption log working file")
+	require.Contains(t, out, "## Drafting assumptions", "assemble step must map the assumption log to the Drafting assumptions section")
+	require.Contains(t, out, "No drafting assumptions were recorded",
+		"assemble step must write the explicit fallback line instead of stopping when assumptions.md is missing")
+}
+
+// TestVerificationStepRequiresDraftingAssumptions asserts the verification
+// step's research.md required-section list includes `## Drafting assumptions`
+// (Phase 2.2).
+func TestVerificationStepRequiresDraftingAssumptions(t *testing.T) {
+	out := renderStep(t, verification())
+	require.Contains(t, out, "## Drafting assumptions", "verification step must require the Drafting assumptions section in research.md")
+}
+
+// TestWalkthroughStepWalksDraftingAssumptions asserts the walkthrough step's
+// drafting-assumptions beat (Phase 2.2): it reads the `## Drafting assumptions`
+// section of research.md back through the CLI, walks the entries, and invites
+// the user to challenge each — a challenged assumption becoming a change
+// request.
+func TestWalkthroughStepWalksDraftingAssumptions(t *testing.T) {
+	out := renderStep(t, walkthrough())
+	require.Contains(t, out, "Read the `## Drafting assumptions` section",
+		"walkthrough must read the Drafting assumptions section of research.md")
+	require.Contains(t, strings.ToLower(out), "challenge",
+		"walkthrough must invite the user to challenge each assumption")
+	require.Contains(t, out, "challenged assumption is a change request",
+		"walkthrough must route a challenged assumption through the change-request path")
+}
+
+// TestPlanFinishedSuccessBranchHasNoWalkthroughOffer asserts the terminal
+// step's success branch no longer offers or conducts a walkthrough (Phase 1.1,
+// acceptance criterion 3): sign-off already happened on the walkthrough step,
+// so finished only stamps the documents completed and reports completion.
+func TestPlanFinishedSuccessBranchHasNoWalkthroughOffer(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	cfg := workflow.Config{Command: "spektacular", PlanDir: "plans", SpecDir: "specs"}
+	planName := "fixture"
+
+	seedFilledPlanDocs(t, st, cfg.PlanDir, planName, time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC))
+
+	data := &testData{values: map[string]any{"name": planName}}
+	writer := &captureWriter{}
+
+	_, err := finished()(data, writer, st, cfg)
+	require.NoError(t, err)
+
+	out := writer.result.Instruction
+	require.Contains(t, out, "signed off", "finished must report the user already signed off during the walkthrough")
+	require.Contains(t, out, "marked completed", "finished must report the documents were stamped completed")
+	require.NotContains(t, out, "offer a choice", "finished must no longer offer a walkthrough")
+	require.NotContains(t, out, "If the user accepts", "finished must no longer conduct a conditional walkthrough")
 }
 
 // TestWriteStep_CommitsOwnDocument asserts a write step's callback reads its own

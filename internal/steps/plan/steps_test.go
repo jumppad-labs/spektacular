@@ -471,6 +471,43 @@ func TestWalkthroughStepWalksDraftingAssumptions(t *testing.T) {
 		"walkthrough must route a challenged assumption through the change-request path")
 }
 
+// TestWalkthroughStepOffersKnowledgeCaptureForRevealingCorrections asserts the
+// walkthrough step's correction-assessment-and-offer beat (Phase 2.1): after a
+// correction is applied and confirmed, the step directs assessing what the
+// correction reveals and — only for durable, generalizable lessons — offering
+// to capture the general lesson, gated on explicit acceptance and handed to
+// the `spek-knowledge` skill, with a decline being final.
+func TestWalkthroughStepOffersKnowledgeCaptureForRevealingCorrections(t *testing.T) {
+	out := renderStep(t, walkthrough())
+	lower := strings.ToLower(out)
+
+	// Assess what an applied correction reveals before resuming.
+	require.Contains(t, lower, "what the correction reveals",
+		"walkthrough must direct assessing what an applied correction reveals")
+
+	// The offer is phrased as the general lesson, not the specific edit.
+	require.Contains(t, lower, "general lesson",
+		"walkthrough must phrase the offer as the general lesson rather than the specific edit")
+
+	// Selectivity bar: most corrections reveal nothing durable and produce no offer.
+	require.Contains(t, lower, "produce no offer",
+		"walkthrough must state that corrections revealing nothing durable produce no offer")
+
+	// Capture is gated on the user's explicit acceptance.
+	require.Contains(t, lower, "explicit acceptance",
+		"walkthrough must gate knowledge capture on the user's explicit acceptance")
+
+	// A decline is final for that lesson within the conversation.
+	require.Contains(t, lower, "not offered again",
+		"walkthrough must state a declined lesson is not offered again")
+
+	// Accepted items are handed to the spek-knowledge skill.
+	require.Contains(t, out, "spek-knowledge",
+		"walkthrough must hand accepted items to the `spek-knowledge` skill")
+	require.NotContains(t, out, "skill spek-knowledge",
+		"walkthrough must not direct the unreachable CLI invocation `spektacular skill spek-knowledge`")
+}
+
 // TestPlanFinishedSuccessBranchHasNoWalkthroughOffer asserts the terminal
 // step's success branch no longer offers or conducts a walkthrough (Phase 1.1,
 // acceptance criterion 3): sign-off already happened on the walkthrough step,

@@ -140,7 +140,7 @@ func testPlan() workflow.StepCallback {
 // was actually built rather than what was originally planned.
 func updateFeatureChangelog() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("update_feature_changelog", "finished", "steps/implement/10-update_feature_changelog.md", data, out, st, cfg, nil)
+		return "", writeStep("update_feature_changelog", "reconcile_spec", "steps/implement/10-update_feature_changelog.md", data, out, st, cfg, nil)
 	}
 }
 

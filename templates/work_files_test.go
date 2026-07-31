@@ -49,8 +49,15 @@ func TestSpecPlanGatheringStepsReferenceWorkDir(t *testing.T) {
 		"steps/plan/12-out_of_scope.md",
 	}
 	for _, f := range planGathering {
-		require.Containsf(t, mustReadTemplate(t, f), ".spektacular/work/{{plan_name}}/",
+		content := mustReadTemplate(t, f)
+		require.Containsf(t, content, ".spektacular/work/{{plan_name}}/",
 			"%s must instruct writing its section under .spektacular/work/{{plan_name}}/", f)
+		// Phase 2.1: every plan gathering step records its judgement calls in
+		// the shared assumption log alongside its section working file. Spec
+		// gathering steps are intentionally exempt — the spec workflow is
+		// unchanged.
+		require.Containsf(t, content, ".spektacular/work/{{plan_name}}/assumptions.md",
+			"%s must instruct appending judgement calls to the assumption log", f)
 	}
 
 	// Plan's overview step only reads the spec — it drafts no plan section and
@@ -126,6 +133,7 @@ func TestAssemblyStepsMapSectionFiles(t *testing.T) {
 		"architecture.md", "components.md", "data_structures.md", "implementation_detail.md",
 		"dependencies.md", "testing_approach.md", "milestones.md", "open_questions.md",
 		"out_of_scope.md", "research.md", "phases_plan.md", "phases_context.md",
+		"assumptions.md",
 	} {
 		require.Containsf(t, planAssemble, f, "plan assembly step must read section file %s", f)
 	}

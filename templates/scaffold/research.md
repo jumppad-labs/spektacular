@@ -38,6 +38,11 @@
 <!-- Things assumed but not verified. If any turn out wrong, the implement workflow must STOP and ask before proceeding. -->
 
 
+## Drafting assumptions
+
+<!-- The judgement calls made while drafting the plan — decision, rationale, and rejected alternatives for each — presented for challenge at the walkthrough. If none were recorded, state that explicitly. -->
+
+
 ## Rehydration cues
 
 <!-- If context is lost mid-implementation, how to regenerate it. Skill invocations, files to re-read, etc. -->

@@ -316,6 +316,43 @@ func TestUpdateChangelogStepBranchesOnUncheckedPhases(t *testing.T) {
 	require.Contains(t, strings.ToLower(out), "ask the user")
 }
 
+// TestUpdateChangelogStepOffersKnowledgeCaptureForDurableDiscoveries asserts
+// the update_changelog step directs the agent to assess the phase's
+// Discoveries entry for durable knowledge and offer capture via the
+// spek-knowledge skill, gated on explicit acceptance with decline being final
+// (Phase 1.1 assessment-and-offer beat).
+func TestUpdateChangelogStepOffersKnowledgeCaptureForDurableDiscoveries(t *testing.T) {
+	out := renderStep(t, updateChangelog())
+	lower := strings.ToLower(out)
+
+	// Durability assessment: each discovery is weighed for value beyond the
+	// current change.
+	require.Contains(t, lower, "durable", "update_changelog must direct a durability assessment of discoveries")
+	require.Contains(t, lower, "beyond this one change", "update_changelog must frame durability as holding beyond the current change")
+
+	// The offer: name what would be captured and why it is worth keeping.
+	require.Contains(t, lower, "offer", "update_changelog must direct offering knowledge capture, never writing unprompted")
+	require.Contains(t, lower, "name what you would capture and why it is worth keeping", "update_changelog must require the offer to name what and why")
+
+	// Selectivity bar: change-local discoveries produce no offer.
+	require.Contains(t, lower, "most phases produce none", "update_changelog must state that most phases produce no qualifying discovery")
+
+	// Confirm gate: capture only on explicit acceptance.
+	require.Contains(t, lower, "explicit acceptance", "update_changelog must gate capture on the user's explicit acceptance")
+
+	// Decline finality: a declined item is not offered again.
+	require.Contains(t, lower, "not offered again", "update_changelog must make a decline final for that discovery")
+
+	// The hand-off goes to the spek-knowledge skill.
+	require.Contains(t, out, "spek-knowledge", "update_changelog must hand accepted items to the spek-knowledge skill")
+
+	// Negative guard: there is no `skill spek-knowledge` CLI subcommand — the
+	// template must not direct the unreachable invocation
+	// `spektacular skill spek-knowledge` (the legitimate
+	// `skill update-changelog` reference must not trip this).
+	require.NotContains(t, out, "skill spek-knowledge", "update_changelog must not direct the nonexistent `skill spek-knowledge` CLI invocation")
+}
+
 func TestUpdateRepoChangelogTemplateContainsDirectives(t *testing.T) {
 	out := renderStep(t, updateRepoChangelog())
 	require.Contains(t, out, "CHANGELOG.md")
@@ -380,6 +417,10 @@ func TestUpdateFeatureChangelogStepMentionsSourcesAndCommitCommand(t *testing.T)
 	require.Contains(t, out, "plan file read test/plan.md", "update_feature_changelog must read the plan's implementation history via `plan file read`")
 	require.Contains(t, out, ".spektacular/tmp/changelog_record.md", "update_feature_changelog must stage its record at the scratch path")
 	require.Contains(t, out, "changelog file write test.md --from .spektacular/tmp/changelog_record.md", "update_feature_changelog must commit the record via `changelog file write`")
+	// The rendered advance target must match the FSM, which only allows
+	// update_feature_changelog → reconcile_spec (finished is two steps away).
+	require.Contains(t, out, `"step":"reconcile_spec"`, "update_feature_changelog must advance to reconcile_spec, not skip it")
+	require.NotContains(t, out, `"step":"finished"`, "update_feature_changelog must not direct a goto to finished — the FSM rejects that transition")
 }
 
 func TestReconcileSpecStepMentionsSourcesAndCommitCommand(t *testing.T) {

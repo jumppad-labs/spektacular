@@ -34,9 +34,11 @@ Assemble all three scaffolds from the per-section working files — no placehold
 - `testing_approach.md` → `## Testing Strategy` (recast at per-phase granularity)
 - `## Current State Analysis`, `## Project References`, `## Token Management Strategy`, `## Migration Notes`, `## Performance Considerations` ← your research findings in `research.md` and `.spektacular/context.md`.
 
-**research.md** ← `.spektacular/work/{{plan_name}}/research.md` (it maps directly onto research.md's seven sections).
+**research.md** ← files under `.spektacular/work/{{plan_name}}/`:
+- `research.md` → the research sections it maps directly onto (alternatives through rehydration cues)
+- `assumptions.md` → `## Drafting assumptions`
 
-If a required working file is missing, the matching gathering step was not completed — STOP and complete it before assembling. In particular, confirm both `phases_plan.md` and `phases_context.md` exist, since the phases step writes two files that feed plan.md and context.md respectively.
+If a required working file is missing, the matching gathering step was not completed — STOP and complete it before assembling. In particular, confirm both `phases_plan.md` and `phases_context.md` exist, since the phases step writes two files that feed plan.md and context.md respectively. The one exception is `assumptions.md`: a plan can legitimately record zero judgement calls, so if it is missing do **not** STOP — write an explicit "No drafting assumptions were recorded." line under `## Drafting assumptions` instead.
 
 #### plan.md scaffold
 

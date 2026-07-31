@@ -51,3 +51,34 @@ func TestPlanScaffoldShape(t *testing.T) {
 	require.Contains(t, rendered, "#### - [ ] Phase", "Milestones & Phases must contain a checkbox phase heading")
 	require.Contains(t, rendered, "*Technical detail:*", "Milestones & Phases must contain a *Technical detail:* link")
 }
+
+// TestResearchScaffoldShape asserts the research scaffold's `##` headings are
+// present and in order — including `## Drafting assumptions` between
+// `## Open assumptions` and `## Rehydration cues` (Phase 2.2). The heading
+// list is a hand-maintained oracle.
+func TestResearchScaffoldShape(t *testing.T) {
+	raw, err := templates.FS.ReadFile("scaffold/research.md")
+	require.NoError(t, err)
+
+	rendered, err := mustache.Render(string(raw), map[string]any{"name": "test"})
+	require.NoError(t, err)
+
+	expectedHeadings := []string{
+		"## Alternatives considered and rejected",
+		"## Chosen approach — evidence",
+		"## Files examined",
+		"## External references",
+		"## Prior plans / specs consulted",
+		"## Open assumptions",
+		"## Drafting assumptions",
+		"## Rehydration cues",
+	}
+
+	lastIdx := -1
+	for _, h := range expectedHeadings {
+		idx := strings.Index(rendered, h)
+		require.NotEqual(t, -1, idx, "heading %q missing from rendered research scaffold", h)
+		require.Greater(t, idx, lastIdx, "heading %q appears out of order", h)
+		lastIdx = idx
+	}
+}

@@ -41,6 +41,14 @@ Apply the entry by reading plan.md with `{{config.command}} plan file read {{pla
 rm .spektacular/tmp/plan_update.md
 ```
 
+### Step 2b: Assess discoveries for durable knowledge
+
+Re-read the `**Discoveries**` entry you just wrote and weigh each item for durability — does it hold beyond this one change? Durable means something a future plan or implementation would pay to re-discover: an undocumented coupling, a surprising contract, a convention inferred from behavior rather than written down anywhere, a wrong default that had to be corrected. Only items that are both durable and non-obvious beyond the current change qualify — most phases produce none, and when nothing qualifies, say nothing about knowledge capture and continue straight to Step 3.
+
+When a discovery does clear that bar, offer — in the same message as the Step 3 continue-or-pause conversation — to save it to the project knowledge base. Name what you would capture and why it is worth keeping, phrased as the general lesson rather than the specific edit. Capture happens only on the user's explicit acceptance: hand an accepted item to the `spek-knowledge` skill, whose own propose-then-confirm flow owns scope selection, category routing, and the write (the raw `{{config.command}} knowledge` commands sit beneath it). Never invoke `{{config.command}} knowledge write` without that explicit acceptance — silence or deflection is not acceptance.
+
+If the user declines, the item is not offered again for the remainder of the conversation — a decline is final for that discovery. If the user defers ("not now", "later"), you may raise the offer again later in the conversation. Either way, the `**Discoveries**` entry itself stays exactly as written; the offer is additive on top of it.
+
 ### Step 3: Check for remaining unchecked phases
 
 Re-read plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md` and count `#### - [ ] Phase` (unchecked) headings under `## Milestones & Phases`.

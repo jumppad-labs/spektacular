@@ -1,82 +1,71 @@
-# Implement: 000038_artifact_metadata — working context
-
-## Workflow
-
-- Implement workflow started against plan `000038_artifact_metadata` on 2026-07-28.
-- Plan store: `.spektacular/plans/000038_artifact_metadata/{plan.md,context.md,research.md}`.
-- Source spec: `.spektacular/specs/000038_artifact_metadata.md`.
-- Read all three plan documents via `go run . plan file read` (never with `Read` tool).
-
-## Read-plan step outcomes
-
-- **Structural validation:** plan.md has all 10 required top-level sections (Overview, Architecture & Design Decisions, Component Breakdown, Data Structures & Interfaces, Implementation Detail, Dependencies, Testing Approach, Milestones & Phases, Open Questions, Out of Scope). Seven `#### - [ ]` phases across two milestones, each with a `context.md#phase-*` link that resolves.
-- **Drift check: NO DRIFT.** Every file path, symbol, template path, and CLI command referenced in the plan exists at its stated location. `internal/metadata/` correctly does NOT exist yet (it's a new package). No existing `spektacular artifacts` command wired.
-- **Spec coverage:** every Requirement and Acceptance Criterion in the spec is covered somewhere under `## Milestones & Phases` in the plan. No descoped items.
-- **Changelog mode: FIRST-PHASE INVOCATION.** No `## Changelog` section in plan.md. Pick up at Phase 1.1.
-
-## Open Question resolutions (from drift check)
-
-**Open Question #1 — consumers of `{"files": [...]}` list shape (relevant for Phase 2.1):**
-
-- **Only one producer:** `cmd/storefile.go:159` — `return output.Write(cmd.OutOrStdout(), map[string]any{"files": names}, "")`.
-- **Only one code test consumer:** `cmd/changelog_file_test.go:54` — unmarshals into `struct { Files []string }`. Will need update to accept the new struct-per-entry shape.
-- **Template/skill references** (call the command, don't parse the shape): `templates/skills/workflows/spek-{new,plan,implement}/SKILL.md`, `templates/steps/plan/02-discovery.md`, `templates/skill_list_command_test.go`.
-
-**Open Question #2 — in-Go `st.Write` call sites (relevant for Phase 1.5):**
-
-Production writers via `git grep -n 'st\.Write' internal/steps/ cmd/`:
-
-1. `cmd/storefile.go:97` — the shared `newStoreFileCmd` write subcommand (covered by Phase 1.3).
-2. `internal/steps/spec/steps.go:79` — spec workflow `new()` scaffold write (Phase 1.5 routes through `metadata.Merge`).
-
-The implement and plan workflows do NOT call `st.Write` directly from step callbacks — they emit template instructions telling the agent to call `plan file write` / `changelog file write` via the CLI, which flows through the storefile.go write handler. The finished-step close in Phase 1.5 therefore needs to go through the CLI (or through the shared metadata helper called from Go with the store handle the callback already has) — no additional in-Go `st.Write` sites to worry about.
-
-## Key decisions carried from plan authorship
-
-1. **Owner-workflow closes.** Spec workflow → spec.md at `finished`. Plan workflow → plan.md/context.md/research.md at `finished`. Implement workflow → test-plan.md + changelog entry at `finished`. Downstream body mutations do NOT re-open metadata (spec 000034 checkbox ticking pattern).
-2. **Two update surfaces:** implicit on `<kind> file write` + explicit metadata-only `<kind> file set-status`.
-3. **Enum accepts all four values day one:** `in-progress`, `completed`, `superseded`, `archived`. Workflows only write `in-progress` and `completed`; `superseded`/`archived` reachable only via `set-status`.
-4. **Store interface stays byte-oriented.** Metadata sits above the substrate. No new fields on `DirEntry` / `Hit`.
-5. **YAML dates are `YYYY-MM-DD`** (day precision, no time-of-day). Custom `MarshalYAML`/`UnmarshalYAML` on a date wrapper enforces this.
-6. **No backfill.** Pre-shipping bare docs stay byte-identical; excluded from any filtered list query.
-
-## Load-bearing gotchas
-
-- **`planDocStillScaffold` byte-compare (Phase 1.2)** at `internal/steps/plan/steps.go:215-225`. MUST land before Phase 1.3 or plan workflow regresses.
-- **Malformed hand-edited frontmatter** must produce actionable error, never silent re-stamp of `created_date`.
-- **List output shape change in Phase 2.1** — update `cmd/changelog_file_test.go:54` and check the two template test files.
-
-## Phase execution order
-
-Milestone 1: 1.1 → 1.2 → 1.3 → 1.4 → 1.5.
-Milestone 2: 2.1 → 2.2.
-
-Phase 1.5 is the fan-out candidate (three workflow packages, same pattern). Others are single-agent.
-
-## Current phase
-
-**Phase 1.1: Author the `internal/metadata` package** — code written and compiling.
-
-Design decisions made during implementation:
-
-- Chose `Metadata.MarshalYAML/UnmarshalYAML` with an unexported `yamlShape` (string-typed date fields) rather than a public `Date` wrapper. Public API keeps `time.Time` fields as the plan's Data Structures section specifies; day precision enforced at marshal boundary.
-- Enum validation lives on `UnmarshalYAML` AND on `Merge` (via `validateStatus`). Both paths reject non-enum values with an actionable error.
-- `Split` returns `(nil, raw, nil)` for bare artifacts (no leading `---\n`); wrapped `malformed frontmatter:` error for unterminated block, non-newline after closing `---`, or yaml.Unmarshal failure.
-- `Render` writes `---\n<yaml>---\n\n<body>`. Note yaml.Marshal already emits a trailing newline on its own output, so the sequence is `---\n` + yaml + `---\n\n` + body.
-- `Merge` `ClosedDate` semantics: preserves existing ClosedDate if already set (idempotent for closed→same-closed and closed→different-closed); stamps today only on in-progress→closed transition; clears on closed→in-progress. First-write with `opts.Status = closed` stamps ClosedDate=today.
-
-Files created:
-
-- `internal/metadata/metadata.go` — `Metadata`, `Status`, four consts, MarshalYAML/UnmarshalYAML, private `validateStatus`/`isClosed`.
-- `internal/metadata/frontmatter.go` — `Split`, `Render`.
-- `internal/metadata/merge.go` — `Merge`, `UpdateOptions`.
-
-## Autonomous mode
-
-User authorized "run all remaining phases without asking" on 2026-07-28 after Phase 1.1 committed. Do NOT ask between phases; loop analyze → implement → test → verify → update_plan → update_changelog → analyze until all seven phases are ticked, then advance to `update_repo_changelog`.
+# Working Context: implement workflow for 000041_workflow-knowledge-capture-offers
 
 ## Session state
 
-- Phase 1.1 complete and committed (plan ticked, changelog entry added). Advance next: loop back to `analyze` for Phase 1.2.
+- WORKFLOW FINISHED 2026-07-31. All 3 phases complete, harbor green (93/93, zero oracle edits), repo CHANGELOG.md updated, test-plan.md + changelog record committed, spec reconciled (6 requirements [x], 4 acceptance criteria left [ ] pending manual verification per test-plan.md). Outstanding item surfaced to user: stale `goto finished` advance line in the update_feature_changelog template (FSM requires reconcile_spec first).
 
-Note on YAML quoting: `yaml.v3` quotes date-shaped string fields (e.g. `created_date: "2026-07-01"`) — tests assert the presence of the value without pinning quote style.
+- Implement workflow started for plan 000041_workflow-knowledge-capture-offers (user picked it explicitly; newest plan, untracked in git). read_plan step complete:
+  - Structural validation passed — all 10 sections present, 3 phases (1.1, 2.1, 2.2) with resolving technical-detail links.
+  - Drift check clean — every referenced file/symbol/line verified current: 07-update_changelog.md Discoveries at :28 / Step 3 at :44; 18-walkthrough.md assumptions beat :18, apply-immediately :20, first `plan goto` :27; cmd/skill.go confirmed unable to resolve skills/workflows/ (skills/skill_<name>.md only, listSkills no recursion); all named test funcs exist at cited lines; `make harbor-test-plan` target exists at Makefile:73.
+  - Spec coverage check passed — all 6 requirements + 4 acceptance criteria map to phases 1.1/2.1; no descoping.
+  - Changelog mode: NO `## Changelog` in plan.md → first-phase invocation; analyze picks up at Phase 1.1.
+- Advancing to analyze.
+
+## Discovery learnings (beyond what research.md records)
+
+- `{{config.command}} skill spek-knowledge` is UNREACHABLE (cmd/skill.go resolves only templates/skills/skill_<name>.md, no recursion into skills/workflows/) — new prose must name the spek-knowledge skill or use raw `knowledge` CRUD commands.
+- No implement-workflow harbor suite exists — 07-update_changelog.md changes have zero harbor coverage; plan-workflow harbor verifier never asserts walkthrough prose content; walkthrough window is exempt from the no-AskUserQuestion rule (test_plan_workflow.py:847).
+- Live constraint: INSTRUCTION_NEXT_STEP_RE takes the FIRST `plan goto` match in a rendered instruction — new 18-walkthrough.md prose must not introduce an earlier `plan goto` occurrence.
+- Test model to copy: TestDiscoveryStepUsesKnowledgeCommands (internal/steps/plan/steps_test.go:121-132), renderStep + require.Contains, ToLower for prose.
+- Pre-existing drift (out of scope): EXPECTED_SKILLS_PER_STEP lists discover-project-commands / discover-test-patterns which no template references.
+
+## Key facts carried forward
+
+- Motivating incident: implement run for plan 000040 surfaced four durable discoveries, zero offers. Root causes: no in-band reinforcement in implement templates; Discoveries slot is a decoy sink; discoveries surface under instruction pressure.
+- Standing contract: offer-then-confirm; capture via existing spek-knowledge tooling; no new write path; no new interruption points; per-change record shape unchanged; decline final for conversation (prose-only, no state).
+- Selectivity bar: offers must be rare (durable + non-obvious beyond current change); no tunable setting — agent judgement.
+- Phase plan: 1.1 = 07-update_changelog.md Step 2b beat + TestUpdateChangelogStepOffersKnowledgeCaptureForDurableDiscoveries (after :311-317); 2.1 = 18-walkthrough.md change-request-path beat + TestWalkthroughStepOffersKnowledgeCaptureForRevealingCorrections (beside :418-437), both with require.NotContains("skill spek-knowledge"); 2.2 = `make harbor-test-plan` confirming run (~25 min, Docker + harbor CLI + Claude creds), expected green with zero oracle edits.
+
+## Phase 1.1 analysis (complete)
+
+- Insertion: `### Step 2b: Assess discoveries for durable knowledge` between the `rm .spektacular/tmp/plan_update.md` block (line 42) and `### Step 3` (line 44) of templates/steps/implement/07-update_changelog.md.
+- renderStep harness uses Config{Command: "spektacular"} → `{{config.command}}` renders "spektacular"; template's existing `skill update-changelog` reference cannot false-positive the NotContains("skill spek-knowledge") guard.
+- New test after steps_test.go:311-317 (TestUpdateChangelogStepBranchesOnUncheckedPhases); model = TestDiscoveryStepUsesKnowledgeCommands; anchors: "durable", "offer", explicit acceptance/confirm, decline-not-offered-again, "spek-knowledge".
+
+## Phase 1.1 progress
+
+- implement step done: Step 2b beat inserted in 07-update_changelog.md between the plan-file-write block and Step 3. Anchors used in prose: "durable", "beyond this one change", "offer", "most phases produce none", "explicit acceptance", "not offered again", "spek-knowledge". Build green.
+- test step done (sub-agent): TestUpdateChangelogStepOffersKnowledgeCaptureForDurableDiscoveries added after the branching test in internal/steps/implement/steps_test.go; 6 positive anchors + NotContains("skill spek-knowledge") guard.
+- verify done: go build / go vet / go test ./... all green (no lint target documented; thoughts/notes/commands.md absent).
+- update_plan done: Phase 1.1 heading + all 4 acceptance criteria ticked in plan store.
+- update_changelog done: ## Changelog section created with Phase 1.1 entry (Deviations: None). Step 2b self-assessment: discovery was change-local, no knowledge offer raised. Looping to analyze for Phase 2.1 (user's standing preference: run simple features without pausing).
+
+## Phase 2.1 analysis (complete)
+
+- Insertion: new paragraph in templates/steps/plan/18-walkthrough.md immediately after the apply-immediately paragraph (line 20), before the sign-off paragraph (line 22). Existing anchors to preserve: "apply it immediately" (:428), "plan file write" (:427), "challenged assumption is a change request" (:470), "explicit affirmative"/"not agreement" (:431-432). No `plan goto` may appear before line 27's; no `{{config.command}} skill <name>` text.
+- New test TestWalkthroughStepOffersKnowledgeCaptureForRevealingCorrections beside TestWalkthroughStepIsMandatoryGuidedReview (:418-437); anchors: "what the correction reveals", "general lesson", explicit acceptance, not-offered-again, "spek-knowledge", NotContains("skill spek-knowledge"). Keep anchor vocabulary aligned with Phase 1.1's beat.
+
+## Phase 2.1 progress
+
+- implement step done: assessment paragraph added to 18-walkthrough.md after the apply-immediately paragraph. Build green; single `plan goto` still at file end (line 29).
+- test step done (sub-agent): TestWalkthroughStepOffersKnowledgeCaptureForRevealingCorrections added after TestWalkthroughStepWalksDraftingAssumptions; anchors "what the correction reveals", "general lesson", "produce no offer", "explicit acceptance", "not offered again", "spek-knowledge" + NotContains guard.
+- verify done: build/vet/test all green; grep confirms exactly 1 `plan goto` in 18-walkthrough.md.
+- update_plan done: Phase 2.1 heading + all 4 criteria ticked.
+- update_changelog done: Phase 2.1 entry appended (Deviations: None); Step 2b assessment — change-local, no offer. 1 unchecked phase remains (2.2 harbor run). Looping to analyze.
+
+## Phase 2.2 analysis (complete)
+
+- Confirming harbor run: `make harbor-test-plan` (Makefile:73) — builds linux binary into tests/harbor/plan-workflow/environment/, runs harbor CLI w/ claude-code agent, model claude-sonnet-4-6, auth from ~/.claude/.credentials.json. Prereqs verified: harbor 0.3.0 on PATH, Docker daemon up (5.7.0), OAuth token present. No file changes expected; expected green with zero oracle edits. ~20-25 min wall-clock. implement/test steps are no-ops for this phase; the run itself happens at verify.
+
+## Phase 2.2 progress
+
+- Harbor run GREEN: 93 passed, 0 failed, zero oracle edits — research conclusion confirmed. Phase 2.2 ticked (both criteria), changelog entry written. All 3 phases complete.
+- update_repo_changelog done: user-facing section prepended to CHANGELOG.md.
+- test_plan done: test-plan.md committed to plan store with 4 manual procedures.
+- update_feature_changelog done: changelog record committed to changelog store (Deviations: None).
+- NOTE (possible durable discovery): the update_feature_changelog template's advance line says `goto finished`, but the FSM only allows `reconcile_spec` from there — the CLI's invalid_transition error self-corrects it, but the template prose is stale. Candidate knowledge/bug offer for the user.
+- reconcile_spec done: all 6 spec Requirements flipped [x]; 4 Acceptance Criteria deliberately left [ ] — they describe live-run behavioral outcomes the plan classifies as manual (see test-plan.md). Remaining: finished.
+
+## Decisions / user answers this session
+
+- User selected plan 000041_workflow-knowledge-capture-offers to implement (recommended as newest/untracked).

@@ -20,7 +20,7 @@ layers of assertions:
      `spektacular plan file write` and never written or edited with the
      built-in Write/Edit tools.
   6. Convention-aware planning — the discovery step read the seeded
-     convention through `spektacular knowledge conventions`
+     convention through `spektacular knowledge always-applied`
      (CONVENTIONS_READ_COMMAND) within its window, and plan.md's
      ## Conventions section reflects the seeded convention's distinctive
      token (SEEDED_CONVENTION_TOKEN).
@@ -77,6 +77,7 @@ EXPECTED_STEP_ORDER = [
     "write_plan",
     "write_context",
     "write_research",
+    "walkthrough",
     "finished",
 ]
 
@@ -116,8 +117,25 @@ MIN_SECTION_LENGTH = 100
 # section proves the seeded convention was digested into the plan rather than a
 # command merely having run. Update both here in the same commit if the seeded
 # convention or the discovery instruction changes.
-CONVENTIONS_READ_COMMAND = "knowledge conventions"
+CONVENTIONS_READ_COMMAND = "knowledge always-applied"
 SEEDED_CONVENTION_TOKEN = "AUTH_AUDIT_V2"
+
+# Hand-maintained oracle for the assumption log folded into research.md's
+# ## Drafting assumptions section. Each recorded judgement call is a `### `
+# entry carrying all three bullets below; a run that genuinely made no
+# judgement calls records the exact fallback line instead. These literals
+# mirror the write_research template's contract — when that template's
+# assumption-log format changes, update these in the same commit. Never
+# derive them from the template at runtime.
+ASSUMPTION_ENTRY_MARKERS = ("**Decision**", "**Rationale**", "**Rejected**")
+NO_ASSUMPTIONS_FALLBACK = "No drafting assumptions were recorded."
+
+# Hand-maintained oracle for the artefact status lifecycle. Committed plan
+# documents carry `status: in-progress` YAML frontmatter until the finished
+# step stamps them `status: completed` after walkthrough sign-off. Update
+# these literals in the same commit as any frontmatter schema change.
+STATUS_IN_PROGRESS = "in-progress"
+STATUS_COMPLETED = "completed"
 
 # Built-in agent tools that mutate files directly, bypassing the spektacular
 # CLI. The plan documents must never be written or edited with these.
@@ -144,7 +162,7 @@ SCAFFOLD_LEFTOVERS = (
     "<description of change>",
     "<approach>",
     # research.md scaffold
-    "<description>",
+    "### Option A: <name>",
     "<reason with citation>",
     "<path:line>",
     "<one-line summary of what was learned>",
@@ -180,7 +198,7 @@ INSTRUCTION_NEXT_STEP_RE = re.compile(
 @dataclass(frozen=True)
 class ToolCall:
     index: int
-    type: str  # "Bash" | "Skill" | "Task" | "Agent"
+    type: str  # "Bash" | "Skill" | "Task" | "Agent" | "AskUserQuestion"
     name: str
     input: dict
     tool_use_id: str
@@ -246,6 +264,34 @@ def parse_sections(text: str) -> dict:
     return sections
 
 
+FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---[ \t]*\n", re.DOTALL)
+FRONTMATTER_LINE_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
+
+
+def parse_frontmatter(text: str) -> dict:
+    """Parse a leading `---` YAML frontmatter block into a flat dict.
+
+    Hand-rolled on purpose — the committed artefacts only use simple
+    `key: value` / `key: "value"` scalar lines, so a yaml dependency would
+    be overkill for this dependency-free module. Surrounding single or
+    double quotes on values are stripped. Returns {} when the text has no
+    leading frontmatter block.
+    """
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return {}
+    fields: dict = {}
+    for line in m.group(1).splitlines():
+        lm = FRONTMATTER_LINE_RE.match(line)
+        if not lm:
+            continue
+        value = lm.group(2).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        fields[lm.group(1)] = value
+    return fields
+
+
 # ---------------------------------------------------------------------------
 # Transcript extraction
 # ---------------------------------------------------------------------------
@@ -266,8 +312,10 @@ def _iter_transcript_objects():
 def extract_tool_calls() -> list:
     """Return an ordered list of ToolCall entries from the transcript.
 
-    Captures Bash, Skill, Task, and Agent tool_use blocks. Preserves
-    transcript order so step-window attribution works.
+    Captures Bash, Skill, Task, Agent, and AskUserQuestion tool_use blocks.
+    Preserves transcript order so step-window attribution works. Every
+    consumer filters by call.type or by Bash command content, so the
+    AskUserQuestion entries only surface in tests that ask for them.
     """
     calls: list = []
     for obj in _iter_transcript_objects():
@@ -278,7 +326,7 @@ def extract_tool_calls() -> list:
             if block.get("type") != "tool_use":
                 continue
             name = block.get("name", "")
-            if name in ("Bash", "Skill", "Task", "Agent"):
+            if name in ("Bash", "Skill", "Task", "Agent", "AskUserQuestion"):
                 calls.append(
                     ToolCall(
                         index=len(calls),
@@ -765,6 +813,102 @@ class TestSubAgentSpawning:
 
 
 # ---------------------------------------------------------------------------
+# Autonomous drafting tests
+# ---------------------------------------------------------------------------
+
+
+class TestAutonomousDrafting:
+    """The drafting segment (overview → write_research) ran autonomously.
+
+    The reworked plan workflow drafts without pausing for user confirmation:
+    judgement calls are recorded in the assumption log instead of being posed
+    as questions, and the single legitimate user interaction is the
+    walkthrough's sign-off. AskUserQuestion is the structured tool through
+    which the agent poses a question to the user, so its presence in a
+    drafting-step window is the behavioural signal that autonomy was broken.
+    """
+
+    def test_no_confirmation_questions_during_drafting(self):
+        """No AskUserQuestion call falls inside any drafting-step window.
+
+        Hand-maintained oracle: every step window except "walkthrough" and
+        "finished" belongs to the drafting segment and must contain zero
+        AskUserQuestion tool_use blocks. The walkthrough window is exempt
+        because posing the sign-off question there is the step's whole job
+        (and "finished" follows it). This checks only the structured
+        question tool — free-prose questions in assistant text are
+        deliberately out of scope, since assistant text is unconstrained
+        and the automated run self-answers.
+        """
+        windows = _windows_cache()
+        calls = _calls_cache()
+        offenders = []
+        for step, window in windows.items():
+            if step in ("walkthrough", "finished"):
+                continue
+            for c in calls[window.start : window.end]:
+                if c.type == "AskUserQuestion":
+                    offenders.append((step, c.index))
+        assert not offenders, (
+            "AskUserQuestion posed during drafting steps (step, call index): "
+            f"{offenders} — the drafting segment must run autonomously, "
+            "recording judgement calls in the assumption log instead of "
+            "asking the user."
+        )
+
+    def test_drafting_assumptions_populated(self):
+        """research.md's ## Drafting assumptions section records the
+        judgement calls made while drafting autonomously.
+
+        The section must exist and be non-empty, and take exactly one of
+        two shapes: at least one `### ` entry carrying all three
+        hand-maintained bullets (**Decision** / **Rationale** / **Rejected**),
+        or — only when genuinely no judgement calls were made — the exact
+        fallback line. When entries exist the fallback line must be absent,
+        so the section cannot claim emptiness while also holding entries.
+        A typical JWT-plan run involves real judgement calls (algorithm,
+        expiry, storage), so the populated shape is the expected outcome.
+        """
+        _, _, research_path = plan_artefact_paths()
+        assert research_path.exists(), f"research.md missing at {research_path}"
+        sections = parse_sections(research_path.read_text())
+        assert "drafting assumptions" in sections, (
+            "research.md has no ## Drafting assumptions section; "
+            f"found sections: {sorted(sections.keys())}"
+        )
+        section = sections["drafting assumptions"]
+        assert section.strip(), (
+            "research.md's ## Drafting assumptions section is empty — it "
+            "must hold recorded judgement calls or the explicit fallback "
+            f"line {NO_ASSUMPTIONS_FALLBACK!r}."
+        )
+        entries = re.split(r"^###\s+", section, flags=re.MULTILINE)[1:]
+        if entries:
+            complete = [
+                e
+                for e in entries
+                if all(marker in e for marker in ASSUMPTION_ENTRY_MARKERS)
+            ]
+            assert complete, (
+                f"None of the {len(entries)} '### ' assumption entries "
+                "carries all three required bullets "
+                f"{ASSUMPTION_ENTRY_MARKERS}. Section content: "
+                f"{section[:500]!r}"
+            )
+            assert NO_ASSUMPTIONS_FALLBACK not in section, (
+                "## Drafting assumptions contains both '### ' entries and "
+                f"the fallback line {NO_ASSUMPTIONS_FALLBACK!r} — the "
+                "fallback is only valid when no judgement calls were made."
+            )
+        else:
+            assert section.strip() == NO_ASSUMPTIONS_FALLBACK, (
+                "## Drafting assumptions has no '### ' entries and is not "
+                f"the exact fallback line {NO_ASSUMPTIONS_FALLBACK!r}. "
+                f"Section content: {section[:500]!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Convention-aware planning tests
 # ---------------------------------------------------------------------------
 
@@ -877,6 +1021,79 @@ class TestContextAndResearch:
 
 
 # ---------------------------------------------------------------------------
+# Artefact status-lifecycle tests
+# ---------------------------------------------------------------------------
+
+# Matches a `status:` frontmatter line inside a tool-result text. Tolerates
+# both raw markdown (`status: in-progress` / `status: "in-progress"`) and
+# JSON-escaped embedding (`status: \"in-progress\"`) since plan CLI output
+# may wrap the document in a JSON payload.
+RESULT_STATUS_RE = re.compile(r"status:\s*\\?[\"']?(in-progress|completed)")
+
+
+class TestArtefactStatusLifecycle:
+    """Committed plan documents move in-progress → completed at the right time.
+
+    Docs are committed with `status: in-progress` frontmatter and stamped
+    `status: completed` only by the finished step, after walkthrough
+    sign-off. Two checks: (a) the final on-disk artefacts are completed,
+    and (b) during the walkthrough window the docs still read as
+    in-progress — proving the completed stamp gated on sign-off rather
+    than being applied at commit time.
+    """
+
+    def test_artefacts_completed_after_finished(self):
+        """Each committed artefact ends with frontmatter status: completed."""
+        for path in plan_artefact_paths():
+            assert path.exists(), f"Artefact file missing: {path}"
+            fm = parse_frontmatter(path.read_text())
+            assert fm.get("status") == STATUS_COMPLETED, (
+                f"{path.name} frontmatter status is {fm.get('status')!r}, "
+                f"expected {STATUS_COMPLETED!r} — the finished step must "
+                "stamp every committed document completed."
+            )
+
+    def test_docs_in_progress_during_walkthrough(self):
+        """Docs read during the walkthrough still carry status: in-progress.
+
+        The walkthrough template instructs the agent to read the committed
+        documents back with `plan file read`, so the walkthrough window
+        reliably contains such reads and their results include the
+        frontmatter. Every status observed there must be in-progress: a
+        completed status during the walkthrough would mean the documents
+        were stamped before sign-off, i.e. the gating is broken.
+        """
+        windows = _windows_cache()
+        calls = _calls_cache()
+        results = _results_cache()
+        window = windows.get("walkthrough")
+        assert window is not None, (
+            "Walkthrough step was never entered — cannot verify the "
+            "in-progress status of the documents under review."
+        )
+        observed = []  # (call index, status value)
+        for c in calls[window.start : window.end]:
+            cmd = _bash_command(c)
+            if "plan file read" not in cmd:
+                continue
+            for status in RESULT_STATUS_RE.findall(
+                results.get(c.tool_use_id, "")
+            ):
+                observed.append((c.index, status))
+        assert observed, (
+            "No `plan file read` result inside the walkthrough window "
+            "contained a status: frontmatter line — the walkthrough must "
+            "read the committed documents back for review."
+        )
+        offenders = [o for o in observed if o[1] != STATUS_IN_PROGRESS]
+        assert not offenders, (
+            "Documents read during the walkthrough already carried a "
+            f"non-in-progress status (call index, status): {offenders} — "
+            "the completed stamp must wait for walkthrough sign-off."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Instruction next_step validity invariant
 # ---------------------------------------------------------------------------
 
@@ -929,4 +1146,51 @@ class TestInstructionNextStepValidity:
                 )
         assert not offenders, (
             f"Rendered instructions reference invalid next steps: {offenders}"
+        )
+
+    def test_walkthrough_rendered_before_finished(self):
+        """The `finished` instruction must only be rendered after a
+        `walkthrough` instruction.
+
+        Transcript-level guard for the mandatory plan-walkthrough review:
+        the ordered sequence of `step` values from successful plan
+        new/goto results must contain "walkthrough", and its first
+        occurrence must precede the first occurrence of "finished". The
+        step names here are hand-maintained oracle values, not derived
+        from the state machine.
+        """
+        calls = _calls_cache()
+        results = _results_cache()
+        rendered_steps = []
+        for call in calls:
+            if call.type != "Bash":
+                continue
+            cmd = _bash_command(call)
+            if not (_is_plan_new_call(cmd) or _is_plan_goto_call(cmd)):
+                continue
+            result_text = results.get(call.tool_use_id, "")
+            if not result_text:
+                continue
+            try:
+                payload = json.loads(result_text)
+            except json.JSONDecodeError:
+                # Not all stdout lines are pure JSON (error paths, wrapped
+                # harness output). Skip.
+                continue
+            step = payload.get("step") if isinstance(payload, dict) else None
+            if step:
+                rendered_steps.append(step)
+        assert "walkthrough" in rendered_steps, (
+            "No walkthrough instruction was rendered "
+            f"(rendered steps: {rendered_steps})"
+        )
+        assert "finished" in rendered_steps, (
+            "No finished instruction was rendered "
+            f"(rendered steps: {rendered_steps})"
+        )
+        assert rendered_steps.index("walkthrough") < rendered_steps.index(
+            "finished"
+        ), (
+            "The finished instruction was rendered before any walkthrough "
+            f"instruction (rendered steps: {rendered_steps})"
         )

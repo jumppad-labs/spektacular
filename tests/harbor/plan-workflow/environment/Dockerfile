@@ -15,7 +15,7 @@ RUN chmod +x /usr/local/bin/spektacular
 WORKDIR /app
 
 RUN mkdir -p /app/.spektacular/specs
-COPY user-auth.md /app/.spektacular/specs/user-auth.md
+COPY 20260101000000-user-auth.md /app/.spektacular/specs/20260101000000-user-auth.md
 
 # Seed a distinctive always-apply convention relevant to the JWT auth spec so
 # the plan workflow has a convention to surface into plan.md's ## Conventions

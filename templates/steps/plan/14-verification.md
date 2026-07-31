@@ -44,7 +44,8 @@ A common failure mode is silently dropping a section when assembling. Check each
 4. `## External references`
 5. `## Prior plans / specs consulted`
 6. `## Open assumptions`
-7. `## Rehydration cues`
+7. `## Drafting assumptions` (filled with the recorded judgement calls, or an explicit "No drafting assumptions were recorded." line)
+8. `## Rehydration cues`
 
 ### Step 2: Quality
 

@@ -13,9 +13,9 @@ cd /app
 
 spektacular init claude
 
-# The spec is already baked into the image at .spektacular/specs/user-auth.md
+# The spec is already baked into the image at .spektacular/specs/20260101000000-user-auth.md
 
-spektacular plan new --data '{"name":"user-auth"}'
+spektacular plan new --data '{"name":"20260101000000-user-auth"}'
 
 # overview is reached automatically by plan new; advance through the rest.
 spektacular plan goto --data '{"step":"discovery"}'
@@ -29,6 +29,7 @@ spektacular plan goto --data '{"step":"milestones"}'
 spektacular plan goto --data '{"step":"phases"}'
 spektacular plan goto --data '{"step":"open_questions"}'
 spektacular plan goto --data '{"step":"out_of_scope"}'
+spektacular plan goto --data '{"step":"assemble"}'
 spektacular plan goto --data '{"step":"verification"}'
 
 # The plan documents are owned by spektacular. Stage each filled document to a
@@ -36,7 +37,7 @@ spektacular plan goto --data '{"step":"verification"}'
 # never write the plan documents with built-in file tools.
 
 cat > /tmp/plan.md <<'PLAN_EOF'
-# Plan: user-auth
+# Plan: 20260101000000-user-auth
 
 ## Overview
 
@@ -156,10 +157,10 @@ None — every implementation uncertainty was resolved during planning.
 - Social login
 - Fine-grained permission scoping beyond role
 PLAN_EOF
-cat /tmp/plan.md | spektacular plan file write user-auth/plan.md
+cat /tmp/plan.md | spektacular plan file write 20260101000000-user-auth/plan.md
 
 cat > /tmp/context.md <<'CONTEXT_EOF'
-# Context: user-auth
+# Context: 20260101000000-user-auth
 
 ## Current State Analysis
 
@@ -224,10 +225,10 @@ Token verification must add less than 5ms p99 latency. RS256 verification
 is CPU-bound; benchmarks show ~0.3ms per verification on the production
 hardware profile.
 CONTEXT_EOF
-cat /tmp/context.md | spektacular plan file write user-auth/context.md
+cat /tmp/context.md | spektacular plan file write 20260101000000-user-auth/context.md
 
 cat > /tmp/research.md <<'RESEARCH_EOF'
-# Research: user-auth
+# Research: 20260101000000-user-auth
 
 ## Alternatives considered and rejected
 
@@ -277,7 +278,7 @@ negligible latency to the refresh flow.
 
 ## Prior plans / specs consulted
 
-- `.spektacular/specs/user-auth.md` — source spec
+- `.spektacular/specs/20260101000000-user-auth.md` — source spec
 
 ## Open assumptions
 
@@ -287,17 +288,18 @@ negligible latency to the refresh flow.
 
 ## Rehydration cues
 
-- Start with `.spektacular/specs/user-auth.md`
+- Start with `.spektacular/specs/20260101000000-user-auth.md`
 - `auth/session/session.go` shows the current auth path
 - `router/router.go:42` is where the new middleware slots in
 RESEARCH_EOF
-cat /tmp/research.md | spektacular plan file write user-auth/research.md
+cat /tmp/research.md | spektacular plan file write 20260101000000-user-auth/research.md
 
 # Advance through the write steps — each verifies its document was committed —
-# to the finished step.
+# then through the mandatory walkthrough review (sign-off) to the finished step.
 spektacular plan goto --data '{"step":"write_plan"}'
 spektacular plan goto --data '{"step":"write_context"}'
 spektacular plan goto --data '{"step":"write_research"}'
+spektacular plan goto --data '{"step":"walkthrough"}'
 spektacular plan goto --data '{"step":"finished"}'
 
 cp -r /app/.spektacular /logs/artifacts/spektacular

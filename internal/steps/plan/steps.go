@@ -48,7 +48,8 @@ func Steps() []workflow.StepConfig {
 		{Name: "write_plan", Src: []string{"verification"}, Dst: "write_plan", Callback: writePlan()},
 		{Name: "write_context", Src: []string{"write_plan"}, Dst: "write_context", Callback: writeContext()},
 		{Name: "write_research", Src: []string{"write_context"}, Dst: "write_research", Callback: writeResearch()},
-		{Name: "finished", Src: []string{"write_research"}, Dst: "finished", Callback: finished()},
+		{Name: "walkthrough", Src: []string{"write_research"}, Dst: "walkthrough", Callback: walkthrough()},
+		{Name: "finished", Src: []string{"walkthrough"}, Dst: "finished", Callback: finished()},
 	}
 }
 
@@ -280,7 +281,15 @@ func writeResearch() workflow.StepCallback {
 		if err != nil {
 			return "", err
 		}
-		return "", writeStep("write_research", "finished", "steps/plan/17-write_research.md", data, out, st, cfg, extra)
+		return "", writeStep("write_research", "walkthrough", "steps/plan/17-write_research.md", data, out, st, cfg, extra)
+	}
+}
+
+// walkthrough drives the mandatory guided review of the committed plan
+// documents; sign-off there is the only route to the finished step.
+func walkthrough() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("walkthrough", "finished", "steps/plan/18-walkthrough.md", data, out, st, cfg, nil)
 	}
 }
 
@@ -321,6 +330,6 @@ func finished() workflow.StepCallback {
 				}
 			}
 		}
-		return "", writeStep("finished", "", "steps/plan/18-finished.md", data, out, st, cfg, extra)
+		return "", writeStep("finished", "", "steps/plan/19-finished.md", data, out, st, cfg, extra)
 	}
 }

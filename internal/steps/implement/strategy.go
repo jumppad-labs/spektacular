@@ -26,24 +26,24 @@ func ResearchFilePath(dir, name string) string {
 	return dir + "/" + name + "/research.md"
 }
 
-// ChangelogFilePath returns the store-relative path for a feature's changelog
-// record under the configured changelog directory: a flat file per feature
-// (unlike PlanFilePath's per-feature subdirectory), namespaced under a folder
-// bearing the project's name so multiple projects sharing a store never
-// collide.
-func ChangelogFilePath(dir, projectName, name string) string {
-	return dir + "/" + projectName + "/" + name + ".md"
+// ChangelogFilePath returns the store-relative path for a feature's
+// project-level changelog record under the configured changelog directory.
+// The project-level record is a flat file per feature at the root of the
+// project's changelog directory — no `<project>/` subfolder, because the
+// project owns its own store. Per-repo derived entries live under member
+// repos' own changelog stores and are routed by the `--repo` flag of
+// `changelog file write`, not by this helper.
+func ChangelogFilePath(dir, name string) string {
+	return dir + "/" + name + ".md"
 }
 
 // strategy implements stepkit.PathStrategy for the implement workflow. planDir
 // is the configured plan directory; changelogDir and specDir are the
-// configured changelog and spec directories. projectName namespaces the
-// changelog path.
+// configured changelog and spec directories.
 type strategy struct {
 	planDir      string
 	changelogDir string
 	specDir      string
-	projectName  string
 }
 
 func (strategy) PrimaryPathField() string { return "plan_path" }
@@ -52,7 +52,7 @@ func (s strategy) PathVars(instanceName, storeRoot string) map[string]any {
 	planPath := filepath.Join(storeRoot, PlanFilePath(s.planDir, instanceName))
 	contextPath := filepath.Join(storeRoot, ContextFilePath(s.planDir, instanceName))
 	researchPath := filepath.Join(storeRoot, ResearchFilePath(s.planDir, instanceName))
-	changelogPath := filepath.Join(storeRoot, ChangelogFilePath(s.changelogDir, s.projectName, instanceName))
+	changelogPath := filepath.Join(storeRoot, ChangelogFilePath(s.changelogDir, instanceName))
 	specPath := filepath.Join(storeRoot, s.specDir, instanceName+".md")
 	return map[string]any{
 		"plan_path":              planPath,

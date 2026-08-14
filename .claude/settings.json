@@ -18,7 +18,9 @@
       "Bash(dagger --help)",
       "Bash(dagger update *)",
       "Bash(dagger functions *)",
-      "Bash(/tmp/spektacular-version-test --version)"
+      "Bash(/tmp/spektacular-version-test --version)",
+      "Bash(git -C /home/nicj/code/github.com/jumppad-labs/spektacular log --oneline -20)",
+      "Bash(git -C /home/nicj/code/github.com/jumppad-labs/spektacular log --all --oneline --diff-filter=A -- '.spektacular/changelog/*')"
     ],
     "additionalDirectories": [
       "/home/nicj/code/github.com/nicholasjackson/spektacular",

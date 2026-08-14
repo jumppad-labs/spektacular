@@ -1,0 +1,16 @@
+description: Documentation site for the auth-service project. Hosts the public API reference and integration guides for the JWT authentication surface.
+role: docs
+tags:
+    - documentation
+    - markdown
+deployment: static-site
+knowledge:
+    sources:
+        - scope: project
+          provider: file
+          config:
+            location: .spektacular/knowledge
+changelog:
+    provider: file
+    config:
+        directory: .spektacular/changelog

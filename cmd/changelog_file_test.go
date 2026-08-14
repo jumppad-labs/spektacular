@@ -40,11 +40,12 @@ func TestChangelogFileWriteRead_RoundTrips(t *testing.T) {
 	require.Equal(t, "changelog body", string(body))
 }
 
-// Criterion 1: a changelog entry written after an implement run lands under
-// the project-named folder in the central store, and reading it back by name
-// works unchanged — the namespace folder is injected below the CLI surface,
-// so the agent-facing path stays `<id>_<slug>.md` on both write and read.
-func TestChangelogFileWrite_LandsUnderProjectNamespaceFolder(t *testing.T) {
+// A central (no --repo) changelog write lands directly under the configured
+// changelog directory — no `<project>/` subfolder, because the project owns
+// its own store. The project subfolder exists only for repo-routed writes
+// where multiple projects may share a member repo. Reading back by the same
+// flat name returns the content unchanged.
+func TestChangelogFileWrite_LandsFlatInConfiguredChangelogDirectory(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	// counter id_method so the `<id>_<slug>.md` name clears validateIDPrefix.
@@ -57,12 +58,11 @@ func TestChangelogFileWrite_LandsUnderProjectNamespaceFolder(t *testing.T) {
 	rootCmd.SetArgs([]string{"changelog", "file", "write", "000001_feat.md", "--from", srcPath})
 	require.NoError(t, rootCmd.Execute())
 
-	// On disk the record sits under the project-named namespace folder
-	// (writeSpecCommandConfig writes `name: testproj`), not flat in the
-	// configured changelog directory.
-	require.FileExists(t, filepath.Join(dir, "docs", "changelog", "testproj", "000001_feat.md"))
-	require.NoFileExists(t, filepath.Join(dir, "docs", "changelog", "000001_feat.md"),
-		"the record must not also land flat in the changelog directory")
+	// On disk the record sits directly under the configured changelog
+	// directory — no project-named subfolder (which is a repo-routed concern).
+	require.FileExists(t, filepath.Join(dir, "docs", "changelog", "000001_feat.md"))
+	require.NoFileExists(t, filepath.Join(dir, "docs", "changelog", "testproj", "000001_feat.md"),
+		"the central record must not land under a <project>/ subfolder")
 
 	// Reading back by the same flat, agent-facing name returns the content.
 	stdout, _ := setupImplementCmd(t)
@@ -96,8 +96,8 @@ func TestChangelogFileWrite_StillRejectsNameWithoutIDPrefix(t *testing.T) {
 	require.Equal(t, "missing_id_prefix", er.Code)
 	require.Equal(t, "nope.md", er.Resource)
 
-	require.NoFileExists(t, filepath.Join(dir, "docs", "changelog", "testproj", "nope.md"))
 	require.NoFileExists(t, filepath.Join(dir, "docs", "changelog", "nope.md"))
+	require.NoFileExists(t, filepath.Join(dir, "docs", "changelog", "testproj", "nope.md"))
 }
 
 func TestChangelogFileList_ShowsAllWrittenRecords(t *testing.T) {
@@ -345,7 +345,7 @@ func TestChangelogFileWrite_CentralWriteCarriesNoProvenance(t *testing.T) {
 	rootCmd.SetArgs([]string{"changelog", "file", "write", "000001_feat.md", "--from", srcPath})
 	require.NoError(t, rootCmd.Execute())
 
-	content, err := os.ReadFile(filepath.Join(projectDir, "docs", "changelog", "testproj", "000001_feat.md"))
+	content, err := os.ReadFile(filepath.Join(projectDir, "docs", "changelog", "000001_feat.md"))
 	require.NoError(t, err)
 	meta, _, err := metadata.Split(content)
 	require.NoError(t, err)

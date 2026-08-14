@@ -51,6 +51,29 @@ func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	return writer.result.Instruction
 }
 
+// renderFinishedStep seeds the required project-level changelog artifact in
+// the store before invoking finished(), so tests that only care about the
+// template's rendered instruction don't trip the hard-fail-on-missing-
+// changelog guard added to finished().
+func renderFinishedStep(t *testing.T) string {
+	t.Helper()
+	data := &testData{values: map[string]any{"name": "test"}}
+	writer := &captureWriter{}
+	st := store.NewFileStore(t.TempDir(), "project")
+
+	cfg := workflow.Config{Command: "spektacular"}
+	seed, err := metadata.Render(metadata.Metadata{
+		CreatedDate: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Status:      metadata.StatusInProgress,
+	}, []byte("# body\n"))
+	require.NoError(t, err)
+	require.NoError(t, st.Write(ChangelogFilePath(cfg.ChangelogDir, "test"), seed))
+
+	_, err = finished()(data, writer, st, cfg)
+	require.NoError(t, err)
+	return writer.result.Instruction
+}
+
 func TestStepsOrderMatchesExpected(t *testing.T) {
 	expected := []string{
 		"new",
@@ -393,18 +416,18 @@ func TestPlanFilePaths_UseConfiguredDirectory(t *testing.T) {
 }
 
 func TestFinishedStepEmitsNoGoto(t *testing.T) {
-	out := renderStep(t, finished())
+	out := renderFinishedStep(t)
 	require.NotContains(t, out, "implement goto", "finished template must not emit a goto command")
 	require.Contains(t, strings.ToLower(out), "terminal")
 }
 
 func TestFinishedStepMentionsChangelogPath(t *testing.T) {
-	out := renderStep(t, finished())
+	out := renderFinishedStep(t)
 	require.Contains(t, out, "test.md", "finished template must mention the resolved changelog record path")
 }
 
 func TestFinishedStepReportsSpecCompletionStatus(t *testing.T) {
-	out := renderStep(t, finished())
+	out := renderFinishedStep(t)
 	require.Contains(t, out, "spec file read test.md", "finished template must direct reading the spec via `spec file read`")
 	require.Contains(t, out, "Requirements/Acceptance-Criteria", "finished template must report Requirements/Acceptance-Criteria status")
 	require.Contains(t, out, "reconcile_spec", "finished template must reference reconcile_spec as the source of unchecked-item reasons")
@@ -415,41 +438,40 @@ func TestUpdateFeatureChangelogStepMentionsSourcesAndCommitCommand(t *testing.T)
 	out := renderStep(t, updateFeatureChangelog())
 	require.Contains(t, out, "spec file read test.md", "update_feature_changelog must read the feature's spec via `spec file read`")
 	require.Contains(t, out, "plan file read test/plan.md", "update_feature_changelog must read the plan's implementation history via `plan file read`")
-	require.Contains(t, out, ".spektacular/tmp/changelog_record.md", "update_feature_changelog must stage its record at the scratch path")
-	require.Contains(t, out, "changelog file write test.md --from .spektacular/tmp/changelog_record.md", "update_feature_changelog must commit the record via `changelog file write`")
+	require.Contains(t, out, ".spektacular/tmp/changelog_project.md", "update_feature_changelog must stage the project-level record at a project-scoped scratch path")
+	require.Contains(t, out, "changelog file write test.md --from .spektacular/tmp/changelog_project.md", "update_feature_changelog must commit the project-level record via `changelog file write`")
 	// The rendered advance target must match the FSM, which only allows
 	// update_feature_changelog → reconcile_spec (finished is two steps away).
 	require.Contains(t, out, `"step":"reconcile_spec"`, "update_feature_changelog must advance to reconcile_spec, not skip it")
 	require.NotContains(t, out, `"step":"finished"`, "update_feature_changelog must not direct a goto to finished — the FSM rejects that transition")
 }
 
-// Criterion 3: the update_feature_changelog instruction directs deriving one
-// entry per affected repo — discovering repos via `repo list`, identifying
-// affected repos from the Files-changed repo prefixes, writing each derived
-// entry through `changelog file write --repo`, carrying the readable
-// reference line, and skipping the colocated repo and the whole step when no
-// member repo was touched.
+// Criterion 3: the update_feature_changelog instruction writes one repo-level
+// record per affected repo, including the colocated repo (no "central covers
+// it" carve-out). Every affected repo gets its own record via `changelog file
+// write --repo`, discovered from `repo list` and the Files-changed prefixes,
+// carrying the readable reference line. Unaffected repos get no record.
 func TestUpdateFeatureChangelogStepDerivesOneEntryPerAffectedRepo(t *testing.T) {
 	out := renderStep(t, updateFeatureChangelog())
 
-	require.Contains(t, out, "one entry per affected repo",
-		"update_feature_changelog must direct deriving one entry per affected repo")
+	require.Contains(t, out, "repo-level record per affected repo",
+		"update_feature_changelog must direct writing one repo-level record per affected repo")
 	require.Contains(t, out, "spektacular repo list",
 		"update_feature_changelog must discover repos via `repo list`")
-	require.Contains(t, out, "changelog file write test.md --repo <repo-name> --from .spektacular/tmp/changelog_derived_<repo>.md",
-		"derived entries must be committed through `changelog file write --repo`")
+	require.Contains(t, out, "changelog file write test.md --repo <repo-name> --from .spektacular/tmp/changelog_<repo>.md",
+		"per-repo records must be committed through `changelog file write --repo`")
 	require.Contains(t, out, "> Derived from project",
-		"each derived entry must carry a human-readable reference line")
+		"each repo record must carry a human-readable reference line")
 	require.Contains(t, out, "spec/plan test.",
 		"the reference line must name the resolved spec/plan identifier")
 	require.Contains(t, out, "only that repo's changes",
-		"each derived entry must be scoped to that repo's own changes")
-	require.Contains(t, out, "other than the project's own colocated repo",
-		"the colocated repo must be skipped — the central record already covers it")
-	require.Contains(t, out, "skip this step entirely",
-		"the step must be skipped when no member repo was touched")
-	require.Contains(t, out, "do not write empty derived entries",
-		"unaffected repos must not receive empty entries")
+		"each repo record must be scoped to that repo's own changes")
+	require.Contains(t, out, "including the colocated one",
+		"every affected repo — including the colocated one — must get its own repo-level record; there must be no carve-out")
+	require.NotContains(t, out, "other than the project's own colocated",
+		"the old 'central record already covers the colocated repo' carve-out must be gone")
+	require.Contains(t, out, "no repo-level record",
+		"unaffected repos must not receive empty records")
 }
 
 // Criterion 3: a derived write failing on a missing/broken repo footprint is
@@ -521,13 +543,12 @@ func TestImplementFinished_ClosesTestPlanAndChangelog(t *testing.T) {
 		PlanDir:      "plans",
 		ChangelogDir: "changelog",
 		SpecDir:      "specs",
-		ProjectName:  "testproj",
 	}
 	planName := "fixture"
 
 	created := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
 	testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
-	changelogPath := "changelog/testproj/fixture.md"
+	changelogPath := "changelog/fixture.md"
 
 	for _, p := range []string{testPlanPath, changelogPath} {
 		seed, err := metadata.Render(metadata.Metadata{
@@ -556,10 +577,13 @@ func TestImplementFinished_ClosesTestPlanAndChangelog(t *testing.T) {
 	}
 }
 
-// TestImplementFinished_SkipsMissingArtifacts asserts finished() treats
-// store.ErrNotFound as a no-op — it must return cleanly without creating
-// either artifact when neither is present in the store.
-func TestImplementFinished_SkipsMissingArtifacts(t *testing.T) {
+// TestImplementFinished_FailsHardOnMissingChangelog asserts finished()
+// surfaces a missing project-level changelog record as an error rather than
+// silently tolerating it — the previous swallow (via errors.Is(err,
+// store.ErrNotFound)) let update_feature_changelog silently no-op and leave
+// no record on disk, and the workflow still marked itself finished. That
+// regression is what motivated the hard-fail here.
+func TestImplementFinished_FailsHardOnMissingChangelog(t *testing.T) {
 	tmp := t.TempDir()
 	st := store.NewFileStore(tmp, "project")
 	cfg := workflow.Config{
@@ -574,10 +598,42 @@ func TestImplementFinished_SkipsMissingArtifacts(t *testing.T) {
 	writer := &captureWriter{}
 
 	_, err := finished()(data, writer, st, cfg)
-	require.NoError(t, err, "finished() must not error when the artifacts are missing")
+	require.Error(t, err, "finished() must error when the project-level changelog is missing")
+	require.Contains(t, err.Error(), "changelog", "error must name the missing artifact")
+
+	changelogPath := filepath.Join(cfg.ChangelogDir, planName+".md")
+	require.False(t, st.Exists(changelogPath), "finished() must not create the changelog on the fly — the update_feature_changelog step owns that write")
+}
+
+// TestImplementFinished_TolerantOfMissingTestPlan asserts a missing test
+// plan alone is still not a hard failure — only the changelog is required
+// at this point in the FSM. This preserves the pre-existing tolerance for
+// test-plan absence, which is out of scope for the changelog fix.
+func TestImplementFinished_TolerantOfMissingTestPlan(t *testing.T) {
+	tmp := t.TempDir()
+	st := store.NewFileStore(tmp, "project")
+	cfg := workflow.Config{
+		Command:      "spektacular",
+		PlanDir:      "plans",
+		ChangelogDir: "changelog",
+		SpecDir:      "specs",
+	}
+	planName := "fixture"
+
+	changelogPath := filepath.Join(cfg.ChangelogDir, planName+".md")
+	seed, err := metadata.Render(metadata.Metadata{
+		CreatedDate: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Status:      metadata.StatusInProgress,
+	}, []byte("# body\n"))
+	require.NoError(t, err)
+	require.NoError(t, st.Write(changelogPath, seed))
+
+	data := &testData{values: map[string]any{"name": planName}}
+	writer := &captureWriter{}
+
+	_, err = finished()(data, writer, st, cfg)
+	require.NoError(t, err, "finished() must not error on a missing test plan when the changelog is present")
 
 	testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
-	changelogPath := filepath.Join(cfg.ChangelogDir, planName+".md")
 	require.False(t, st.Exists(testPlanPath), "finished() must not create test-plan.md when it was missing")
-	require.False(t, st.Exists(changelogPath), "finished() must not create the changelog when it was missing")
 }

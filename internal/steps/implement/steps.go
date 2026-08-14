@@ -2,9 +2,11 @@ package implement
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/metadata"
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -53,7 +55,7 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 			StepName:     stepName,
 			NextStep:     nextStep,
 			TemplatePath: templatePath,
-			Strategy:     strategy{planDir: cfg.PlanDir, changelogDir: cfg.ChangelogDir, specDir: cfg.SpecDir, projectName: cfg.ProjectName},
+			Strategy:     strategy{planDir: cfg.PlanDir, changelogDir: cfg.ChangelogDir, specDir: cfg.SpecDir},
 			Extra:        extra,
 		},
 		data, out, st, cfg,
@@ -158,17 +160,27 @@ func finished() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
 		if !cfg.DryRun && st != nil {
 			planName := stepkit.GetString(data, "name")
-			artifactPaths := []string{
-				filepath.Join(cfg.PlanDir, planName, "test-plan.md"),
-				filepath.Join(ChangelogFilePath(cfg.ChangelogDir, cfg.ProjectName, planName)),
+
+			// Test plan: tolerate absence, close if present.
+			testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
+			if err := metadata.Close(st, testPlanPath, metadata.StatusCompleted); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return "", err
 			}
-			for _, p := range artifactPaths {
-				if err := metadata.Close(st, p, metadata.StatusCompleted); err != nil {
-					if errors.Is(err, store.ErrNotFound) {
-						continue
-					}
-					return "", err
+
+			// Project-level changelog: required artifact of the implement
+			// workflow. If update_feature_changelog silently skipped its write
+			// (a real failure mode we've observed), the FSM must surface it here
+			// rather than mark the workflow finished with no record on disk.
+			changelogPath := ChangelogFilePath(cfg.ChangelogDir, planName)
+			if err := metadata.Close(st, changelogPath, metadata.StatusCompleted); err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					return "", output.NewError(
+						"changelog_missing",
+						fmt.Sprintf("project-level changelog record %q was never written by update_feature_changelog", changelogPath),
+					).WithResource(changelogPath).
+						WithNextAction(fmt.Sprintf("re-run the update_feature_changelog step: `%s implement goto --data '{\"step\":\"update_feature_changelog\"}'`", cfg.Command))
 				}
+				return "", err
 			}
 		}
 		return "", writeStep("finished", "", "steps/implement/12-finished.md", data, out, st, cfg, nil)

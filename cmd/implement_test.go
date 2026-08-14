@@ -178,7 +178,7 @@ func TestImplementGoto_UpdateFeatureChangelogInstructsChangelogWrite(t *testing.
 	instruction, ok := result["instruction"].(string)
 	require.True(t, ok)
 	require.Contains(t, instruction, "changelog file write")
-	require.Contains(t, instruction, ".spektacular/tmp/changelog_record.md")
+	require.Contains(t, instruction, ".spektacular/tmp/changelog_project.md")
 }
 
 func TestImplementStatus_ReportsUncheckedPhases(t *testing.T) {

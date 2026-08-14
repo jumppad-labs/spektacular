@@ -101,6 +101,58 @@ func TestRenderedSpekKnowledgeBodyContainsCRUDInvocations(t *testing.T) {
 	}
 }
 
+// TestRenderedWorkflowSkillsCarryCrossRepoNotes renders the workflow skills
+// through the real install path and asserts the spek-plan and spek-implement
+// SKILL.md files carry their Phase 4.2 cross-repo notes — roster-driven repo
+// attribution for planning (criterion 2), attributed-repo execution with
+// per-repo derived changelog entries for implementation (criterion 3) — with
+// the {{command}} placeholder rendered away. The test owns the directory it
+// reads — it does not depend on any pre-existing on-disk state.
+func TestRenderedWorkflowSkillsCarryCrossRepoNotes(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := config.NewDefault()
+
+	require.NoError(t, installWorkflowSkills(tmp, ".claude/skills", cfg, io.Discard))
+
+	readSkill := func(t *testing.T, name string) string {
+		t.Helper()
+		body, err := os.ReadFile(filepath.Join(tmp, ".claude", "skills", name, "SKILL.md"))
+		require.NoError(t, err)
+		return string(body)
+	}
+
+	t.Run("spek-plan", func(t *testing.T) {
+		body := readSkill(t, "spek-plan")
+
+		// Criterion 2: planning attributes every requirement to its repo.
+		require.Contains(t, body, "Cross-repo planning",
+			"spek-plan must carry the cross-repo planning note")
+		require.Contains(t, body, "attribute every requirement to the repo",
+			"spek-plan must direct attributing every requirement to a repo")
+		require.Contains(t, body, "spektacular repo list",
+			"the {{command}} placeholder must render to the configured command")
+		require.NotContains(t, body, "{{command}}",
+			"the rendered skill must not leak the {{command}} placeholder")
+	})
+
+	t.Run("spek-implement", func(t *testing.T) {
+		body := readSkill(t, "spek-implement")
+
+		// Criterion 3: work runs in the attributed repo's resolved root and
+		// derived changelog entries follow each affected repo.
+		require.Contains(t, body, "Cross-repo implementation",
+			"spek-implement must carry the cross-repo implementation note")
+		require.Contains(t, body, "attributed repo's resolved root",
+			"spek-implement must direct work into the attributed repo's resolved root")
+		require.Contains(t, body, "one derived entry per affected repo",
+			"spek-implement must direct one derived changelog entry per affected repo")
+		require.Contains(t, body, "--repo <name>",
+			"derived entries must be written via `changelog file write ... --repo <name>`")
+		require.NotContains(t, body, "{{command}}",
+			"the rendered skill must not leak the {{command}} placeholder")
+	})
+}
+
 func assertNoForbiddenSubstring(t *testing.T, path, body string) {
 	t.Helper()
 	for _, needle := range forbiddenInstructionSubstrings {

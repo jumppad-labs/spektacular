@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/jumppad-labs/spektacular/internal/steps/plan"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -122,11 +125,12 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ProjectName: cfg.Name}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(root, "project"), out)
+	wf := workflow.New(steps, statePath, wfCfg, store.NewSourceStore(root, "project"), out)
 	wf.SetData("name", input.Name)
+	wf.SetData("repos", repoRoster(cfg, root))
 
 	if err := readInputIntoWorkflow(cmd, wf); err != nil {
 		return err
@@ -136,6 +140,40 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	return nil
+}
+
+// repoRoster projects the registry's identity plus each repo's own
+// descriptive metadata into the shape the plan workflow's discovery and
+// architecture templates render as the repo roster. Resolved paths,
+// materialization state, and staleness always come from `repo list`, which
+// the rendered instructions direct the agent to run. Descriptive metadata
+// is sourced the same way `repo list` sources it — from each repo's own
+// config when it is materialized locally, absent otherwise — so an agent
+// planning across a multi-repo project sees exactly what listing reports.
+// Refreshed from config on every invocation so the rendered roster is
+// exactly as fresh as the registry itself.
+func repoRoster(cfg config.Config, root string) []map[string]any {
+	roster := make([]map[string]any, 0, len(cfg.Repos))
+	set, err := repo.New(cfg, root, repoGit)
+	for _, r := range cfg.Repos {
+		entry := map[string]any{
+			"name":        r.Name,
+			"description": "",
+			"role":        "",
+			"tags":        "",
+			"deployment":  "",
+		}
+		if err == nil {
+			if meta, ok := set.DescriptiveMetadata(r.Name); ok {
+				entry["description"] = meta.Description
+				entry["role"] = meta.Role
+				entry["tags"] = strings.Join(meta.Tags, ", ")
+				entry["deployment"] = meta.Deployment
+			}
+		}
+		roster = append(roster, entry)
+	}
+	return roster
 }
 
 func runPlanGoto(cmd *cobra.Command, _ []string) error {
@@ -189,10 +227,11 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ProjectName: cfg.Name}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
+	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewSourceStore(root, "project"), out)
+	wf.SetData("repos", repoRoster(cfg, root))
 
 	for k, v := range input {
 		if k != "step" {

@@ -10,7 +10,7 @@ For each milestone, define implementation phases. Each phase has **two outputs**
 Each phase in plan.md must have:
 
 - **Heading**: `#### - [ ] Phase N.M: <short title>` (markdown checkbox, not `####` alone)
-- **Summary**: 2-4 plain-language sentences explaining what the phase does and why. No file:line references. No shell commands. A reader should understand the phase from this paragraph alone without opening context.md.
+- **Summary**: 2-4 plain-language sentences explaining what the phase does and why. No file:line references. No shell commands. A reader should understand the phase from this paragraph alone without opening context.md. When a phase's work is carried out in a registered repo other than the project's own colocated repo, the summary names that target repo.
 - **Technical detail link**: `*Technical detail:* [context.md#phase-NM](./context.md#phase-NM-<slug>)`
 - **Acceptance criteria**: A `**Acceptance criteria**:` heading followed by `- [ ]` checkboxes. Each checkbox is an outcome statement in plain language — something a human can read and understand without running a command. "`spec` and `plan` produce the same JSON output as before the refactor" is good; "`go test ./...`" is not.
 
@@ -19,7 +19,7 @@ Each phase in plan.md must have:
 Each phase in context.md must have:
 
 - **Heading**: `### Phase N.M: <title matching plan.md>` so plan.md's `*Technical detail:*` link resolves.
-- **File changes**: Specific file:line changes based on research findings
+- **File changes**: Specific file:line changes based on research findings; prefix paths in registered repos other than the colocated one with the repo name (`<repo>:path:line`)
 - **Complexity**: Low / Medium / High
 - **Token estimate**: ~Nk tokens (rough estimate for agent context usage)
 - **Agent strategy**:

@@ -12,6 +12,17 @@ If the plan touches tests, read the relevant test files directly as part of Step
 
 ### Step 2: Codebase Research
 
+**The repos this project spans.** Every requirement is ultimately carried out in one of the project's registered repos, so research across all of them, not just the directory you are running in:
+
+{{#repos}}
+- **{{name}}**{{#description}} — {{description}}{{/description}}{{#role}} (role: {{role}}){{/role}}{{#tags}} [tags: {{tags}}]{{/tags}}{{#deployment}} (deployment: {{deployment}}){{/deployment}}
+{{/repos}}
+{{^repos}}
+- No repos are registered in this project's configuration; research the colocated repo.
+{{/repos}}
+
+Run `{{config.command}} repo list` for each repo's resolved local path (and any staleness warnings) before touching it — the roster above carries identity only. Use each repo's description, role, and tags to scope which repos each research question belongs to, and search within every relevant repo. Note that `.spektacular_ignore` exclusions keep noise (build artifacts, dependency directories) out of Spektacular's own listing and search results; your native file tools are not bound by them.
+
 Research the codebase in parallel to find:
 
 1. **Files related to the plan** — Organize by category (implementation, tests, config, docs)
@@ -28,7 +39,7 @@ You are gathering the content for research.md's required sections — you will s
 
 - **Alternatives considered and rejected** — options you considered; for each, what it is, why rejected, with citation (file:line or external reference). This prevents future agents from re-proposing the same dead ends.
 - **Chosen approach — evidence** — the file:line or external references that support the option you'll recommend in the next step. Evidence, not the decision itself.
-- **Files examined** — terse one-liner per file: `path:line — what was learned`.
+- **Files examined** — terse one-liner per file: `path:line — what was learned`. In a multi-repo project, prefix entries from registered repos with the repo name: `<repo>:path:line — what was learned`.
 - **External references** — papers, RFCs, library docs, blog posts, with a one-line "why this mattered".
 - **Prior plans / specs consulted** — links with what was learned from each.
 - **Open assumptions** — things assumed but not verified. If any turn out wrong, the implement workflow must STOP and ask.

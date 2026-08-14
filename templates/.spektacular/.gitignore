@@ -2,6 +2,9 @@
 *.log
 .env
 
+# Materialized member-repo clones must never enter the project's history.
+repos/
+
 # Python
 __pycache__/
 *.py[cod]

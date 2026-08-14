@@ -11,6 +11,13 @@ import (
 type UpdateOptions struct {
 	Status *Status
 	Today  time.Time
+	// Provenance updates for derived changelog entries. Same semantics as
+	// Status: an empty value means "no change", a non-empty incoming value
+	// wins, and existing values are preserved otherwise.
+	Project       string
+	ProjectSource string
+	Spec          string
+	Plan          string
 }
 
 // Merge computes the on-disk bytes for a write by combining an existing store
@@ -48,6 +55,10 @@ func Merge(existing []byte, newBody []byte, opts UpdateOptions) ([]byte, error) 
 
 	var result Metadata
 	if fresh {
+		result.Project = opts.Project
+		result.ProjectSource = opts.ProjectSource
+		result.Spec = opts.Spec
+		result.Plan = opts.Plan
 		result.CreatedDate = today
 		result.Status = StatusInProgress
 		if opts.Status != nil {
@@ -63,6 +74,22 @@ func Merge(existing []byte, newBody []byte, opts UpdateOptions) ([]byte, error) 
 		result.CreatedDate = current.CreatedDate
 		result.Status = current.Status
 		result.ClosedDate = current.ClosedDate
+		result.Project = current.Project
+		result.ProjectSource = current.ProjectSource
+		result.Spec = current.Spec
+		result.Plan = current.Plan
+		if opts.Project != "" {
+			result.Project = opts.Project
+		}
+		if opts.ProjectSource != "" {
+			result.ProjectSource = opts.ProjectSource
+		}
+		if opts.Spec != "" {
+			result.Spec = opts.Spec
+		}
+		if opts.Plan != "" {
+			result.Plan = opts.Plan
+		}
 		if opts.Status != nil {
 			if err := validateStatus(*opts.Status); err != nil {
 				return nil, err

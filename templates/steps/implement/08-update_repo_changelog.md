@@ -1,10 +1,10 @@
 ## Step {{step}}: {{title}}
 
-This is the user-facing release-note step, just before the test-plan step. Append a short, user-facing summary of the overall change to the repo-level `CHANGELOG.md` so downstream users and reviewers can see what shipped in a release note without reading the plan.
+This is the user-facing release-note step, just before the test-plan step. Append a short, user-facing summary of the overall change to each affected repo's root `CHANGELOG.md` so downstream users and reviewers can see what shipped in a release note without reading the plan.
 
 ### What to write
 
-Create or update `CHANGELOG.md` at the **repo root** (not inside `.spektacular/` or the plan directory). If the file does not exist, create it.
+Create or update `CHANGELOG.md` at the root of **each repo the plan's work changed** (not inside `.spektacular/` or the plan directory). For a plan that touched only the project's own colocated repo, that is the project root's `CHANGELOG.md`; for work spanning registered member repos, run `{{config.command}} repo list` for their resolved roots and update the root `CHANGELOG.md` of every repo whose files were changed — each summary scoped to what changed in that repo. If a file does not exist, create it.
 
 Prepend a new section above any existing sections, using this shape:
 

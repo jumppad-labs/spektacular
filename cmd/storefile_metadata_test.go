@@ -50,10 +50,13 @@ func kindFixtures() []kindFixture {
 			storeRelPath: filepath.Join("docs", "plans", "20260709000000-feature", "plan.md"),
 		},
 		{
-			kind:         "changelog",
-			configYAML:   "changelog:\n  config:\n    directory: docs/changelog\n",
+			kind:       "changelog",
+			configYAML: "changelog:\n  config:\n    directory: docs/changelog\n",
+			// The CLI-facing name stays flat; on disk the store injects the
+			// project-named namespace folder (writeSpecCommandConfig writes
+			// `name: testproj`) below the CLI surface.
 			artifactName: "20260709000000-release-notes.md",
-			storeRelPath: filepath.Join("docs", "changelog", "20260709000000-release-notes.md"),
+			storeRelPath: filepath.Join("docs", "changelog", "testproj", "20260709000000-release-notes.md"),
 		},
 	}
 }

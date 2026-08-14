@@ -30,6 +30,7 @@ import (
 func TestGoto_UnreachableStepReturnsActionableError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "")
 
 	// 1. Seed an in-progress workflow via the real CLI. plan's "new" step
 	// callback (internal/steps/plan/steps.go's new()) unconditionally

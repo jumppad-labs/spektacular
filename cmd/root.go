@@ -57,7 +57,9 @@ func Execute() {
 // strictly additive: with the option off (the default), runRoot's behavior
 // is byte-for-byte identical to what it is without any of this.
 func runRoot() int {
-	cfg, cfgErr := loadConfig()
+	// The debug probe must tolerate running outside a project — the gate
+	// belongs to the command handlers, not here.
+	cfg, cfgErr := loadConfigLenient()
 	debugEnabled := cfgErr == nil && cfg.Debug.Enabled
 
 	var argv []string
@@ -191,9 +193,34 @@ func configFilePath() (string, error) {
 }
 
 // loadConfig loads the project config from the current working directory.
-// Returns defaults if the config file does not exist.
-// Returns an error if the config file exists but is invalid.
+// It is the project gate every project-operating command goes through: when
+// no config file exists here, it returns an explicit "no project" error
+// pointing at init rather than falling back to defaults. There is
+// deliberately no parent-directory search — Spektacular runs against the
+// project directory itself. Returns an error if the config file exists but
+// is invalid.
 func loadConfig() (config.Config, error) {
+	cfgPath, err := configFilePath()
+	if err != nil {
+		return config.Config{}, err
+	}
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		cwd := filepath.Dir(filepath.Dir(cfgPath))
+		return config.Config{}, output.NewError(
+			"no_project",
+			fmt.Sprintf("no Spektacular project is configured in %s (missing .spektacular/config.yaml)", cwd),
+		).WithResource(cfgPath).
+			WithNextAction("run `spektacular init <agent>` in the project directory to initialise a project, or change to a directory that contains one")
+	}
+	return config.FromYAMLFile(cfgPath)
+}
+
+// loadConfigLenient loads the project config like loadConfig but preserves
+// the pre-gate fall-back: a missing config file yields the defaults instead
+// of an error. Only bootstrap paths that must run before a project exists
+// (init, version's stale-advice composition, and the root debug probe) may
+// use it.
+func loadConfigLenient() (config.Config, error) {
 	cfgPath, err := configFilePath()
 	if err != nil {
 		return config.Config{}, err
@@ -238,6 +265,7 @@ func init() {
 	rootCmd.AddCommand(changelogCmd)
 	rootCmd.AddCommand(implementCmd)
 	rootCmd.AddCommand(knowledgeCmd)
+	rootCmd.AddCommand(repoCmd)
 	rootCmd.AddCommand(skillCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(artifactsCmd)

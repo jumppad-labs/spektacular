@@ -38,6 +38,8 @@ This includes the edits the implement workflow makes to `plan.md` — ticking ph
 
 # How to start
 
+> **Cross-repo implementation.** When the plan attributes work to registered member repos, carry each part of the work out in its attributed repo's resolved root (`go run . repo list` reports resolved paths), and follow the workflow's changelog instructions to write the central record plus one derived entry per affected repo via `go run . changelog file write ... --repo <name>`.
+
 Ask the user which plan to implement before proceeding. To enumerate the available plans, run `go run . plan file list` — the CLI's list is the source of truth for what counts as a plan. **Do not** use `ls`, `find`, or the `Read` tool against `.spektacular/plans/` to discover plans; those bypass Spektacular's configured plan directory and may show entries the CLI does not consider valid. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 The plan must already exist in the plan store — confirm with `go run . plan file list`. If it does not, stop and tell the user to run `go run . plan` first.

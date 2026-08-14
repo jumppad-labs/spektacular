@@ -96,7 +96,9 @@ func TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly(t *testing.T) {
 		// second call in the same directory would be treated as a resume
 		// (success) instead of exercising the validation failure.
 		t.Run("success", func(t *testing.T) {
-			t.Chdir(t.TempDir())
+			dir := t.TempDir()
+			t.Chdir(dir)
+			writeSpecCommandConfig(t, dir, "")
 			resetSpecCommandFlags(t)
 			stdout, stderr, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 			require.Equal(t, 0, code)
@@ -104,7 +106,9 @@ func TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly(t *testing.T) {
 			require.Empty(t, stderr)
 		})
 		t.Run("failure", func(t *testing.T) {
-			t.Chdir(t.TempDir())
+			dir := t.TempDir()
+			t.Chdir(dir)
+			writeSpecCommandConfig(t, dir, "")
 			resetSpecCommandFlags(t)
 			stdout, stderr, code := runRootCmd(t, "spec", "new", "--data", `{"name":" billing"}`)
 			require.Equal(t, 1, code)
@@ -116,6 +120,7 @@ func TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly(t *testing.T) {
 	t.Run("plan", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
+		writeSpecCommandConfig(t, dir, "")
 
 		resetPlanCommandFlags(t)
 		stdout, stderr, code := runRootCmd(t, "plan", "new", "--data", `{"name":"myplan"}`)
@@ -134,7 +139,7 @@ func TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
 		dataDir := filepath.Join(dir, ".spektacular")
-		require.NoError(t, os.MkdirAll(dataDir, 0o755))
+		writeSpecCommandConfig(t, dir, "")
 		writeFixturePlan(t, dataDir, "fixture")
 
 		resetImplementCommandFlags(t)
@@ -261,13 +266,17 @@ func TestWrapper_ErrorDiscriminantAndExitCode(t *testing.T) {
 		// Separate temp dirs per invocation — see the identical note in
 		// TestWrapper_SuccessAndFailureBothStreamOnStdoutOnly.
 		t.Run("success", func(t *testing.T) {
-			t.Chdir(t.TempDir())
+			dir := t.TempDir()
+			t.Chdir(dir)
+			writeSpecCommandConfig(t, dir, "")
 			resetSpecCommandFlags(t)
 			stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 			assertSuccessEnvelope(t, stdout, code)
 		})
 		t.Run("failure", func(t *testing.T) {
-			t.Chdir(t.TempDir())
+			dir := t.TempDir()
+			t.Chdir(dir)
+			writeSpecCommandConfig(t, dir, "")
 			resetSpecCommandFlags(t)
 			stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":" billing"}`)
 			assertFailureEnvelope(t, stdout, code)
@@ -277,6 +286,7 @@ func TestWrapper_ErrorDiscriminantAndExitCode(t *testing.T) {
 	t.Run("plan", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
+		writeSpecCommandConfig(t, dir, "")
 
 		resetPlanCommandFlags(t)
 		stdout, _, code := runRootCmd(t, "plan", "new", "--data", `{"name":"myplan"}`)
@@ -291,7 +301,7 @@ func TestWrapper_ErrorDiscriminantAndExitCode(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
 		dataDir := filepath.Join(dir, ".spektacular")
-		require.NoError(t, os.MkdirAll(dataDir, 0o755))
+		writeSpecCommandConfig(t, dir, "")
 		writeFixturePlan(t, dataDir, "fixture")
 
 		resetImplementCommandFlags(t)
@@ -384,6 +394,7 @@ func TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate(t *testing.T)
 	t.Run("spec", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
+		writeSpecCommandConfig(t, dir, "")
 		resetSpecCommandFlags(t)
 		stdout, stderr, code := runRootCmd(t, "spec", "new", "--data", `{"name":" billing"}`)
 		assertNoCobraBoilerplate(t, stdout, stderr, code)
@@ -392,6 +403,7 @@ func TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate(t *testing.T)
 	t.Run("plan", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
+		writeSpecCommandConfig(t, dir, "")
 		resetPlanCommandFlags(t)
 		stdout, stderr, code := runRootCmd(t, "plan", "new")
 		assertNoCobraBoilerplate(t, stdout, stderr, code)
@@ -400,7 +412,7 @@ func TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate(t *testing.T)
 	t.Run("implement", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular"), 0o755))
+		writeSpecCommandConfig(t, dir, "")
 		resetImplementCommandFlags(t)
 		stdout, stderr, code := runRootCmd(t, "implement", "new", "--data", `{"name":"nosuch"}`)
 		assertNoCobraBoilerplate(t, stdout, stderr, code)
@@ -457,15 +469,16 @@ func sessionLogFilePath(dir string) string {
 	return filepath.Join(dir, ".spektacular", "debug", "session-log.jsonl")
 }
 
-// Phase 1.2, criterion 1: with debug off — either because there is no config
-// file at all (the default), or because a config file explicitly sets
+// Phase 1.2, criterion 1: with debug off — either because the project config
+// has no debug section at all (the default), or because it explicitly sets
 // debug.enabled: false — running a command must produce no session log file,
 // and the command's own observable behavior (stdout, exit code) must be
 // exactly what it was before this phase.
 func TestSessionLog_DisabledProducesNoRecordFile(t *testing.T) {
-	t.Run("no config file", func(t *testing.T) {
+	t.Run("no debug section in config", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Chdir(dir)
+		writeSpecCommandConfig(t, dir, "")
 		resetSpecCommandFlags(t)
 
 		stdout, stderr, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
@@ -600,8 +613,12 @@ func TestSessionLog_EnabledDoesNotChangeCallerVisibleOutput(t *testing.T) {
 		run func(t *testing.T, debugOn bool) (dir string, args []string)
 	}
 
+	// Both runs get a project config — the project gate makes one mandatory
+	// for project-operating commands — so the debug toggle is the only
+	// difference between the compared invocations.
 	withDebug := func(t *testing.T, dir string, debugOn bool) {
 		if !debugOn {
+			writeSpecCommandConfig(t, dir, "")
 			return
 		}
 		writeSpecCommandConfig(t, dir, "debug:\n  enabled: true\n")

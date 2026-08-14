@@ -25,6 +25,9 @@ func writeSpecCommandConfig(t *testing.T, dir, body string) {
 	t.Helper()
 	dataDir := filepath.Join(dir, ".spektacular")
 	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	// A project config requires a slug-safe `name`; prepend one so fixture
+	// bodies stay focused on the section each test exercises.
+	body = "name: testproj\n" + body
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(body), 0o644))
 }
 
@@ -100,6 +103,7 @@ func TestSpecNewSchemaDocumentsNameAndOptionalID(t *testing.T) {
 func TestSpecNew_DefaultUsesTimestampPrefix(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "")
 
 	result, err := runSpecNewForTest(t, "--data", `{"name":"Billing.Export"}`)
 	require.NoError(t, err)
@@ -113,6 +117,7 @@ func TestSpecNew_DefaultUsesTimestampPrefix(t *testing.T) {
 func TestSpecNew_TimestampCollisionBumpsSeconds(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "")
 	setSpecIdentifierNow(t, time.Date(2026, time.May, 9, 1, 2, 3, 0, time.UTC))
 	writeSpecCommandFile(t, dir, "20260509010203-billing-export")
 
@@ -232,6 +237,7 @@ func TestSpecNew_ValidationFailuresLeaveNoSpecOrState(t *testing.T) {
 			dir := t.TempDir()
 			t.Chdir(dir)
 			dataDir := filepath.Join(dir, ".spektacular")
+			writeSpecCommandConfig(t, dir, "")
 
 			_, err := runSpecNewForTest(t, "--data", tt.data)
 			require.Error(t, err)
@@ -247,7 +253,7 @@ func TestSpecNew_RejectsUnknownConfiguredIDMethod(t *testing.T) {
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
 	require.NoError(t, os.MkdirAll(dataDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("spec:\n  id_method: unsupported\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("name: testproj\nspec:\n  id_method: unsupported\n"), 0o644))
 
 	setupImplementCmd(t)
 	rootCmd.SetArgs([]string{"spec", "new", "--data", `{"name":"fixture"}`})
@@ -267,6 +273,7 @@ func TestSpecNew_InProgressReturnsWorkflowInProgressErrorAndPreservesState(t *te
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		Kind:           "spec",
@@ -309,6 +316,7 @@ func TestSpecNew_InProgressNoDataReturnsWorkflowInProgressError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		Kind:           "spec",
@@ -343,6 +351,7 @@ func TestSpecNew_ForceStartsFreshOverInProgress(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		Kind:           "spec",
@@ -370,6 +379,7 @@ func TestSpecNew_ForceStartsFreshOverInProgress(t *testing.T) {
 func TestSpecNew_CleanDirSucceedsWithoutError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "")
 
 	resetSpecCommandFlags(t)
 	stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
@@ -384,6 +394,7 @@ func TestSpecNew_KindlessInProgressStateErrorsWithoutClobber(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		CurrentStep:    "overview",

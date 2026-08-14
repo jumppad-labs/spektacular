@@ -1,6 +1,6 @@
 # Spektacular
 
-Agent-agnostic CLI for spec-driven development. Write a markdown spec; Spektacular plans and implements it with the coding agent of your choice.
+Agent-agnostic CLI tool for spec-driven development, providing skills and integrations for coding agents (Claude, Bob, Codex) to plan and implement work from a written spec.
 
 > **Status:** early development — see the [releases page](https://github.com/jumppad-labs/spektacular/releases) for the latest version.
 
@@ -143,9 +143,18 @@ When research surfaces a durable learning, gotcha, or convention worth keeping, 
 
 ## Configuration
 
-`.spektacular/config.yaml` controls which coding agent Spektacular drives and the provider-based `spec`, `plan`, and `knowledge` stores. Each of `spec`, `plan`, and `knowledge` names a `provider` (only `file` ships today) and carries a provider-specific `config` block:
+Configuration is split across two files, and a colocated single-repo project simply holds both in the same `.spektacular/` directory:
+
+- **`.spektacular/config.yaml` — project configuration.** The project's identity, the coding agent Spektacular drives, the registry of member repos, and the central `spec`, `plan`, and `changelog` stores. Spektacular always runs against a project: running it in a directory with no `config.yaml` produces an explicit error pointing at `init` (there is no parent-directory search).
+- **`.spektacular/repo.yaml` — repo configuration.** A repo's own concerns only: its knowledge sources and its changelog provider. It carries no pointer to any project, so one repo can belong to several projects at once.
+
+> **Breaking change**: earlier releases used a single `config.yaml` without a project `name`. Existing setups re-initialize with `spektacular init <agent>` — init backfills the name (from the directory basename, or `--name`), seeds the colocated repo's `repo.yaml`, and registers it in the new `repos` list.
+
+### Project configuration (`config.yaml`)
 
 ```yaml
+name: my-project                    # required, slug-safe; namespaces changelog entries
+source: git@example.com:org/my-project.git  # optional; recorded in derived changelog entries
 command: spektacular
 agent: claude
 debug:
@@ -159,19 +168,49 @@ plan:
   provider: file
   config:
     directory: .spektacular/plans   # project-root-relative directory for plan files
+changelog:
+  provider: file
+  config:
+    directory: .spektacular/changelog  # central changelog; entries land under <directory>/<name>/
+repos:
+  - name: my-project                # the colocated repo, registered by init
+    local: .
+  - name: docs                      # a member repo by local path
+    local: ../docs
+    description: the documentation repo
+    role: documentation
+  - name: lib                       # a member repo by remote address —
+    address: git@example.com:org/lib.git   # cloned into .spektacular/repos/lib/ on first use
 knowledge:
-  sources:
-    - scope: project        # written by init; synthesised if removed
-      provider: file
-      config:
-        location: .spektacular/knowledge
-    - scope: team           # optional: a shared, hand-configured source
+  sources:                          # optional, project-owned sources only (e.g. a team share);
+    - scope: team                   # each repo's own sources live in its repo.yaml
       provider: file
       config:
         location: /shared/team-kb
 ```
 
-The six top-level sections are `command`, `agent`, `debug`, `spec`, `plan`, and `knowledge`. `spec.id_method` chooses how new spec filenames are prefixed (`timestamp` by default, or `counter` / `external`); `spec.config.directory`, `plan.config.directory`, and each `knowledge` source `location` resolve relative to the project root, and omitting a section falls back to the defaults shown above.
+Each repo entry needs a slug-safe unique `name` and at least one of `address`/`local` (`local` wins when both are set); `description`, `role`, `tags`, `dependencies`, and `deployment` are optional metadata that cross-repo planning uses to attribute requirements to the right repo. Manage the registry with `spektacular repo add` and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically — a stale clone produces a warning only.
+
+### Repo configuration (`repo.yaml`)
+
+```yaml
+knowledge:
+  sources:
+    - scope: project                # the repo's own store; synthesised if the file is absent
+      provider: file
+      config:
+        location: .spektacular/knowledge
+changelog:
+  provider: file
+  config:
+    directory: .spektacular/changelog  # where this repo's derived entries land
+```
+
+Knowledge aggregates across every registered repo's declared sources (in registry order) followed by the project-owned sources, so a repo's knowledge travels with it into every project that registers it. Changelog entries — central and derived per-repo — are namespaced under a folder named after the project (`<directory>/<project-name>/<id>_<slug>.md`), so multiple projects writing into one repo can never collide.
+
+### Excluding paths (`.spektacular_ignore`)
+
+Any source root (a repo, or the project's own storage locations) may carry a `.spektacular_ignore` file using gitignore pattern syntax. Matching paths are excluded from Spektacular's own listing and search results — keeping build artifacts and dependency directories out of planning research — but a directly named path is never blocked, and agents' native file tools are unaffected.
 
 For the full reference — every key, the id-method semantics, name-normalisation rules, and `${VAR}` expansion — see the [configuration documentation](https://spektacular.dev/configuration/).
 

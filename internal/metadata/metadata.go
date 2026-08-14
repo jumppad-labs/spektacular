@@ -40,22 +40,37 @@ type Metadata struct {
 	CreatedDate time.Time
 	Status      Status
 	ClosedDate  time.Time
+	// Provenance fields carried by derived per-repo changelog entries: the
+	// project that produced the entry, its source URL when set, and the spec
+	// and plan identifiers. Empty on artifacts that don't carry provenance.
+	Project       string
+	ProjectSource string
+	Spec          string
+	Plan          string
 }
 
 // yamlShape is the on-disk representation used by MarshalYAML / UnmarshalYAML.
 // It carries the two dates as YYYY-MM-DD strings so day precision is enforced
 // at the type boundary rather than at every call site.
 type yamlShape struct {
-	CreatedDate string `yaml:"created_date"`
-	Status      Status `yaml:"status"`
-	ClosedDate  string `yaml:"closed_date,omitempty"`
+	CreatedDate   string `yaml:"created_date"`
+	Status        Status `yaml:"status"`
+	ClosedDate    string `yaml:"closed_date,omitempty"`
+	Project       string `yaml:"project,omitempty"`
+	ProjectSource string `yaml:"project_source,omitempty"`
+	Spec          string `yaml:"spec,omitempty"`
+	Plan          string `yaml:"plan,omitempty"`
 }
 
 // MarshalYAML implements yaml.Marshaler.
 func (m Metadata) MarshalYAML() (interface{}, error) {
 	out := yamlShape{
-		CreatedDate: m.CreatedDate.Format(dateFormat),
-		Status:      m.Status,
+		CreatedDate:   m.CreatedDate.Format(dateFormat),
+		Status:        m.Status,
+		Project:       m.Project,
+		ProjectSource: m.ProjectSource,
+		Spec:          m.Spec,
+		Plan:          m.Plan,
 	}
 	if !m.ClosedDate.IsZero() {
 		out.ClosedDate = m.ClosedDate.Format(dateFormat)
@@ -86,6 +101,10 @@ func (m *Metadata) UnmarshalYAML(node *yaml.Node) error {
 		}
 		m.ClosedDate = closed
 	}
+	m.Project = in.Project
+	m.ProjectSource = in.ProjectSource
+	m.Spec = in.Spec
+	m.Plan = in.Plan
 	return nil
 }
 

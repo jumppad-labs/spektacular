@@ -11,6 +11,7 @@ import (
 	"github.com/jumppad-labs/spektacular/internal/identifier"
 	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -91,7 +92,61 @@ func storeFileStore(dir storeDirFunc) (store.Store, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return store.NewFileStore(root, "project"), dir(cfg), nil
+	return store.NewSourceStore(root, "project"), dir(cfg), nil
+}
+
+// repoRoutedStore builds a store rooted at the named member repo, targeting
+// that repo's own configured changelog directory namespaced by the project's
+// name — the routing derived per-repo changelog entries write through. A
+// missing or broken footprint surfaces as the standard repair offer.
+func repoRoutedStore(repoName string) (store.Store, string, error) {
+	root, err := projectRoot()
+	if err != nil {
+		return nil, "", err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	set, err := repo.New(cfg, root, repoGit)
+	if err != nil {
+		return nil, "", err
+	}
+	resolved, err := set.Resolve(repoName)
+	if err != nil {
+		var fpErr *repo.FootprintError
+		if errors.As(err, &fpErr) {
+			return nil, "", output.NewError(
+				"repo_footprint",
+				fpErr.Error(),
+			).WithResource(fpErr.Root).
+				WithNextAction(fmt.Sprintf("run `%s repo add --data '{\"name\":%q}'` to repair the repo's footprint", cfg.Command, repoName))
+		}
+		return nil, "", err
+	}
+
+	rc, err := config.RepoConfigFromYAMLFile(filepath.Join(resolved.Root, ".spektacular", config.RepoConfigFileName))
+	if err != nil {
+		return nil, "", err
+	}
+	dir := filepath.Join(rc.Changelog.Config.Directory, cfg.Name)
+	return store.NewSourceStore(resolved.Root, "repo:"+repoName), dir, nil
+}
+
+// provenanceOpts returns the merge options a repo-routed changelog write is
+// stamped with: the project's name and source, plus the spec and plan
+// identifiers derived from the written filename (the plan-slug-equals-
+// spec-slug convention). Stamping is mechanical and CLI-owned so derived
+// entries always carry reliable provenance regardless of what the staged
+// body contains.
+func provenanceOpts(cfg config.Config, writePath string) metadata.UpdateOptions {
+	slug := strings.TrimSuffix(filepath.Base(writePath), filepath.Ext(writePath))
+	return metadata.UpdateOptions{
+		Project:       cfg.Name,
+		ProjectSource: cfg.Source,
+		Spec:          slug,
+		Plan:          slug,
+	}
 }
 
 // newStoreFileCmd builds a `file` subcommand group (write/read/delete/list)
@@ -107,12 +162,28 @@ func storeFileStore(dir storeDirFunc) (store.Store, string, error) {
 // that same spec ID rather than mint their own, so `plan file` and
 // `changelog file` pass true: a write whose leading path segment lacks an ID
 // matching the configured spec.id_method scheme is rejected.
-func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Command {
+//
+// repoRouted adds an optional `--repo <name>` flag to write, read, and list:
+// when set, the command operates on the named member repo's own changelog
+// store (rooted at the resolved repo, namespaced by the project name) instead
+// of the central one, and writes are auto-stamped with provenance front
+// matter. Only the changelog group opts in.
+func newStoreFileCmd(short string, dir storeDirFunc, requireID, repoRouted bool) *cobra.Command {
 	fileCmd := &cobra.Command{Use: "file", Short: short}
 
+	// resolveStore picks the central store or, when repoRouted and the
+	// command's --repo flag is set, the named member repo's store.
+	resolveStore := func(repoName string) (store.Store, string, error) {
+		if repoName == "" {
+			return storeFileStore(dir)
+		}
+		return repoRoutedStore(repoName)
+	}
+
 	var (
-		fromPath   string
-		statusFlag string
+		fromPath      string
+		statusFlag    string
+		writeRepoName string
 	)
 	write := &cobra.Command{
 		Use:   "write <path>",
@@ -128,7 +199,7 @@ func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Comm
 					return err
 				}
 			}
-			st, storeDir, err := storeFileStore(dir)
+			st, storeDir, err := resolveStore(writeRepoName)
 			if err != nil {
 				return err
 			}
@@ -145,6 +216,13 @@ func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Comm
 			if err != nil {
 				return err
 			}
+			if writeRepoName != "" {
+				prov := provenanceOpts(cfg, args[0])
+				opts.Project = prov.Project
+				opts.ProjectSource = prov.ProjectSource
+				opts.Spec = prov.Spec
+				opts.Plan = prov.Plan
+			}
 			body := stripLeadingFrontmatterBlocks(content)
 			merged, err := metadata.Merge(existing, body, opts)
 			if err != nil {
@@ -157,12 +235,13 @@ func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Comm
 	_ = write.MarkFlagRequired("from")
 	write.Flags().StringVar(&statusFlag, "status", "", "Optional lifecycle status to apply: one of in-progress, completed, superseded, archived")
 
+	var readRepoName string
 	read := &cobra.Command{
 		Use:   "read <path>",
 		Short: "Read a file from the store and write it to stdout",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, storeDir, err := storeFileStore(dir)
+			st, storeDir, err := resolveStore(readRepoName)
 			if err != nil {
 				return err
 			}
@@ -198,6 +277,7 @@ func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Comm
 		listCreatedBefore string
 		listClosedAfter   string
 		listClosedBefore  string
+		listRepoName      string
 	)
 	list := &cobra.Command{
 		Use:   "list [path]",
@@ -208,7 +288,7 @@ func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			st, storeDir, err := storeFileStore(dir)
+			st, storeDir, err := resolveStore(listRepoName)
 			if err != nil {
 				return err
 			}
@@ -260,6 +340,13 @@ func newStoreFileCmd(short string, dir storeDirFunc, requireID bool) *cobra.Comm
 	list.Flags().StringVar(&listCreatedBefore, "created-before", "", "Filter to artifacts whose created_date is on or before this YYYY-MM-DD date")
 	list.Flags().StringVar(&listClosedAfter, "closed-after", "", "Filter to artifacts whose closed_date is on or after this YYYY-MM-DD date")
 	list.Flags().StringVar(&listClosedBefore, "closed-before", "", "Filter to artifacts whose closed_date is on or before this YYYY-MM-DD date")
+
+	if repoRouted {
+		const repoFlagHelp = "Route through the named registered repo's own changelog store instead of the central one"
+		write.Flags().StringVar(&writeRepoName, "repo", "", repoFlagHelp)
+		read.Flags().StringVar(&readRepoName, "repo", "", repoFlagHelp)
+		list.Flags().StringVar(&listRepoName, "repo", "", repoFlagHelp)
+	}
 
 	var setStatusFlag string
 	setStatus := &cobra.Command{

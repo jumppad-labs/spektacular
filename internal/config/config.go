@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -27,6 +28,12 @@ const (
 // field on the spec, plan, and knowledge sections names a backend; today it
 // must always be this value.
 const ProviderFile = "file"
+
+// ProviderGit is the only repo provider this release ships. The provider
+// field on a repos entry names how the repo is resolved to a local
+// directory; today it must always be this value (or empty, which defaults
+// to it).
+const ProviderGit = "git"
 
 const (
 	// DefaultSpecDir is the spec output directory used when none is configured.
@@ -91,7 +98,7 @@ type FileChangelogConfig struct {
 
 // KnowledgeConfig holds the ordered list of configured knowledge sources.
 type KnowledgeConfig struct {
-	Sources []SourceConfig `yaml:"sources"`
+	Sources []SourceConfig `yaml:"sources,omitempty"`
 }
 
 // SourceConfig is a single knowledge source. Each source names its own
@@ -100,6 +107,10 @@ type SourceConfig struct {
 	Scope    string              `yaml:"scope"`
 	Provider string              `yaml:"provider"`
 	Config   FileKnowledgeConfig `yaml:"config"`
+	// Repo is the registry name of the repo whose config declared this
+	// source, set programmatically during aggregation for attribution; it is
+	// never declared in a config file. Empty for project-owned sources.
+	Repo string `yaml:"-"`
 }
 
 // FileKnowledgeConfig is the file-provider configuration for a knowledge source.
@@ -107,8 +118,35 @@ type FileKnowledgeConfig struct {
 	Location string `yaml:"location"`
 }
 
-// Config is the top-level Spektacular configuration.
+// RepoEntry is a single member repo in the project's registry. It carries
+// membership only — identity, location, and project-scoped dependencies —
+// deliberately provider-agnostic siblings of the provider block, mirroring
+// how knowledge sources keep scope outside their provider config. A repo's
+// descriptive metadata (description, role, tags, deployment) lives in the
+// repo's own configuration, not here, so it is never duplicated across the
+// projects that register it. At least one of Address/Local is required;
+// when both are set, Local wins and Address serves as provenance metadata.
+type RepoEntry struct {
+	Name         string        `yaml:"name"`
+	Address      string        `yaml:"address,omitempty"`
+	Local        string        `yaml:"local,omitempty"`
+	Dependencies []string      `yaml:"dependencies,omitempty"`
+	Provider     string        `yaml:"provider,omitempty"`
+	Config       GitRepoConfig `yaml:"config,omitempty"`
+}
+
+// GitRepoConfig is the git-provider configuration for a repos entry. It is
+// empty in this release and reserved for provider-specific settings.
+type GitRepoConfig struct{}
+
+// Config is the top-level project configuration. It carries the project's
+// identity, agent behaviour, and the central spec/plan/changelog storage.
+// The knowledge section lists only project-owned sources (team or global
+// shares, for example); each repo's own knowledge sources are declared in
+// that repo's RepoConfig instead.
 type Config struct {
+	Name                 string          `yaml:"name"`
+	Source               string          `yaml:"source,omitempty"`
 	Command              string          `yaml:"command"`
 	Agent                string          `yaml:"agent"`
 	SpecTriggerThreshold string          `yaml:"spec_trigger_threshold"`
@@ -116,7 +154,8 @@ type Config struct {
 	Spec                 SpecConfig      `yaml:"spec"`
 	Plan                 PlanConfig      `yaml:"plan"`
 	Changelog            ChangelogConfig `yaml:"changelog"`
-	Knowledge            KnowledgeConfig `yaml:"knowledge"`
+	Knowledge            KnowledgeConfig `yaml:"knowledge,omitempty"`
+	Repos                []RepoEntry     `yaml:"repos,omitempty"`
 }
 
 // NewDefault returns a Config populated with default values.
@@ -146,25 +185,29 @@ func NewDefault() Config {
 				Directory: DefaultChangelogDir,
 			},
 		},
-		Knowledge: KnowledgeConfig{
-			// The project knowledge source is configured by default so a
-			// freshly written config.yaml shows it explicitly. Team and
-			// global sources are opt-in additions the user configures by hand.
-			Sources: []SourceConfig{
-				{
-					Scope:    DefaultKnowledgeScope,
-					Provider: ProviderFile,
-					Config: FileKnowledgeConfig{
-						Location: DefaultKnowledgeLocation,
-					},
-				},
-			},
-		},
+		// Knowledge is empty by default: the project level lists only sources
+		// owned by the project itself (team or global shares the user adds by
+		// hand). Each repo's own store is declared in its RepoConfig.
 	}
 }
 
 // FromYAMLFile loads a Config from a YAML file, expanding ${VAR} patterns.
 func FromYAMLFile(path string) (Config, error) {
+	cfg, err := ParseYAMLFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return Config{}, fmt.Errorf("validating config file %s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// ParseYAMLFile loads a Config from a YAML file without validating it,
+// expanding ${VAR} patterns and prefilling defaults. It exists for init,
+// which must be able to read a config that is missing its required name so
+// it can backfill one; every other caller wants FromYAMLFile.
+func ParseYAMLFile(path string) (Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("reading config file %s: %w", path, err)
@@ -176,14 +219,45 @@ func FromYAMLFile(path string) (Config, error) {
 	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 		return Config{}, fmt.Errorf("parsing config file %s: %w", path, err)
 	}
-	if err := cfg.Validate(); err != nil {
-		return Config{}, fmt.Errorf("validating config file %s: %w", path, err)
-	}
 	return cfg, nil
 }
 
+// slugPattern matches slug/filesystem-safe identifiers: lowercase letters,
+// digits, hyphens, and underscores, with no path separators.
+var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// validateSlug checks that value is a slug/filesystem-safe identifier,
+// returning an error that names field when it is not.
+func validateSlug(field, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s must not be empty", field)
+	}
+	if !slugPattern.MatchString(value) {
+		return fmt.Errorf("%s %q must contain only lowercase letters, digits, '-' or '_', and must start with a letter or digit", field, value)
+	}
+	return nil
+}
+
+// SlugifyName converts an arbitrary name (such as a directory basename) into
+// a slug-safe identifier: lowercased, with every run of unsupported
+// characters collapsed to a single hyphen.
+func SlugifyName(name string) string {
+	slug := strings.ToLower(name)
+	slug = nonSlugRunPattern.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-_")
+	if slug == "" {
+		return "project"
+	}
+	return slug
+}
+
+var nonSlugRunPattern = regexp.MustCompile(`[^a-z0-9_-]+`)
+
 // Validate checks whether the config contains supported values.
 func (c Config) Validate() error {
+	if err := validateSlug("name", c.Name); err != nil {
+		return err
+	}
 	switch c.SpecTriggerThreshold {
 	case "", SpecTriggerThresholdStrict, SpecTriggerThresholdModerate, SpecTriggerThresholdLenient:
 	default:
@@ -201,7 +275,43 @@ func (c Config) Validate() error {
 	if err := c.Knowledge.Validate(); err != nil {
 		return err
 	}
+	if err := validateRepos(c.Repos); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateRepos checks every registry entry for a slug-safe unique name, a
+// usable location, and a supported provider.
+func validateRepos(repos []RepoEntry) error {
+	seen := make(map[string]bool, len(repos))
+	for i, r := range repos {
+		if err := validateSlug(fmt.Sprintf("repos[%d].name", i), r.Name); err != nil {
+			return err
+		}
+		if seen[r.Name] {
+			return fmt.Errorf("repos: name %q is configured more than once", r.Name)
+		}
+		seen[r.Name] = true
+		if r.Address == "" && r.Local == "" {
+			return fmt.Errorf("repo %q: at least one of address or local is required", r.Name)
+		}
+		switch r.Provider {
+		case "", ProviderGit:
+		default:
+			return fmt.Errorf("repo %q: provider %q is not supported (only %q)", r.Name, r.Provider, ProviderGit)
+		}
+	}
+	return nil
+}
+
+// WithDefaults returns the entry with its provider defaulted to git when
+// unset, mirroring how absent config sections resolve to defaults at load.
+func (r RepoEntry) WithDefaults() RepoEntry {
+	if r.Provider == "" {
+		r.Provider = ProviderGit
+	}
+	return r
 }
 
 // Validate checks whether the spec config names a supported provider and

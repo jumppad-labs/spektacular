@@ -106,7 +106,7 @@ func classifyVersion(recorded, current string) (status, installed string) {
 // agent when one is recorded in the project config.
 func staleAction(status string) string {
 	initCmd := "spektacular init"
-	if cfg, err := loadConfig(); err == nil {
+	if cfg, err := loadConfigLenient(); err == nil {
 		initCmd = cfg.Command + " init"
 		if cfg.Agent != "" {
 			initCmd += " " + cfg.Agent

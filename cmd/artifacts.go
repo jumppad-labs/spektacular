@@ -81,7 +81,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			st := store.NewFileStore(root, "project")
+			st := store.NewSourceStore(root, "project")
 
 			artifacts := make([]map[string]any, 0)
 			artifacts, err = appendSpecArtifacts(artifacts, st, cfg, kinds, filter)
@@ -260,7 +260,9 @@ func appendChangelogArtifacts(out []map[string]any, st store.Store, cfg config.C
 	if !kinds[artifactKindChangelog] {
 		return out, nil
 	}
-	changelogDir := cfg.Changelog.Config.Directory
+	// Changelog entries live one folder level down, under the project-named
+	// namespace folder; a store predating any entry simply has no folder yet.
+	changelogDir := filepath.Join(cfg.Changelog.Config.Directory, cfg.Name)
 	entries, err := st.List(changelogDir)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {

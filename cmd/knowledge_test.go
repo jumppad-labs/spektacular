@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,11 +27,14 @@ type knowledgeEntry struct {
 	Path  string `json:"path"`
 }
 
-// knowledgeSource mirrors the knowledge.SourceInfo JSON envelope emitted by sources.
+// knowledgeSource mirrors the knowledge.SourceInfo JSON envelope emitted by
+// sources. Repo names the registry repo whose config declared the source; it
+// is absent for project-owned sources.
 type knowledgeSource struct {
 	Scope    string `json:"scope"`
 	Provider string `json:"provider"`
 	Location string `json:"location"`
+	Repo     string `json:"repo"`
 }
 
 // alwaysAppliedEntry mirrors the knowledge.AlwaysAppliedEntry JSON envelope
@@ -65,10 +70,14 @@ func resetKnowledgeFlags(t *testing.T) {
 }
 
 // twoScopeProject lays out a temp project rooted at a t.TempDir() and chdirs
-// into it. It writes a .spektacular/config.yaml configuring two file-backed
-// knowledge scopes ("project" and "team"), each seeded with a top-level file
-// and a file nested in a subdirectory. The keyword "compass" appears in one
-// file per scope. It returns the project root plus the two scope locations.
+// into it. Two file-backed knowledge scopes are configured: the repo-owned
+// "project" scope comes from the colocated repo config's defaults (no
+// repo.yaml is written, so the default project source at
+// .spektacular/knowledge applies), and a project-owned "team" scope is listed
+// in .spektacular/config.yaml. Each scope is seeded with a top-level file,
+// and the project scope also carries a file nested in a subdirectory. The
+// keyword "compass" appears in one file per scope. It returns the project
+// root plus the two scope locations.
 func twoScopeProject(t *testing.T) (root, projectLoc, teamLoc string) {
 	t.Helper()
 	root = t.TempDir()
@@ -89,12 +98,9 @@ func twoScopeProject(t *testing.T) (root, projectLoc, teamLoc string) {
 	seed(projectLoc, "architecture/initial-idea.md", "an architecture note about widgets\n")
 	seed(teamLoc, "guidelines.md", "team guidelines reference the compass too\n")
 
-	cfg := "knowledge:\n" +
+	cfg := "name: testproj\n" +
+		"knowledge:\n" +
 		"  sources:\n" +
-		"    - scope: project\n" +
-		"      provider: file\n" +
-		"      config:\n" +
-		"        location: " + projectLoc + "\n" +
 		"    - scope: team\n" +
 		"      provider: file\n" +
 		"      config:\n" +
@@ -135,8 +141,11 @@ func TestKnowledgeSources_ListsConfiguredScopes(t *testing.T) {
 		Sources []knowledgeSource `json:"sources"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	// The repo-supplied "project" source is attributed to the implicitly
+	// registered colocated repo (named after the project); the project-owned
+	// "team" source carries no repo attribution.
 	require.Equal(t, []knowledgeSource{
-		{Scope: "project", Provider: "file", Location: projectLoc},
+		{Scope: "project", Provider: "file", Location: projectLoc, Repo: "testproj"},
 		{Scope: "team", Provider: "file", Location: teamLoc},
 	}, result.Sources)
 }
@@ -378,10 +387,12 @@ func TestKnowledgeRead_UnknownScopeEmitsErrorEnvelope(t *testing.T) {
 }
 
 // alwaysAppliedProject lays out a temp project with a single file-backed
-// "project" scope seeded with one entry under conventions/ and one under
-// glossary/, then chdirs into it. It returns the project root. This fixture is
-// independent of twoScopeProject so the always-applied tests don't perturb the
-// exact-match expectations of the other suites.
+// "project" scope — supplied by the colocated repo config's defaults at
+// .spektacular/knowledge, since no repo.yaml is written — seeded with one
+// entry under conventions/ and one under glossary/, then chdirs into it. It
+// returns the project root. This fixture is independent of twoScopeProject so
+// the always-applied tests don't perturb the exact-match expectations of the
+// other suites.
 func alwaysAppliedProject(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -399,15 +410,314 @@ func alwaysAppliedProject(t *testing.T) string {
 	seed("conventions/style.md", "always use tabs\n")
 	seed("glossary/compass.md", "compass: a tool that points north\n")
 
-	cfg := "knowledge:\n" +
-		"  sources:\n" +
-		"    - scope: project\n" +
-		"      provider: file\n" +
-		"      config:\n" +
-		"        location: " + loc + "\n"
+	cfg := "name: testproj\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(cfg), 0o644))
 
 	return root
+}
+
+// Criterion 2: knowledge write, read, and search behave exactly as before the
+// project/repo config split for a solo-repo project. A freshly initialised
+// project — whose config.yaml lists no knowledge sources; the "project" scope
+// comes entirely from the init-written repo.yaml — round-trips an entry
+// through write, read, and search end-to-end.
+func TestKnowledge_RoundTripAfterInit_SoloRepo(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	// The colocated repo config exists and is the knowledge authority.
+	require.FileExists(t, filepath.Join(dir, ".spektacular", "repo.yaml"))
+
+	contentPath := filepath.Join(t.TempDir(), "payload.md")
+	require.NoError(t, os.WriteFile(contentPath, []byte("the zanzibar protocol\n"), 0o644))
+
+	// Write into the repo-supplied "project" scope.
+	stdout, _, err := runKnowledge(t, "write",
+		"--data", `{"scope":"project","path":"learnings/zanzibar.md"}`,
+		"--file", contentPath)
+	require.NoError(t, err)
+	var wrote struct {
+		Scope string `json:"scope"`
+		Path  string `json:"path"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &wrote))
+	require.Equal(t, "project", wrote.Scope)
+	require.Equal(t, "learnings/zanzibar.md", wrote.Path)
+	require.FileExists(t, filepath.Join(dir, ".spektacular", "knowledge", "learnings", "zanzibar.md"))
+
+	// Read it back.
+	stdout, _, err = runKnowledge(t, "read",
+		"--data", `{"scope":"project","path":"learnings/zanzibar.md"}`)
+	require.NoError(t, err)
+	var read struct {
+		Scope   string `json:"scope"`
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &read))
+	require.Equal(t, "project", read.Scope)
+	require.Equal(t, "the zanzibar protocol\n", read.Content)
+
+	// Search finds it. "zanzibar" appears in no init-seeded README, so the
+	// written entry is the only hit.
+	stdout, _, err = runKnowledge(t, "search", "zanzibar")
+	require.NoError(t, err)
+	var searched struct {
+		Hits []knowledgeHit `json:"hits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &searched))
+	require.Len(t, searched.Hits, 1)
+	require.Equal(t, "project", searched.Hits[0].Scope)
+	require.Equal(t, "learnings/zanzibar.md", searched.Hits[0].Path)
+
+	// Criterion 3 (Phase 2.4): a solo-repo project's single project-scope
+	// source is attributed to the colocated repo's registry name — the name
+	// init recorded in config.yaml.
+	cfg, err := config.FromYAMLFile(filepath.Join(dir, ".spektacular", "config.yaml"))
+	require.NoError(t, err)
+	stdout, _, err = runKnowledge(t, "sources")
+	require.NoError(t, err)
+	var listed struct {
+		Sources []knowledgeSource `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &listed))
+	require.Equal(t, []knowledgeSource{
+		{Scope: "project", Provider: "file", Location: filepath.Join(dir, ".spektacular", "knowledge"), Repo: cfg.Name},
+	}, listed.Sources)
+}
+
+// seedKnowledgeFile writes a knowledge entry at loc/name, creating parents.
+func seedKnowledgeFile(t *testing.T, loc, name, content string) {
+	t.Helper()
+	full := filepath.Join(loc, filepath.FromSlash(name))
+	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+	require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+}
+
+// memberRegistryProject lays out a temp project whose config registers the
+// colocated repo (named "testproj", local ".") plus one member repo (named
+// "member", at a sibling temp dir carrying a default repo.yaml), and declares
+// a project-owned "team" source. Both repos' default project-scope knowledge
+// stores exist but are empty; the caller seeds entries. It chdirs into the
+// project root and returns the three roots.
+func memberRegistryProject(t *testing.T) (root, member, teamLoc string) {
+	t.Helper()
+	root = t.TempDir()
+	member = t.TempDir()
+	teamLoc = filepath.Join(root, "team-kb")
+	t.Chdir(root)
+
+	// The colocated repo has no repo.yaml (it predates the config split), so
+	// its store is synthesised from defaults. The member carries a default
+	// repo.yaml, as `repo add` would have written.
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(member, ".spektacular", "knowledge"), 0o755))
+	require.NoError(t, os.MkdirAll(teamLoc, 0o755))
+	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(
+		filepath.Join(member, ".spektacular", config.RepoConfigFileName)))
+
+	writeSpecCommandConfig(t, root,
+		"repos:\n"+
+			"  - name: testproj\n"+
+			"    local: \".\"\n"+
+			"  - name: member\n"+
+			"    local: "+member+"\n"+
+			"knowledge:\n"+
+			"  sources:\n"+
+			"    - scope: team\n"+
+			"      provider: file\n"+
+			"      config:\n"+
+			"        location: "+teamLoc+"\n")
+
+	return root, member, teamLoc
+}
+
+// memberWithoutFootprintProject lays out a temp project registering the
+// colocated repo plus a member repo that exists on disk but carries no
+// .spektacular footprint at all, chdirs into the project root, and returns
+// both roots.
+func memberWithoutFootprintProject(t *testing.T) (root, member string) {
+	t.Helper()
+	root = t.TempDir()
+	member = t.TempDir()
+	t.Chdir(root)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
+	writeSpecCommandConfig(t, root,
+		"repos:\n"+
+			"  - name: testproj\n"+
+			"    local: \".\"\n"+
+			"  - name: member\n"+
+			"    local: "+member+"\n")
+
+	return root, member
+}
+
+// Criterion 2: `knowledge search` results include entries from every
+// registered repo's sources — colocated and member — and from project-owned
+// sources declared in the project config, each hit tagged with the scope of
+// the source it came from. Every entry contains "beacon" exactly once, so all
+// scores tie and the order is the aggregated source order: colocated repo,
+// member repo, then project-owned.
+func TestKnowledgeSearch_AggregatesColocatedMemberAndProjectOwnedSources(t *testing.T) {
+	root, member, teamLoc := memberRegistryProject(t)
+	seedKnowledgeFile(t, filepath.Join(root, ".spektacular", "knowledge"),
+		"learnings/colocated-note.md", "the beacon shines in the colocated repo\n")
+	seedKnowledgeFile(t, filepath.Join(member, ".spektacular", "knowledge"),
+		"learnings/member-note.md", "the beacon shines in the member repo\n")
+	seedKnowledgeFile(t, teamLoc, "guidelines.md", "the beacon shines in the team source\n")
+
+	stdout, _, err := runKnowledge(t, "search", "beacon")
+	require.NoError(t, err)
+
+	var result struct {
+		Hits []knowledgeHit `json:"hits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.Equal(t, []knowledgeHit{
+		{
+			Scope:    "project",
+			Path:     "learnings/colocated-note.md",
+			Title:    "learnings/colocated-note.md",
+			Excerpts: []string{"the beacon shines in the colocated repo"},
+			Score:    1,
+		},
+		{
+			Scope:    "project",
+			Path:     "learnings/member-note.md",
+			Title:    "learnings/member-note.md",
+			Excerpts: []string{"the beacon shines in the member repo"},
+			Score:    1,
+		},
+		{
+			Scope:    "team",
+			Path:     "guidelines.md",
+			Title:    "guidelines.md",
+			Excerpts: []string{"the beacon shines in the team source"},
+			Score:    1,
+		},
+	}, result.Hits)
+}
+
+// Criterion 2: `knowledge sources` attributes each source to its repo — the
+// colocated repo's source carries the project repo's registry name, the
+// member's carries the member's name, and the project-owned "team" source has
+// no repo field.
+func TestKnowledgeSources_AttributesEachSourceToItsRepo(t *testing.T) {
+	root, member, teamLoc := memberRegistryProject(t)
+
+	stdout, _, err := runKnowledge(t, "sources")
+	require.NoError(t, err)
+
+	var result struct {
+		Sources []knowledgeSource `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.Equal(t, []knowledgeSource{
+		{Scope: "project", Provider: "file", Location: filepath.Join(root, ".spektacular", "knowledge"), Repo: "testproj"},
+		{Scope: "project", Provider: "file", Location: filepath.Join(member, ".spektacular", "knowledge"), Repo: "member"},
+		{Scope: "team", Provider: "file", Location: teamLoc},
+	}, result.Sources)
+}
+
+// Duplicate scope across repos resolves by registry order: with both the
+// colocated and the member repo declaring scope "project", `knowledge read`
+// and `knowledge write` against that scope hit the first — colocated — repo's
+// store, never the member's.
+func TestKnowledgeReadWrite_DuplicateScopeResolvesToFirstRegistryRepo(t *testing.T) {
+	root, member, _ := memberRegistryProject(t)
+	seedKnowledgeFile(t, filepath.Join(root, ".spektacular", "knowledge"),
+		"learnings/dup.md", "colocated version\n")
+	seedKnowledgeFile(t, filepath.Join(member, ".spektacular", "knowledge"),
+		"learnings/dup.md", "member version\n")
+
+	// Read resolves to the colocated repo's copy.
+	stdout, _, err := runKnowledge(t, "read", "--data", `{"scope":"project","path":"learnings/dup.md"}`)
+	require.NoError(t, err)
+	var read struct {
+		Content string `json:"content"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &read))
+	require.Equal(t, "colocated version\n", read.Content)
+
+	// Write lands in the colocated repo's store, not the member's.
+	contentPath := filepath.Join(t.TempDir(), "payload.md")
+	require.NoError(t, os.WriteFile(contentPath, []byte("fresh entry\n"), 0o644))
+	_, _, err = runKnowledge(t, "write",
+		"--data", `{"scope":"project","path":"learnings/fresh.md"}`,
+		"--file", contentPath)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(root, ".spektacular", "knowledge", "learnings", "fresh.md"))
+	require.NoFileExists(t, filepath.Join(member, ".spektacular", "knowledge", "learnings", "fresh.md"))
+}
+
+// A member repo missing its repo.yaml breaks knowledge aggregation with the
+// structured "repo_footprint" error whose next action offers `repo add` as
+// the repair.
+func TestKnowledgeSources_MemberMissingFootprintErrorsWithRepairOffer(t *testing.T) {
+	memberWithoutFootprintProject(t)
+
+	_, stderr, err := runKnowledge(t, "sources")
+	require.Error(t, err)
+	require.Empty(t, stderr)
+
+	var envelope *output.ErrorResponse
+	require.ErrorAs(t, err, &envelope)
+	require.Equal(t, "repo_footprint", envelope.Code)
+	require.Contains(t, envelope.Message, "member")
+	require.Contains(t, envelope.NextAction, "repo add")
+}
+
+// A member repo whose repo.yaml exists but does not parse fails with the same
+// "repo_footprint" error shape as a missing one.
+func TestKnowledgeSources_MemberInvalidFootprintErrorsWithRepairOffer(t *testing.T) {
+	_, member := memberWithoutFootprintProject(t)
+	seedKnowledgeFile(t, member, ".spektacular/"+config.RepoConfigFileName, "{{{ not yaml\n")
+
+	_, stderr, err := runKnowledge(t, "sources")
+	require.Error(t, err)
+	require.Empty(t, stderr)
+
+	var envelope *output.ErrorResponse
+	require.ErrorAs(t, err, &envelope)
+	require.Equal(t, "repo_footprint", envelope.Code)
+	require.Contains(t, envelope.NextAction, "repo add")
+}
+
+// An address-only registry entry that is not materialized locally is skipped
+// by knowledge commands — they succeed with the remaining sources, never
+// error, and never clone.
+func TestKnowledgeSources_SkipsUnmaterializedAddressOnlyRepo(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
+	writeSpecCommandConfig(t, root,
+		"repos:\n"+
+			"  - name: testproj\n"+
+			"    local: \".\"\n"+
+			"  - name: ghost\n"+
+			"    address: https://example.invalid/ghost.git\n")
+
+	stdout, _, err := runKnowledge(t, "sources")
+	require.NoError(t, err)
+
+	var result struct {
+		Sources []knowledgeSource `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.Equal(t, []knowledgeSource{
+		{Scope: "project", Provider: "file", Location: filepath.Join(root, ".spektacular", "knowledge"), Repo: "testproj"},
+	}, result.Sources, "the unmaterialized repo contributes no source")
+
+	require.Zero(t, git.calls, "knowledge aggregation must never invoke git")
+	require.NoDirExists(t, filepath.Join(root, ".spektacular", repo.MaterializeDirName, "ghost"))
 }
 
 // Phase 2.3: `knowledge always-applied` returns every always-applied entry —

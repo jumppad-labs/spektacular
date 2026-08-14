@@ -24,9 +24,12 @@ For the phase you just completed, append an entry with this shape:
 **Files changed**:
 - `path/to/file.go`
 - `path/to/another/file.go`
+- `<repo-name>: path/within/that/repo.go`
 
 **Discoveries**: <anything the next phase or a future maintainer should know — a tricky API, a hidden constraint, a renamed symbol, a missed edge case>
 ```
+
+In the **Files changed** list, prefix every path that lives in a registered member repo with that repo's name (`<repo-name>: path`); paths in the project's own colocated repo carry no prefix. The final feature-changelog step derives one entry per affected repo mechanically from these prefixes, so keep them accurate.
 
 For the exact format and more examples, launch a sub-agent with:
 

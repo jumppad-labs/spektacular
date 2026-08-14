@@ -53,7 +53,7 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 			StepName:     stepName,
 			NextStep:     nextStep,
 			TemplatePath: templatePath,
-			Strategy:     strategy{planDir: cfg.PlanDir, changelogDir: cfg.ChangelogDir, specDir: cfg.SpecDir},
+			Strategy:     strategy{planDir: cfg.PlanDir, changelogDir: cfg.ChangelogDir, specDir: cfg.SpecDir, projectName: cfg.ProjectName},
 			Extra:        extra,
 		},
 		data, out, st, cfg,
@@ -160,7 +160,7 @@ func finished() workflow.StepCallback {
 			planName := stepkit.GetString(data, "name")
 			artifactPaths := []string{
 				filepath.Join(cfg.PlanDir, planName, "test-plan.md"),
-				filepath.Join(cfg.ChangelogDir, planName+".md"),
+				filepath.Join(ChangelogFilePath(cfg.ChangelogDir, cfg.ProjectName, planName)),
 			}
 			for _, p := range artifactPaths {
 				if err := metadata.Close(st, p, metadata.StatusCompleted); err != nil {

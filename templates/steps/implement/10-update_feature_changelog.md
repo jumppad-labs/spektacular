@@ -35,9 +35,27 @@ The changelog record is a changelog-store artifact. **Never write it with the `W
 
 After the write succeeds, confirm it with `{{config.command}} changelog file read {{plan_name}}.md`.
 
+### Step 4: Derive one entry per affected repo
+
+Work that touched registered member repos leaves a record in every repo it touched. After the central record is written:
+
+1. Run `{{config.command}} repo list` to see the registered repos and their resolved roots.
+2. Identify the **affected repos**: from the plan's `{{changelog_section_name}}` section, collect every path in the phase entries' **Files changed** lists and match each to the repo it belongs to (entries there are grouped or prefixed by repo name; paths with no repo prefix belong to the project's own colocated repo). A repo with no changed files is not affected and gets no entry.
+3. For each affected repo **other than the project's own colocated repo** (the central record already covers it), author a derived entry scoped to **only that repo's changes**: what was changed in that repo and why, grounded in the same phase entries, plus a human-readable reference line at the top of the body naming the project, its source (when configured), and the spec/plan identifier — e.g. `> Derived from project <project> (<source>), spec/plan {{plan_name}}.`
+4. Stage each entry with the `Write` tool at `.spektacular/tmp/changelog_derived_<repo>.md`, then write it through that repo's own changelog store and remove the scratch file:
+
+   ```
+   {{config.command}} changelog file write {{plan_name}}.md --repo <repo-name> --from .spektacular/tmp/changelog_derived_<repo>.md
+   rm .spektacular/tmp/changelog_derived_<repo>.md
+   ```
+
+   The CLI stamps the project name, project source, and spec/plan identifiers into the entry's front matter automatically — the body carries the readable reference line, the front matter carries the structured provenance.
+
+If no registered repo other than the colocated one was touched, skip this step entirely — do not write empty derived entries.
+
 ### STOP-on-mismatch
 
-If the feature's spec cannot be found under `{{plan_name}}.md`, or the plan's `{{changelog_section_name}}` section is missing or empty, STOP and report it to the user: ask whether to (a) locate the correct spec name and retry, (b) author the record from the plan alone, or (c) skip this step. Do not silently invent a record from nothing.
+If the feature's spec cannot be found under `{{plan_name}}.md`, or the plan's `{{changelog_section_name}}` section is missing or empty, STOP and report it to the user: ask whether to (a) locate the correct spec name and retry, (b) author the record from the plan alone, or (c) skip this step. Do not silently invent a record from nothing. Likewise, if a derived write fails because a repo's footprint is missing or broken, surface the repair offer from the error to the user rather than skipping the repo silently.
 
 ### Advance
 

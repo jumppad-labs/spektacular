@@ -30,6 +30,7 @@ func TestSpecNew_CrossKindReturnsMismatchError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		Kind:           "plan",
@@ -71,6 +72,7 @@ func TestSpecGoto_CrossKindRefusesAndPreservesState(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		Kind:           "plan",

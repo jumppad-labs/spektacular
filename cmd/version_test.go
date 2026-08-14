@@ -139,6 +139,27 @@ func TestVersionCheck_Mismatch(t *testing.T) {
 	require.Equal(t, namesOf(entriesBefore), namesOf(entriesAfter), "version check must not create or remove files in .spektacular")
 }
 
+// Criterion 4: the stale-version remediation composes the correct init
+// command from the recorded config — the configured command plus the recorded
+// agent — after a real init has established both.
+func TestVersionCheck_MismatchComposesInitCommandFromConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+	writeVersionCheckFile(t, dir, "9.9.9\n")
+
+	m, code := runVersionCheckJSON(t)
+	require.Equal(t, 0, code)
+	require.Equal(t, "mismatch", m["status"])
+	action, ok := m["action"].(string)
+	require.True(t, ok, "mismatch must carry an action string")
+	require.Contains(t, action, "`spektacular init claude`",
+		"the remediation must compose the configured command with the recorded agent")
+}
+
 // TestVersionCheck_Missing: no .spektacular directory (and hence no version
 // file) is the pre-versioning install state — "missing", no
 // installed_version key, and a re-run instruction, exit 0.

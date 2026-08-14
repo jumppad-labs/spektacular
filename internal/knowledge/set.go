@@ -21,6 +21,7 @@ type scopedStore struct {
 	scope    string
 	provider string
 	location string
+	repo     string
 	store    store.Store
 }
 
@@ -55,11 +56,14 @@ type AlwaysAppliedEntry struct {
 	Category string `json:"category"`
 }
 
-// SourceInfo describes one configured knowledge source.
+// SourceInfo describes one configured knowledge source. Repo names the
+// registry repo whose config declared the source; it is empty for
+// project-owned sources.
 type SourceInfo struct {
 	Scope    string `json:"scope"`
 	Provider string `json:"provider"`
 	Location string `json:"location"`
+	Repo     string `json:"repo,omitempty"`
 }
 
 // NewSet resolves the configured knowledge sources into live stores. The
@@ -85,7 +89,8 @@ func NewSet(cfg config.Config, projectRoot string) (*Set, error) {
 				scope:    src.Scope,
 				provider: src.Provider,
 				location: location,
-				store:    store.NewFileStore(location, src.Scope),
+				repo:     src.Repo,
+				store:    store.NewSourceStore(location, src.Scope),
 			})
 		default:
 			return nil, fmt.Errorf("knowledge source %q: provider %q is not supported", src.Scope, src.Provider)
@@ -258,7 +263,7 @@ func (s *Set) readCategories(categories []string) ([]AlwaysAppliedEntry, error) 
 func (s *Set) Sources() []SourceInfo {
 	infos := make([]SourceInfo, len(s.sources))
 	for i, src := range s.sources {
-		infos[i] = SourceInfo{Scope: src.scope, Provider: src.provider, Location: src.location}
+		infos[i] = SourceInfo{Scope: src.scope, Provider: src.provider, Location: src.location, Repo: src.repo}
 	}
 	return infos
 }

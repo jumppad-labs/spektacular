@@ -711,15 +711,16 @@ func TestArchitectureStepRequiresRepoAttribution(t *testing.T) {
 }
 
 // TestPhasesStepCarriesRepoAttributionIntoPlanAndContext asserts the phases
-// instruction carries attribution into both outputs: plan.md summaries name a
-// non-colocated target repo and context.md file changes carry the repo-name
+// instruction carries attribution into both outputs: plan.md phases carry a
+// dedicated Repo line and context.md file changes carry the repo-name
 // prefix.
 func TestPhasesStepCarriesRepoAttributionIntoPlanAndContext(t *testing.T) {
 	out := renderStep(t, phases())
 
-	// Criterion 2: a phase carried out in another registered repo names it.
-	require.Contains(t, out, "names that target repo",
-		"phases must direct plan.md summaries to name a non-colocated target repo")
+	// Criterion 2: every phase carries a dedicated Repo line naming its
+	// target repo, always present regardless of repo count.
+	require.Contains(t, out, "**Repo:**",
+		"phases must direct plan.md to include a dedicated Repo line naming the phase's target repo")
 
 	// Criterion 2: context.md file changes carry the repo prefix.
 	require.Contains(t, out, "<repo>:path:line",

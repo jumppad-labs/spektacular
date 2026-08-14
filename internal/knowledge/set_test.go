@@ -447,3 +447,71 @@ func TestSet_AlwaysAppliedEntriesReturnsAllAlwaysAppliedCategories(t *testing.T)
 		{Scope: "team", Path: "glossary/term.md", Content: "sextant: another term\n", Category: "glossary"},
 	}, entries)
 }
+
+// repoScopedSet stands up three file-backed sources: "project" (no repo
+// attribution — project-owned) and two repo-declared scopes "repo-a" and
+// "repo-b", each attributed to a like-named repo. Each scope gets one
+// convention file so filtering can be asserted per scope.
+func repoScopedSet(t *testing.T) *Set {
+	t.Helper()
+	projectDir := t.TempDir()
+	repoADir := t.TempDir()
+	repoBDir := t.TempDir()
+
+	writeFile(t, projectDir, "conventions/proj.md", "project: use tabs\n")
+	writeFile(t, repoADir, "conventions/a.md", "repo-a: use spaces\n")
+	writeFile(t, repoBDir, "conventions/b.md", "repo-b: use semicolons\n")
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{
+			Scope:    "project",
+			Provider: config.ProviderFile,
+			Config:   config.FileKnowledgeConfig{Location: projectDir},
+		},
+		{
+			Scope:    "repo-a",
+			Provider: config.ProviderFile,
+			Config:   config.FileKnowledgeConfig{Location: repoADir},
+			Repo:     "repo-a",
+		},
+		{
+			Scope:    "repo-b",
+			Provider: config.ProviderFile,
+			Config:   config.FileKnowledgeConfig{Location: repoBDir},
+			Repo:     "repo-b",
+		},
+	}
+
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+	return set
+}
+
+// Temporary-fix criterion: AlwaysAppliedEntries, given a non-empty repos
+// filter, includes only repo-declared sources whose repo is named, plus every
+// project-owned (unattributed) source unconditionally.
+func TestSet_AlwaysAppliedEntriesFiltersByRepo(t *testing.T) {
+	set := repoScopedSet(t)
+
+	entries, err := set.AlwaysAppliedEntries("repo-a")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []AlwaysAppliedEntry{
+		{Scope: "project", Path: "conventions/proj.md", Content: "project: use tabs\n", Category: "conventions"},
+		{Scope: "repo-a", Path: "conventions/a.md", Content: "repo-a: use spaces\n", Category: "conventions"},
+	}, entries, "repo-b's conventions must be excluded when only repo-a is named")
+}
+
+// Temporary-fix criterion: an empty repos filter is unfiltered — every source
+// loads, matching pre-filter behaviour exactly (backward compatible default).
+func TestSet_AlwaysAppliedEntriesUnfilteredWhenNoReposNamed(t *testing.T) {
+	set := repoScopedSet(t)
+
+	entries, err := set.AlwaysAppliedEntries()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []AlwaysAppliedEntry{
+		{Scope: "project", Path: "conventions/proj.md", Content: "project: use tabs\n", Category: "conventions"},
+		{Scope: "repo-a", Path: "conventions/a.md", Content: "repo-a: use spaces\n", Category: "conventions"},
+		{Scope: "repo-b", Path: "conventions/b.md", Content: "repo-b: use semicolons\n", Category: "conventions"},
+	}, entries)
+}

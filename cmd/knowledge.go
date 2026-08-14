@@ -63,6 +63,8 @@ var knowledgeCategoriesCmd = &cobra.Command{
 	RunE:  runKnowledgeCategories,
 }
 
+var knowledgeAlwaysAppliedRepos []string
+
 var knowledgeAlwaysAppliedCmd = &cobra.Command{
 	Use:   "always-applied",
 	Short: "Read every always-applied entry (conventions and glossary) across all configured scopes",
@@ -365,7 +367,7 @@ func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := set.AlwaysAppliedEntries()
+	entries, err := set.AlwaysAppliedEntries(knowledgeAlwaysAppliedRepos...)
 	if err != nil {
 		return err
 	}
@@ -423,6 +425,7 @@ func init() {
 	knowledgeReadCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().String("file", "", "Read entry content from the file at <path> (relative to cwd); stdin is used when omitted")
+	knowledgeAlwaysAppliedCmd.Flags().StringArrayVar(&knowledgeAlwaysAppliedRepos, "repo", nil, "Limit repo-declared sources to the named registered repo(s) (repeatable); project-owned sources always load; omit to load every source")
 
 	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd, knowledgeCategoriesCmd, knowledgeAlwaysAppliedCmd)
 }

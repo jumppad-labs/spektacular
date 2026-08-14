@@ -64,6 +64,7 @@ func resetKnowledgeFlags(t *testing.T) {
 		require.NoError(t, knowledgeReadCmd.Flags().Set("data", ""))
 		require.NoError(t, knowledgeWriteCmd.Flags().Set("data", ""))
 		require.NoError(t, knowledgeWriteCmd.Flags().Set("file", ""))
+		knowledgeAlwaysAppliedRepos = nil
 	}
 	reset()
 	t.Cleanup(reset)
@@ -748,6 +749,32 @@ func TestKnowledgeAlwaysApplied_ReturnsConventionsAndGlossaryTagged(t *testing.T
 			Category: "glossary",
 		},
 	}, result.Entries)
+}
+
+// Temporary fix: `knowledge always-applied --repo <name>` (repeatable) limits
+// repo-declared sources to the named repo(s), while a project-owned source
+// (no repo attribution, e.g. "team") always loads regardless of --repo. This
+// keeps a multi-repo project from paying for every member repo's conventions
+// on every plan that only touches one of them.
+func TestKnowledgeAlwaysApplied_RepoFlagFiltersToNamedRepos(t *testing.T) {
+	root, member, teamLoc := memberRegistryProject(t)
+	seedKnowledgeFile(t, filepath.Join(root, ".spektacular", "knowledge"),
+		"conventions/colocated.md", "colocated: use tabs\n")
+	seedKnowledgeFile(t, filepath.Join(member, ".spektacular", "knowledge"),
+		"conventions/member.md", "member: use spaces\n")
+	seedKnowledgeFile(t, teamLoc, "conventions/team.md", "team: use semicolons\n")
+
+	stdout, _, err := runKnowledge(t, "always-applied", "--repo", "member")
+	require.NoError(t, err)
+
+	var result struct {
+		Entries []alwaysAppliedEntry `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.ElementsMatch(t, []alwaysAppliedEntry{
+		{Scope: "project", Path: "conventions/member.md", Content: "member: use spaces\n", Category: "conventions"},
+		{Scope: "team", Path: "conventions/team.md", Content: "team: use semicolons\n", Category: "conventions"},
+	}, result.Entries, "colocated repo's conventions must be excluded when only member is named; project-owned team source always loads")
 }
 
 // Phase 2.3: `always-applied --schema` declares the output envelope — entries

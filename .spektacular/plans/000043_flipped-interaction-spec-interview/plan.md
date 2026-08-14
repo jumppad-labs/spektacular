@@ -146,6 +146,8 @@ The feature splits into a deterministic layer (FSM wiring, template content, the
 
 #### - [x] Phase 1.1: Insert the interview step into the spec workflow
 
+**Repo:** spektacular
+
 Add a new `interview` step to the spec workflow's step sequence, immediately after `new` and before `overview`, so every spec-creation session opens with the interview rather than the Overview section's scripted question. The `new` step's destination retargets to `interview`; every step from `overview` onward keeps its existing position and order unchanged. The new step's template carries the Flipped Interaction pattern's structure: state the goal (enough understanding to draft a credible first pass), ask adaptive questions toward it, and stop once no question remains that would materially change the draft. Findings are saved to a new per-workflow working file that later steps will read from.
 
 *Technical detail:* [context.md#phase-11](./context.md#phase-11-insert-the-interview-step-into-the-spec-workflow)
@@ -159,6 +161,8 @@ Add a new `interview` step to the spec workflow's step sequence, immediately aft
 
 #### - [x] Phase 1.2: Give the interview access to the project's repo roster and a cross-repo question
 
+**Repo:** spektacular
+
 Relocate the plan workflow's existing repo-roster mechanism to shared locations both workflows can use, then wire it into the spec workflow's new interview step exactly as the plan workflow already wires it into its own discovery and architecture steps. The interview template renders the full roster of the project's registered repositories, and instructs asking whether a feature that reads as focused on one repo also needs changes in the others, shaped by what each other repo actually is.
 
 *Technical detail:* [context.md#phase-12](./context.md#phase-12-give-the-interview-access-to-the-projects-repo-roster-and-a-cross-repo-question)
@@ -170,6 +174,8 @@ Relocate the plan workflow's existing repo-roster mechanism to shared locations 
 - [x] The plan workflow's existing repo-roster rendering is unchanged in output after the relocation, confirmed by its existing tests continuing to pass
 
 #### - [x] Phase 1.3: Align the driving skill and end-to-end harness with the new step
+
+**Repo:** spektacular
 
 Update the agent-facing skill instructions so the spec-creation loop covers the interview step, including how a resumed session continues an open interview, and update the end-to-end harness's canonical step order and success criteria so the suite validates the new sequence.
 
@@ -187,6 +193,8 @@ Update the agent-facing skill instructions so the spec-creation loop covers the 
 
 #### - [x] Phase 2.1: Make section steps draft from the interview and present for confirmation
 
+**Repo:** spektacular
+
 Rewrite the opening instruction of every section-gathering step (Overview, Requirements, Acceptance Criteria, Constraints, Technical Approach, Success Metrics, Non-Goals) so each drafts its section from the interview's findings and any prior corrections, presents the draft, and asks the user to confirm or correct it, rather than asking its own scripted question from a blank slate. Every other rule in these templates, format, altitude, the working-file write instruction, stays exactly as it is today.
 
 *Technical detail:* [context.md#phase-21](./context.md#phase-21-make-section-steps-draft-from-the-interview-and-present-for-confirmation)
@@ -198,6 +206,8 @@ Rewrite the opening instruction of every section-gathering step (Overview, Requi
 - [x] Template unit tests confirm the scripted-question phrasing is gone and draft-and-confirm phrasing is present
 
 #### - [x] Phase 2.2: Add rejection-repair and cross-section amendment to every gathering step
+
+**Repo:** spektacular
 
 Generalize the existing verification-step triage pattern (ask why before changing, update the owning working file, no fresh confirmation gate for an already-passed section) into shared closing-beat instructions carried by the interview step and all seven section steps. When the user rejects a drafted section, the agent asks a follow-up question before making any change, and any resulting edits land in the working file(s) they actually belong to, which may include a section other than the one under review, without requiring the user to separately revisit and re-confirm that other section in the moment.
 
@@ -211,6 +221,8 @@ Generalize the existing verification-step triage pattern (ask why before changin
 - [x] Template unit tests confirm the shared rejection-repair marker text is present on every step that must carry it
 
 #### - [x] Phase 2.3: Verify the new interaction model end to end
+
+**Repo:** spektacular
 
 Update the end-to-end harness to exercise the new interaction model: a scenario where a rejection during a later section produces a change to an earlier, already-drafted section's working file, with no repeated confirmation step appearing for that earlier section. This is the automated proof that cross-section amendment actually fires, not just that it is theoretically described in the templates.
 
@@ -227,6 +239,8 @@ Update the end-to-end harness to exercise the new interaction model: a scenario 
 **What changes**: The documentation site names and explains the Flipped Interaction pattern, attributing it to the prior prompt-engineering research it is drawn from, and walks through what a user experiences starting a new spec now, the interview phase, with an example question. A concrete multi-repo example shows the interview asking a cross-repo question in a project with more than one registered repository. This capability is positioned where a prospective user would see it early, the homepage or how-it-works page, rather than only in a deep reference page, so it reads as a reason to choose Spektacular rather than an implementation detail. This milestone is independently deliverable from Milestones 1 and 2 in the sense that it lands in a different repository, but it depends on their behavior actually existing so the documented example reflects reality rather than aspiration.
 
 #### - [x] Phase 3.1: Document the Flipped Interaction pattern and the interview phase on the docs site
+
+**Repo:** docs
 
 In the `docs` repo, describe what happens when a user starts a new spec now: the interview phase, its adaptive question style, and an example exchange, and name the Flipped Interaction pattern with attribution to the prior prompt-engineering research it is drawn from. Position this as a differentiator visible early on the site rather than buried in a deep reference page, and include a concrete worked example of the interview asking a cross-repo question in a multi-repo project.
 
@@ -277,6 +291,8 @@ In the `docs` repo, describe what happens when a user starts a new spec now: the
 - [x] The page includes a worked example of the interview asking a cross-repo question in a multi-repo project
 
 #### - [x] Phase 3.2: Feature the capability on the homepage
+
+**Repo:** docs
 
 Add or reframe a card in the homepage's existing features grid so the Flipped Interaction interview is visible to a prospective user early, rather than only on the deeper how-it-works page.
 

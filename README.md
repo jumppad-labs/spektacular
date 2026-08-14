@@ -177,8 +177,6 @@ repos:
     local: .
   - name: docs                      # a member repo by local path
     local: ../docs
-    description: the documentation repo
-    role: documentation
   - name: lib                       # a member repo by remote address —
     address: git@example.com:org/lib.git   # cloned into .spektacular/repos/lib/ on first use
 knowledge:
@@ -194,6 +192,10 @@ Each repo entry needs a slug-safe unique `name` and at least one of `address`/`l
 ### Repo configuration (`repo.yaml`)
 
 ```yaml
+description: the documentation repo
+role: documentation
+tags: [docs]
+deployment: static-site
 knowledge:
   sources:
     - scope: project                # the repo's own store; synthesised if the file is absent
@@ -212,7 +214,7 @@ Knowledge aggregates across every registered repo's declared sources (in registr
 
 Any source root (a repo, or the project's own storage locations) may carry a `.spektacular_ignore` file using gitignore pattern syntax. Matching paths are excluded from Spektacular's own listing and search results — keeping build artifacts and dependency directories out of planning research — but a directly named path is never blocked, and agents' native file tools are unaffected.
 
-For the full reference — every key, the id-method semantics, name-normalisation rules, and `${VAR}` expansion — see the [configuration documentation](https://spektacular.dev/configuration/).
+For the full reference — every key, the id-method semantics, name-normalisation rules, and `${VAR}` expansion — see the [configuration documentation](https://spektacular.dev/configuration/). For the concept of multi-repo projects, why the configuration is split this way, and how work is attributed across repos, see [Multi-Repo Projects](https://spektacular.dev/projects/).
 
 ## Testing
 

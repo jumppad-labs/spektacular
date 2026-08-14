@@ -10,9 +10,20 @@ spektacular init claude
 SPEC_JSON=$(spektacular spec new --data '{"name":"user-auth"}')
 SPEC_NAME=$(echo "$SPEC_JSON" | jq -r '.spec_name')
 
-# Walk every interview step. Section content is gathered in conversation; the
+# Run the interview step before any section is drafted.
+spektacular spec goto --data '{"step":"interview"}'
+
+# Walk every section step. Section content is gathered in conversation; the
 # completed spec is committed to the store in a single write at the end.
-for STEP in requirements acceptance_criteria constraints technical_approach success_metrics non_goals verification; do
+#
+# This scripted walkthrough does not reproduce the cross-section-amendment
+# scenario (TestCrossSectionAmendment in test_spec_workflow.py) — that proof
+# depends on a live rejection-and-follow-up conversation the agent conducts,
+# which a non-interactive CLI script has no equivalent for. The token
+# revocation requirement below is included directly in the hardcoded content
+# rather than surfaced via a scripted rejection; the cross-section-amendment
+# behavior itself is verified only against the live agent run.
+for STEP in overview requirements acceptance_criteria constraints technical_approach success_metrics non_goals verification; do
   spektacular spec goto --data "{\"step\":\"$STEP\"}"
 done
 

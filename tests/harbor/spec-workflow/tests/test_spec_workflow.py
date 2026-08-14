@@ -19,6 +19,7 @@ AGENT_LOG_DIR = Path("/logs/agent")
 # internal/steps/spec/steps.go → Steps().
 EXPECTED_STEP_ORDER = [
     "new",
+    "interview",
     "overview",
     "requirements",
     "acceptance_criteria",
@@ -320,6 +321,20 @@ class TestNewStep:
         )
 
 
+class TestInterviewStep:
+    """The agent completed the interview step before drafting any section."""
+
+    def test_step_completed(self):
+        state = load_state()
+        assert "interview" in state.get("completed_steps", [])
+
+    def test_tool_called(self):
+        calls = find_spektacular_calls(extract_tool_calls())
+        assert "spec goto interview" in calls, (
+            f"Agent did not call 'spektacular spec goto' with step 'interview'. Calls: {calls}"
+        )
+
+
 class TestOverviewStep:
     """The agent completed the overview step with meaningful content."""
 
@@ -328,10 +343,10 @@ class TestOverviewStep:
         assert "overview" in state.get("completed_steps", [])
 
     def test_tool_called(self):
-        """Overview is reached automatically after spec new — verify new was called."""
+        """Overview is reached after the interview step — verify it was called."""
         calls = find_spektacular_calls(extract_tool_calls())
-        assert "spec new" in calls, (
-            f"Agent did not call 'spektacular spec new' (which transitions to overview). Calls: {calls}"
+        assert "spec goto interview" in calls, (
+            f"Agent did not call 'spektacular spec goto' with step 'interview' (which transitions to overview). Calls: {calls}"
         )
 
     def test_section_has_content(self):
@@ -425,6 +440,42 @@ class TestConstraintsStep:
         assert "constraints" in sections, "Constraints section not found"
         assert len(sections["constraints"]) >= MIN_SECTION_LENGTH, (
             f"Constraints too short ({len(sections['constraints'])} chars)"
+        )
+
+
+class TestCrossSectionAmendment:
+    """A scripted rejection during Constraints surfaces a Requirements gap
+    (token revocation) that the agent must fold into the already-confirmed
+    Requirements section — without the user re-visiting or re-confirming
+    Requirements in the moment. This is the automated proof that
+    cross-section amendment actually fires, not just that it is described in
+    the templates. See instruction.md's "A rejection that reveals a missing
+    requirement" section for the scripted scenario.
+    """
+
+    def test_requirements_mentions_revocation(self):
+        """The final spec's Requirements section reflects the correction
+        surfaced while reviewing Constraints, even though revocation was
+        never mentioned when Requirements was originally drafted."""
+        sections = parse_sections(load_spec())
+        content = sections.get("requirements", "").lower()
+        assert "revoc" in content, (
+            "Requirements does not mention token revocation — the "
+            "cross-section amendment triggered by the scripted Constraints "
+            "rejection did not land in the Requirements working file. "
+            f"Requirements content: {sections.get('requirements', '')!r}"
+        )
+
+    def test_requirements_not_reconfirmed_after_constraints(self):
+        """The agent must not call 'spec goto requirements' a second time —
+        the amendment updates the working file directly, with no fresh
+        confirmation gate reopening the Requirements step itself."""
+        calls = find_spektacular_calls(extract_tool_calls())
+        requirements_gotos = [c for c in calls if c == "spec goto requirements"]
+        assert len(requirements_gotos) <= 1, (
+            "Agent re-entered the requirements step after amending it "
+            f"cross-section — expected at most one 'spec goto requirements' "
+            f"call, found {len(requirements_gotos)}. Calls: {calls}"
         )
 
 

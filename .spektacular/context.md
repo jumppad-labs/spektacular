@@ -1,545 +1,258 @@
-# Context: implement for 000042_repo-self-describing-metadata
-
-## Key decisions
-
-- Implementing plan `000042_repo-self-describing-metadata`. Plan/context/research
-  read in full via `go run . plan file read` at read_plan step.
-- Plan/context/research frontmatter shows `status: completed` / `closed_date:
-  "2026-08-13"`, but every phase checkbox (1.1-3.2) is unchecked and there is no
-  `## Changelog` section in plan.md — nothing has actually been implemented yet.
-  context.md's own "Current State Analysis" confirms this explicitly: the spec
-  closure was design/requirements sign-off only, not implementation, and this
-  repo's own `.spektacular/config.yaml` still carries the old descriptive fields
-  on the `docs` repo entry today. User was asked how to proceed given this
-  contradiction and chose: treat as not-yet-implemented, proceed normally.
-- Structural validation: all 10 required `## ` sections present in plan.md; all
-  7 phases have `*Technical detail:*` links resolving to matching `### Phase N.M:`
-  headings in context.md.
-- Drift check: spot-checked every major citation (internal/config/config.go:126-137
-  RepoEntry, internal/config/repo.go:19-94 RepoConfig, internal/repo/footprint.go:28-88
-  EnsureFootprint, internal/repo/set.go Present/LocalRoot/checkFootprint, cmd/repo.go
-  runRepoAdd/runRepoList/reposEqual, cmd/plan.go repoRoster, docs repo
-  configuration.mdx/Nav.astro/ConfigKey.astro) — all resolve exactly as cited, no
-  drift found.
-- Spec coverage check (spec 000042): all 9 requirements and 9 acceptance criteria
-  map cleanly onto the plan's 3 milestones / 7 phases. No gaps, nothing descoped.
-- Changelog mode: no `## Changelog` section exists in plan.md → this is a
-  **first-phase invocation**. Analyze step should pick up at Phase 1.1.
-
-## Sequencing constraints to respect during implementation
-
-- Phase 2.1 (remove fields from RepoEntry) and Phase 2.3 (switch runRepoList/
-  repoRoster to read from repo-level config) must land together — doing 2.1
-  without 2.3 breaks listing.
-- Phase 3.1 (docs: trim configuration.mdx, add repos ConfigKey linking to new
-  page) and Phase 3.2 (docs: new repo-configuration.mdx page + Nav.astro entry)
-  should land together to avoid a broken cross-link.
-- Docs work (3.1, 3.2) targets the **docs** member repo (spektacular-website),
-  resolved root `/home/nicj/code/github.com/jumppad-labs/spektacular-website`,
-  already materialized locally — no fetch needed.
-
-## Analyze step (Phase 1.1)
-
-- Current phase: 1.1 "Add descriptive fields to a repository's own configuration"
-  (Low complexity) — first unchecked phase in plan.md.
-- Confirmed via direct read: internal/config/repo.go RepoConfig (lines 19-22),
-  NewDefaultRepoConfig, Validate, WithDefaults all match context.md's citations
-  exactly. internal/config/config.go validateRepos (287-307) confirmed to
-  validate none of the four descriptive fields today, matching context.md's
-  claim — so no new validation needed beyond what YAML unmarshaling enforces.
-- internal/config/repo_test.go has 10 existing tests (lines 14-187); the one
-  needing rename/update is TestRepoConfig_ToYAMLFileWritesOnlyKnowledgeAndChangelog
-  (line 50) — asserts marshaled YAML has exactly 2 top-level keys
-  (knowledge/changelog); this must still hold with new fields all omitempty and
-  unset by default.
-- Low complexity, doing implementation directly in main context (no sub-agent
-  delegation needed per analyze step's own Low-complexity guidance).
-
-## Implement step (Phase 1.1)
-
-- Added Description/Role/Tags/Deployment (all `omitempty`) to
-  `internal/config/repo.go`'s `RepoConfig` struct, matching `RepoEntry`'s tag
-  style exactly. Updated the struct's doc comment to mention descriptive
-  metadata.
-- No change needed to `Validate()`, `WithDefaults()`, or
-  `NewDefaultRepoConfig()` — confirmed during analyze that none of the four
-  fields need validation or default synthesis (zero Go values are correct
-  defaults, matching `RepoEntry`'s current absent-validation behavior).
-- `go build ./...` passes clean. No tests written yet (test step is next,
-  per workflow rules — no *_test.go changes during implement step).
-
-## Test step (Phase 1.1)
-
-- Delegated to sub-agent per workflow rules (test authoring runs isolated
-  from main context). Sub-agent added
-  `TestRepoConfig_ToYAMLFileRoundTripWithDescriptiveFields` to
-  internal/config/repo_test.go (round-trips all 4 new fields set to
-  non-zero values) and updated the doc comment on the existing
-  `TestRepoConfig_ToYAMLFileWritesOnlyKnowledgeAndChangelog` to clarify it
-  tests the minimal/default-config case, not "descriptive fields don't
-  exist" (assertions unchanged — still exactly 2 top-level YAML keys since
-  omitempty + zero values).
-- Verified independently: `go build ./...` and `go test ./...` both pass
-  clean across the whole repo.
-- Noted (not blocking): `internal/config/repo.go` and `repo_test.go` are
-  untracked in git (not in HEAD) — this is pre-existing working-tree state
-  from before this implement session started (this repo already had a large
-  set of uncommitted changes per the session's initial git status), not
-  something this phase's work caused. Flagging here so a resumed session
-  doesn't mistake it for a new problem.
-
-## Verify step (Phase 1.1)
-
-- All green: go build, go vet, go test ./internal/config/... -run TestRepoConfig
-  (10/10), go test ./... (full suite), make lint (= go vet, no separate
-  golangci-lint config in this repo). Both acceptance criteria confirmed
-  covered by passing tests.
-
-## Update_plan step (Phase 1.1)
-
-- Flipped Phase 1.1's heading and both acceptance criteria checkboxes to
-  [x] in plan.md via read → edit scratch copy → `plan file write` →
-  scratch cleanup. Verified via re-read.
-
-## Update_changelog step (Phase 1.1)
-
-- Created the `## Changelog` section in plan.md (first phase, section
-  didn't exist yet) with the Phase 1.1 entry. No durable discoveries to
-  offer for knowledge capture this phase.
-- 6 phases remain unchecked (1.2, 2.1, 2.2, 2.3, 3.1, 3.2). Auto mode is
-  active and this plan has no open questions / low ambiguity — looping
-  through remaining phases automatically via `analyze` rather than
-  pausing after each one, per the auto-mode guidance to keep going unless
-  genuinely blocked.
-
-## Analyze step (Phase 1.2)
-
-- Current phase: 1.2 "Registering a repository writes its description into
-  the repository itself" (Medium). Delegated research to Explore sub-agent
-  (read-only) since Medium complexity. No mismatches vs plan/context.md.
-- Confirmed exact current shapes:
-  - `runRepoAdd` (cmd/repo.go:113), RepoEntry construction (128-137) still
-    assigns Description/Role/Tags/Deployment onto RepoEntry (correct for
-    this phase — Phase 2.1 removes them later).
-  - `EnsureFootprint` call at cmd/repo.go:196, returns `(status string, err
-    error)` — no path. New step goes between the EnsureFootprint error
-    check (~199) and building `out` (~201). Must reconstruct repo.yaml path
-    myself: `filepath.Join(resolved.Root, ".spektacular",
-    config.RepoConfigFileName)`.
-  - `repoAddInput` (cmd/repo.go:86-95) has all 4 descriptive fields already.
-  - `reposEqual` (cmd/repo.go:279-286) + `stringSlicesEqual` (288-298) is
-    the pattern to mirror for a new `repoConfigsEqual`-style comparator
-    (Description/Role/Deployment/Tags only — RepoConfig has no
-    Name/Address/Local/Provider).
-  - `RepoConfigFromYAMLFile` always starts from `NewDefaultRepoConfig()`
-    before unmarshal, so load→mutate-descriptive-fields→write will not
-    blank Knowledge/Changelog.
-  - `EnsureFootprint`'s own internal load-if-exists logic (footprint.go
-    32-51) runs and completes before my new step's separate read — no
-    reentrancy/ordering risk.
-- Test bodies confirmed: `TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint`
-  (cmd/repo_test.go:169-204) doesn't yet parse target's repo.yaml — that's
-  the extension point. `TestRepoAdd_UpsertUpdatesMetadataWithoutTouchingFootprint`
-  (343-373) asserts byte-identical target-dir snapshot on re-add, which
-  this phase will legitimately break (repo.yaml gets rewritten) — test
-  step must handle this, not the implement step.
-
-## Implement step (Phase 1.2)
-
-- cmd/repo.go `runRepoAdd`: added a new step after `EnsureFootprint`
-  returns — reads the target repo's repo.yaml via
-  `config.RepoConfigFromYAMLFile`, applies input's
-  Description/Role/Tags/Deployment, writes back via `ToYAMLFile` only if
-  changed (new helper `repoConfigDescriptiveFieldsEqual`, mirrors
-  `reposEqual`'s shape). Added `path/filepath` import.
-- `RepoEntry` construction (lines ~128-137) left unchanged — still assigns
-  the 4 descriptive fields for now (Phase 2.1 removes them later); both
-  project-config and repo-config are written in this milestone, per plan.
-- `go build ./...` passes. `go test ./cmd/... -run TestRepoAdd` shows the
-  EXPECTED failure: `TestRepoAdd_UpsertUpdatesMetadataWithoutTouchingFootprint`
-  now fails because `.spektacular/repo.yaml`'s content hash changes on
-  re-add with a new description — this is precisely the behavior inversion
-  documented in plan.md's Testing Approach and context.md's Phase 1.2 notes.
-  Not fixed in this step (test step is next; test-editing is explicitly the
-  next step's job, not implement's).
-
-## Test step (Phase 1.2)
-
-- Delegated to sub-agent. Result: extended
-  `TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint` to assert target's
-  repo.yaml carries supplied descriptive fields; renamed
-  `TestRepoAdd_UpsertUpdatesMetadataWithoutTouchingFootprint` →
-  `TestRepoAdd_UpsertUpdatesMetadataAndRepoConfigWithoutChangingFootprintShape`
-  (footprint file *set* still unchanged via listPaths/ElementsMatch; content
-  hash assertion replaced with explicit repo.yaml descriptive-field
-  assertions since content legitimately changes now); added new
-  `TestRepoAdd_ReAddWithNoMetadataLeavesRepoConfigUnchanged`.
-- **Bug found and fixed** (still within this step, before advancing): Phase
-  1.2's own acceptance criterion 3 ("no descriptive metadata supplied
-  leaves an already-described repo's config unchanged") was violated —
-  `runRepoAdd`'s new write step unconditionally assigned
-  `input.Description/Role/Tags/Deployment` onto the repo config, so an
-  omitted field (Go zero value) blanked existing metadata on re-add. Fixed
-  in cmd/repo.go by only overwriting each field when the input supplies a
-  non-zero value (non-empty string / non-empty slice), matching the
-  acceptance criterion exactly. This is a genuinely new bug in code this
-  phase just wrote, not a pre-existing issue in scope elsewhere — note:
-  the *project-side* RepoEntry upsert path has an analogous
-  always-overwrite pattern that was NOT touched (out of scope; Phase 2.1
-  removes those fields from RepoEntry entirely rather than fixing this
-  path, so no separate fix needed there).
-- `go build ./...` and `go test ./...` (full suite) both pass clean after
-  the fix. All 7 TestRepoAdd tests pass.
-
-## Verify step (Phase 1.2)
-
-- All green: build, vet, TestRepoAdd suite (7/7), full repo test suite. All
-  3 acceptance criteria confirmed covered by passing tests.
-
-## Update_plan step (Phase 1.2)
-
-- Flipped Phase 1.2 heading + all 3 acceptance criteria to [x]. Verified.
-
-## Update_changelog step (Phase 1.2)
-
-- Appended Phase 1.2 entry to plan.md's Changelog. No knowledge-capture
-  offer made — the discovery (RepoEntry has the same blank-on-omit
-  pattern, left unfixed since Phase 2.1 removes those fields) is scoped
-  to this plan's own sequencing, not a durable general lesson.
-- 5 phases remain (2.1, 2.2, 2.3, 3.1, 3.2). Continuing loop per auto mode.
-- **Important sequencing note carried forward**: Phase 2.1 must land
-  together with Phase 2.3 (removing RepoEntry's descriptive fields without
-  also switching runRepoList/repoRoster to read from repo-level config
-  breaks listing). Implement 2.1 and 2.3 as a tightly sequenced pair —
-  plan on doing both before running verify/update_plan, or accept that
-  `go test ./...` will show real (expected, temporary) failures between
-  them if done strictly one-phase-at-a-time through the full loop. Given
-  the workflow's per-phase verify gate, the pragmatic approach is: analyze
-  both 2.1+2.3 together, implement both together, then run the normal
-  test/verify/update_plan/update_changelog steps once per phase in
-  sequence (2.1 then 2.3) but only after both code changes exist.
-
-## Analyze step (Phases 2.1 + 2.2 + 2.3, analyzed together)
-
-- Current phase per FSM: 2.1 (Low). Given the hard sequencing note (2.1
-  must land with 2.3), and 2.2 being a prerequisite for 2.3, analyzed all
-  three together in main context (2.1/2.2 are Low/self-contained; only 2.3
-  is Medium and touches 2 call sites).
-- RepoEntry usage sites confirmed via grep (all non-test):
-  internal/project/init.go:58 (`RepoEntry{Name: cfg.Name, Local: "."}` —
-  metadata-free default, must keep working unchanged), internal/repo/set.go
-  (ResolvedRepo.Entry field, Set.entries, Entries(), resolve()),
-  internal/config/config.go (type def :126, Repos field :159, validateRepos
-  :287, WithDefaults :311), cmd/repo.go (RepoEntry construction :129,
-  reposEqual :308), cmd/knowledge.go:182 (`RepoEntry{Name: cfg.Name, Local:
-  "."}`, same metadata-free pattern as init.go — must also keep working).
-- `repoRoster` (cmd/plan.go, current form) has a doc comment saying "It
-  carries config-owned identity only... Refreshed from config on every
-  invocation" — THIS COMMENT MUST BE UPDATED in Phase 2.3, since it will no
-  longer be true once repoRoster resolves descriptive metadata from
-  repo-level config via the new Phase 2.2 helper.
-- `runRepoList` (cmd/repo.go ~233-288): currently builds `repoInfo` per
-  entry copying Description/Role/Tags/Deployment straight off
-  `config.RepoEntry` (the `e := set.Entries()[i]` pattern), gated by
-  `set.Present(e.Name)` before calling `set.Resolve`. Phase 2.3 replaces
-  the direct field copy with a call to the new Phase 2.2 resolver, still
-  gated the same way.
-- `internal/repo/set.go`'s `checkFootprint` (~203-211) is the existing
-  precedent for "materialized + read config, else FootprintError" — Phase
-  2.2's new resolver is a sibling function with different failure handling
-  (absence instead of error). Good style match target: same package, same
-  style of using `filepath.Join(root, ".spektacular",
-  config.RepoConfigFileName)` + `config.RepoConfigFromYAMLFile`.
-- `internal/config/config_test.go:487-515` `TestToYAMLFile_ReposRoundTrip`
-  confirmed matches plan's citation — currently asserts RepoEntry's 4
-  descriptive fields round-trip; Phase 2.1 test work removes those
-  assertions (equivalent coverage already lives in repo_test.go from Phase
-  1.1).
-- This repo's own `.spektacular/config.yaml` still has the old descriptive
-  fields on its `docs` repo entry per context.md's Current State Analysis —
-  confirmed out of scope (plan's Migration Notes: "None... removes those
-  fields outright with no migration"). Not touching it as part of any
-  phase; it will just stop validating those fields (harmlessly, since
-  RepoEntry's YAML unmarshal with extra unknown keys doesn't error unless
-  yaml.v3 strict mode is on — need to verify this doesn't break loading
-  this repo's OWN config during phase 2.1's implementation, since removing
-  fields from the Go struct is not the same as the YAML file being edited).
-  Flagging as a watch-item for phase 2.1 implementation/verification.
-
-## Implement step (Phases 2.1 + 2.2 + 2.3, implemented together)
-
-- **Phase 2.2** (new resolver, internal/repo/set.go): added
-  `(*Set) DescriptiveMetadata(name string) (config.RepoConfig, bool)` right
-  after `LocalRoot` — composes `LocalRoot` + `config.RepoConfigFromYAMLFile`,
-  returns absent (zero value, false) on any unmaterialized/missing/unreadable
-  case, never clones/fetches. Style matches `checkFootprint`'s existing
-  path-building pattern.
-- **Phase 2.1** (internal/config/config.go): removed
-  Description/Role/Tags/Deployment from `RepoEntry`; updated its doc
-  comment to state membership-only + point to the repo's own config.
-  `validateRepos` needed no change (never validated these fields).
-  cmd/repo.go: `RepoEntry` construction in `runRepoAdd` now only sets
-  Name/Address/Local/Dependencies; `reposEqual` simplified to compare only
-  the fields that remain (Name/Address/Local/Provider/Dependencies via
-  stringSlicesEqual).
-- **Phase 2.3** (cmd/repo.go `runRepoList` + cmd/plan.go `repoRoster`):
-  `runRepoList` now leaves `repoInfo`'s descriptive fields at zero value
-  and only fills them via `set.DescriptiveMetadata(e.Name)` inside the
-  existing `set.Present(e.Name)` gate — unmaterialized repos still list
-  with membership only, no new side effects. `repoRoster` gained a `root
-  string` param (both call sites already had `root` in scope — updated
-  both), builds a `repo.Set` via `repo.New(cfg, root, repoGit)` (same
-  `repoGit` package var already used in cmd/repo.go, cmd/storefile.go,
-  cmd/knowledge.go) and calls the same `DescriptiveMetadata` resolver per
-  repo, falling back to empty strings on any resolution error or absent
-  metadata — mirrors `runRepoList`'s fallback exactly. Updated
-  `repoRoster`'s doc comment (previously said "carries config-owned
-  identity only", no longer true).
-- Watch-item from analyze step resolved: confirmed `yaml.Unmarshal` (not
-  strict/KnownFields mode) in internal/config/config.go, so this repo's own
-  `.spektacular/config.yaml` (which still has the old fields on its `docs`
-  entry) continues to load fine — the now-unknown YAML keys are silently
-  ignored, no migration needed, matching the plan's explicit no-migration
-  stance. Did not touch this repo's own config.yaml.
-- `go build ./...` (all production code) passes clean. Test files
-  (internal/config/config_test.go, cmd/repo_test.go) have EXPECTED compile
-  errors from the removed RepoEntry fields — confirmed via `go vet ./...`,
-  these are exactly the sites the plan's Test changes sections named; test
-  step is next and owns fixing them.
-- Did NOT touch `internal/project/init.go:58` or `cmd/knowledge.go:182`
-  (both build `RepoEntry{Name: cfg.Name, Local: "."}`, metadata-free
-  already) — both still compile and are behaviorally unaffected, per the
-  plan's explicit note that these callers must keep working unchanged.
-
-## Test step (Phases 2.1 + 2.2 + 2.3)
-
-- Delegated to sub-agent, covering all 3 phases together since they landed
-  together. Fixed internal/config/config_test.go's
-  TestToYAMLFile_ReposRoundTrip (membership-only fields now). Fixed +
-  extended cmd/repo_test.go (project config asserted to carry NO
-  descriptive keys at all via generic-map unmarshal; TestRepoList rewired
-  to source metadata from a materialized repo's own repo.yaml; added
-  TestRepoList_SameRepoAcrossTwoProjectsSeesOneEditedDescription for the
-  "two projects, one repo, one edit" success metric). Added
-  cmd/plan_test.go coverage for repoRoster (materialized-with-metadata,
-  unmaterialized-name-only). Added internal/repo/set_test.go coverage for
-  DescriptiveMetadata (materialized+readable, unmaterialized-no-git-calls,
-  missing repo.yaml, corrupt repo.yaml, unregistered name — all absent
-  cases confirmed non-error).
-- Independently re-verified: `go build ./...`, `go vet ./...`, `go test
-  ./... -count=1` all pass clean across every package. Also spot-checked
-  `TestDiscoveryAndArchitectureStepsRenderRepoRoster` (internal/steps/plan)
-  passes unchanged, exactly as the plan predicted (roster shape untouched,
-  only its data source changed).
-- No new behavioral bugs found this round (unlike Phase 1.2's blank-on-omit
-  bug) — sub-agent confirmed production code behavior matched exactly.
-
-## Verify step (Phases 2.1 + 2.2 + 2.3)
-
-- All green: build, vet, targeted test runs per phase, full suite (18
-  packages, zero regressions). Independently double-checked
-  `TestRepoList_ReportsRegisteredReposWithMetadataAndRoots`
-  (cmd/repo_test.go:276-330) directly and thoroughly covers Phase 2.3's
-  "listing shows merged view" + "unmaterialized lists without metadata,
-  zero git calls" criteria for `repo list` itself (not just repoRoster) —
-  confirmed via direct read, includes explicit `require.Zero(t,
-  git.calls, ...)`.
-- All 10 acceptance criteria across the 3 phases confirmed covered by
-  passing tests (2 for 2.1, 3 for 2.2, 5 for 2.3).
-
-## Update_plan step (Phases 2.1 + 2.2 + 2.3)
-
-- Flipped all 3 phase headings + all 10 acceptance criteria to [x] in one
-  edit pass (implemented/tested/verified together). Verified via re-read.
-- Only Phases 3.1, 3.2 (docs, target repo: spektacular-website) remain.
-
-## Update_changelog step (Phases 2.1 + 2.2 + 2.3)
-
-- Appended 3 separate changelog entries (one per phase, distinct file
-  lists) to plan.md. No knowledge-capture offer — the yaml.Unmarshal
-  non-strict-mode discovery is standard library behavior, not a
-  project-specific convention worth a KB entry.
-- 2 phases remain: 3.1, 3.2 (both docs, target repo: spektacular-website,
-  resolved root ../spektacular-website relative to this repo, i.e.
-  /home/nicj/code/github.com/jumppad-labs/spektacular-website). These two
-  should also land together per the plan's sequencing note (3.1's new
-  repos ConfigKey cross-links to 3.2's new page; landing 3.1 alone leaves
-  a dangling link).
-- All Go/CLI work for this plan (Milestones 1 and 2) is now complete.
-  Milestone 3 (docs) is the only remaining work.
-
-## Analyze step (Phases 3.1 + 3.2, analyzed together — docs repo)
-
-- Current phase per FSM: 3.1 (Low). Analyzed together with 3.2 (Medium)
-  since they must land together (3.1's new repos ConfigKey cross-links to
-  3.2's page).
-- docs repo confirmed materialized at
-  /home/nicj/code/github.com/jumppad-labs/spektacular-website (no fetch
-  needed).
-- configuration.mdx (193 lines) confirmed current shape: frontmatter
-  (layout/title/description), imports (Hero, Section, ConfigurationKeys,
-  ConfigKey, CtaBanner, Button), Hero, one Section ("Where configuration
-  lives"), one ConfigurationKeys block ("Top-level keys", 8 ConfigKey
-  entries: command/agent/spec_trigger_threshold/debug/spec/plan/changelog/
-  knowledge), an Example Section with a full YAML sample, a closing
-  CtaBanner. Confirmed: NO repos: documentation exists anywhere on this
-  page today (matches plan's discovery finding) — top-level-keys prose
-  says "Seven top-level sections" (line ~35-37), needs updating to eight
-  once repos is added.
-- ConfigKey.astro props confirmed: name (string), type? (string),
-  defaultValue? (string, rendered via set:html so HTML like <code> tags
-  work), slot for body prose.
-- Nav.astro confirmed: "Resources" dropdown children array (lines 12-19)
-  currently has 3 entries (Configuration /configuration/, Extending
-  /extending/, Debugging /debugging/) — Phase 3.2 adds a 4th entry
-  "Repository Configuration" -> /repo-configuration/ immediately after
-  "Configuration", per the plan.
-- Plan's own Phase 3.1 Content example (already in plan.md, read in full
-  at read_plan) gives the exact ConfigKey block to add for `repos`; Phase
-  3.2's Content outline gives the exact page structure (Hero, Section
-  "Where repository configuration lives", ConfigurationKeys "Descriptive
-  metadata" with description/tags/role/deployment ConfigKeys,
-  ConfigurationKeys "Knowledge and changelog" cross-referencing existing
-  docs rather than duplicating).
-- No mismatches found — analysis complete for both phases.
-
-## Implement step (Phases 3.1 + 3.2, docs repo)
-
-- **Phase 3.1**: configuration.mdx — updated "Seven top-level sections" →
-  "Eight...", added `repos` ConfigKey block (membership fields only,
-  cross-links to /repo-configuration/) after the `knowledge` ConfigKey,
-  before `</ConfigurationKeys>`. Matches plan's own Content example
-  verbatim.
-- **Phase 3.2**: new src/pages/repo-configuration.mdx, following
-  configuration.mdx's exact structural pattern (Hero, Section "Where
-  repository configuration lives", ConfigurationKeys "Descriptive
-  metadata" with description/role/tags/deployment ConfigKeys,
-  ConfigurationKeys "Knowledge and changelog" cross-referencing
-  /knowledge-base/ and /configuration/ rather than duplicating, Example
-  Section with full repo-level YAML sample, closing CtaBanner). Added Nav
-  entry "Repository Configuration" -> /repo-configuration/ in the
-  Resources dropdown, right after "Configuration".
-- Fixed a dead-anchor mistake during drafting: initially linked to
-  `/configuration/#changelog`, but ConfigKey.astro/ConfigurationKeys.astro
-  render no `id` attributes, so any `#fragment` would be dead. Changed to
-  a plain page link with descriptive prose instead.
-- Verified: `npx astro check` — 0 errors, 0 warnings (pre-existing
-  unrelated deprecation hints only). `npm run build` — succeeds, generates
-  `/repo-configuration/index.html` among 12 pages. No custom lint script
-  exists beyond these two (confirmed via Makefile + package.json) — these
-  are the full set of build-time guards per the plan's Testing Approach.
-- **Unrelated discovery, NOT caused by this session**: the docs repo's own
-  `.spektacular/config.yaml` is missing from the working tree (git shows it
-  as deleted, no corresponding recent mtime — pre-existing before this
-  session started) and `.spektacular/repo.yaml` exists but is untracked,
-  dated 2026-08-13 15:14 (before this session's work began) with default
-  knowledge/changelog config and no descriptive metadata. Confirmed via
-  git history/mtimes that nothing this session ran (plan file read/write,
-  Write/Edit on MDX/Nav files, npx astro check, npm run build) touches
-  either file. Left entirely untouched — out of scope for plan 000042 and
-  not this session's to resolve; flagging here so it isn't mistaken for
-  something this phase caused.
-
-## Test step (Phases 3.1 + 3.2)
-
-- No test authoring needed — per plan.md's Testing Approach, docs changes
-  are verified by the site's existing build-time guards, not new
-  automated content tests. Both guards (`npx astro check`, `npm run
-  build`) already ran clean during the implement step. No sub-agent
-  delegated since there is no test code to write.
-
-## Verify step (Phases 3.1 + 3.2)
-
-- All green: astro check (0 errors/warnings), npm run build (succeeds,
-  dist/repo-configuration/index.html present, 17150 bytes). All 5
-  acceptance criteria (2 for 3.1, 3 for 3.2) confirmed independently by a
-  sub-agent via direct file/grep verification, not just trust in the
-  implement step's own claims.
-- Sub-agent independently re-surfaced the same docs-repo
-  config.yaml/repo.yaml anomaly noted during implement — good
-  corroboration it's real. Reminder for the update_repo_changelog /
-  final-summary step: do NOT stage or commit anything under the docs
-  repo's own `.spektacular/` directory; only src/pages/configuration.mdx,
-  src/pages/repo-configuration.mdx, src/components/Nav.astro are this
-  plan's actual changes there.
-
-## Update_plan step (Phases 3.1 + 3.2)
-
-- Flipped both phase headings + all 5 acceptance criteria to [x]. All 7
-  phases across the plan are now checked.
-
-## Update_changelog step (Phases 3.1 + 3.2) — final phases
-
-- Appended 2 changelog entries (Phase 3.1, 3.2) to plan.md.
-- Knowledge-capture offered and accepted (ConfigKey/ConfigurationKeys
-  render no id attributes, dead-anchor gotcha) but the WRITE is BLOCKED:
-  docs repo's own .spektacular/config.yaml is missing (the pre-existing
-  anomaly), so `spektacular knowledge write` can't target it — fails with
-  "no config to load" when run from docs repo, and `docs` is not a valid
-  `scope` name when run from here (only `"project"`, which resolves to
-  THIS repo, not the docs member repo). User chose: skip it, move on —
-  do NOT attempt further workarounds. Scratch file at
-  .spektacular/tmp/config-key-components-render-no-anchor-ids.md was
-  removed. This is NOT a blocker for the plan itself; only the optional
-  knowledge-capture step was skipped.
-- 0 unchecked phases remain (`grep -c "^#### - \[ \] Phase"` = 0). All 7
-  phases across 3 milestones are complete, tested, and verified. This was
-  the last phase — advancing to update_repo_changelog next.
-
-## Update_repo_changelog step
-
-- Prepended `## 000042_repo-self-describing-metadata` release-note section
-  to both affected repos' root CHANGELOG.md: this repo (spektacular) and
-  the docs repo (spektacular-website, confirmed root via `go run . repo
-  list`, which still worked fine despite docs's missing config.yaml —
-  good live confirmation our own absence-handling works as designed).
-  Both written for a user audience, no file paths/package names.
-
-## Test_plan step
-
-- Plan's own Testing Approach explicitly states all 3 success metrics are
-  covered by automated behavioural tests, none manual. Wrote the "none
-  required" explicit-state test-plan.md via plan file write. Confirmed via
-  re-read.
-
-## Update_feature_changelog step
-
-- Wrote central changelog record (000042_repo-self-describing-metadata.md)
-  to this repo's changelog store: What was built / Why it matters /
-  Deviations (the Phase 1.2 blank-on-omit bug, found+fixed, only real
-  deviation).
-- Derived one entry for the docs repo (affected per plan's Files changed
-  prefixes: all Phase 3.1/3.2 files were docs:-prefixed) via `changelog
-  file write ... --repo docs --from ...`, with the required reference
-  line and repo-scoped What changed/Why it matters/Deviations. Confirmed
-  written at
-  spektacular-website/.spektacular/changelog/spektacular/000042_repo-self-describing-metadata.md
-  with correct front-matter provenance (project/spec/plan stamps).
-- Notable: this write succeeded even though the docs repo's own
-  .spektacular/config.yaml is missing (the pre-existing anomaly) — the
-  changelog write path resolves independently of the descriptive-metadata
-  resolver we built this session, so it wasn't blocked by the same issue
-  that blocked the knowledge-capture write earlier.
-- No repos other than spektacular (central, already done) and docs
-  (derived, just done) were affected — nothing else to derive.
-
-## Reconcile_spec step
-
-- Spec had all 18 checkboxes (9 Requirements + 9 Acceptance Criteria)
-  still unchecked despite frontmatter status:completed — same
-  contradiction flagged at read_plan, now resolved by actually judging
-  each against the plan's Changelog record. All 18 judged Satisfied
-  (direct 1:1 mapping to phase entries, no partial/speculative matches).
-  Flipped all to [x], wrote via spec file write, confirmed via re-read
-  (18/18 [x]).
-
-## Workflow finished
-
-All 7 phases across 3 milestones complete, tested, verified, checked off.
-Plan changelog, central feature changelog, docs-repo derived changelog,
-both repo-level CHANGELOG.md files, test-plan.md, and spec reconciliation
-all written. Session complete.
-
-## Review learnings
-
-(none yet)
+# Implementation Context: 000043_flipped-interaction-spec-interview
+
+## Workflow state
+
+- First-phase invocation: plan.md has no `## Changelog` section yet. Pick up at Phase 1.1.
+- Plan document frontmatter says `status: completed`/`closed_date: 2026-08-14`, but this is stale/incorrect — every phase checkbox in `## Milestones & Phases` is unchecked and nothing from this plan exists in the codebase (confirmed: no `interview` step in `internal/steps/spec/steps.go`, no `templates/steps/spec/00b-interview.md`). Treat the plan as not-yet-implemented; disregard the frontmatter status.
+
+## Drift check findings (accepted, not fixed in plan doc)
+
+User chose "proceed with mismatches noted" rather than editing the plan. Two real gaps in Phase 1.2, both in `cmd/spec.go`:
+
+1. `runSpecNew` is actually at line 149, not the plan's claimed ~229-238.
+2. `internal/repo` is NOT imported in `cmd/spec.go`, and there is no `repoGit`/`GitRunner` value in scope there at all (it's local to `cmd/plan.go` only). When implementing Phase 1.2's `wf.SetData("repos", repo.Roster(cfg, root, repoGit))` calls in `cmd/spec.go`, will need to add the `internal/repo` import and construct/wire an equivalent `GitRunner` value into scope in both `runSpecNew` and `runSpecGoto`.
+
+All other drift-check findings across Phases 1.1, 1.3, 2.1, 2.2, 2.3, 3.1, 3.2 were MATCH or trivial line-number drift (off by a few lines) — not blocking, no action needed beyond re-reading files fresh when editing rather than trusting exact plan line numbers.
+
+## Spec coverage
+
+Verified during Step 3.5: every requirement and acceptance criterion in the spec (000043_flipped-interaction-spec-interview.md) has corresponding coverage in plan.md's Milestones & Phases. No descoped items.
+
+## Phase 1.1 analysis (confirmed before implementing)
+
+- `internal/steps/spec/steps.go` `Steps()` (lines 25-38) confirmed exact: 10 steps, `new` at Src `["start"]`, `overview` at Src `["new"]`. Plan of action: insert `{Name: "interview", Src: []string{"new"}, Dst: "interview", Callback: interview()}` between them; change `overview`'s Src to `["interview"]`.
+- `new()` (steps.go:68-99) calls `writeStep("new", "overview", "steps/spec/00-new.md", ...)` twice (dry-run branch line 71, and real branch line 97) — both need their `"overview"` nextStep arg changed to `"interview"`.
+- `overview()` (steps.go:101-105) confirmed exact one-line `writeStep(...)` shape — `interview()` will follow the identical shape.
+- `templates/steps/spec/00-new.md` confirmed: `next: overview` at line 3, goto call `{{command}} spec goto --data '{"step":"overview"}'` at line 20 — both need to become `interview`.
+- No test enforces sequential filename numbering (confirmed via grep across `internal/`, `templates/*.go`) — templates are referenced by explicit path in `steps.go` and by explicit lists in `templates/work_files_test.go` / `templates/context_directive_test.go`. Safe to add `templates/steps/spec/00b-interview.md` without renumbering 01-09.
+- `templates/context_directive_test.go`'s `TestContextDirectivePresent` walks the directory via `fs.WalkDir` and asserts the context-directive marker on every non-terminal template not in `exemptFromContextDirective` (currently only `00-new.md`). `00b-interview.md` will be auto-covered by the walk as long as it carries the standard directive footer — no test file needs editing for this, and the `>= 30` floor check won't break.
+- `templates/work_files_test.go`'s `TestSpecPlanGatheringStepsReferenceWorkDir` (line ~23-36) has an explicit `specGathering` slice listing `01-overview.md` through `07-non_goals.md` — per Phase 1.3 of the plan, this needs `"steps/spec/00b-interview.md"` added to it explicitly (unlike the context-directive test, this one is not a directory walk).
+
+## Phase 1.1 implementation (done)
+
+- `internal/steps/spec/steps.go`: inserted `interview` step in `Steps()` between `new` and `overview`; changed `overview`'s Src to `["interview"]`; changed both of `new()`'s `writeStep(...)` calls (dry-run branch and real branch) to target `"interview"` instead of `"overview"`; added `interview()` function following `overview()`'s exact one-line shape, pointing at new template `steps/spec/00b-interview.md`.
+- `templates/steps/spec/00-new.md`: `next: overview` → `next: interview` in frontmatter; goto call and surrounding prose updated to reference `interview`.
+- New `templates/steps/spec/00b-interview.md`: Flipped Interaction structure (stated goal, adaptive questions, explicit stopping condition, arXiv:2302.11382 citation), writes synthesized findings (not a transcript) to `.spektacular/work/{{spec_name}}/interview.md`, standard context-directive footer. Deliberately does NOT yet include repo-roster/`{{#repos}}` content — that's Phase 1.2's job per context.md; `interview()`'s Extra arg stays `nil` until then.
+- Verified: `go build ./...` clean. `go test ./templates/...` passes (confirms `TestContextDirectivePresent`'s directory walk picked up the new template correctly with exactly one directive marker). `go test ./internal/...` has exactly 2 expected failures — `TestStepsOrderMatchesExpected` and `TestFSMWalkFromNewToFinished` in `internal/steps/spec/steps_test.go` — both asserting the OLD 10-step order without `interview`. These are Phase 1.3's job to fix (per context.md's Phase 1.3 notes: add `"interview"` to both tests' expected slices). No other test regressed.
+- Confirmed no test enforces filename sequencing — `00b-interview.md` naming is safe, no renumbering needed.
+
+## Phase 1.1 test step (done — no new test written, verified via sub-agent)
+
+Delegated to a sub-agent per `follow-test-patterns`. Findings, verified concretely:
+- FSM-order tests (`TestStepsOrderMatchesExpected`, `TestFSMWalkFromNewToFinished` in `internal/steps/spec/steps_test.go`) intentionally left failing — updating them is explicitly Phase 1.3's job. Not touched.
+- `interview()` is a trivial one-line `writeStep(...)` wrapper identical in shape to 6 of 7 sibling step callbacks that have NO dedicated unit test (only `overview()` has one, a leftover from early development never replicated for siblings). No consistent per-callback testing convention exists to follow, so no `TestInterviewStepRendersInstruction` was invented.
+- `templates/work_files_test.go`'s `TestSpecPlanGatheringStepsReferenceWorkDir` correctly does NOT need `00b-interview.md` added — that template isn't a numbered section-drafting step (it writes `interview.md`, not a `## <Section>` spec section), so it's out of scope for that specific test regardless of phasing.
+- `templates/context_directive_test.go`'s `TestContextDirectivePresent` already covers `00b-interview.md` automatically via its `fs.WalkDir` walk — confirmed PASS.
+- No test file written or modified in this step.
+
+## Phase 1.1 verify step (done — found and fixed a plan gap, user-approved)
+
+`make test` initially surfaced 4 failures, not the 2 anticipated by context.md's Phase 1.3 notes. The 2 extra were in `cmd/root_test.go`: `TestSessionLog_AdvancedTrueWhenStateChanges` (subtest "subsequent real step advance") and `TestSessionLog_SameSessionIDAcrossFoundingAndResumedCalls`, both of which hardcode `spec new` → `spec goto --data '{"step":"overview"}'` as a directly-reachable transition (using "overview" incidentally, as a stand-in for "any next reachable step", not testing overview-specific behavior). Verified via sub-agent (stash + test against clean main + pop) that this was a genuine regression from the Phase 1.1 change, not pre-existing.
+
+**This is a real gap in the plan**: context.md's Phase 1.3 notes list `internal/steps/spec/steps_test.go`, `tests/harbor/spec-workflow/tests/test_spec_workflow.py`, and `tests/harbor/spec-workflow/solution/solve.sh` as needing FSM-order updates, but did NOT list `cmd/root_test.go`, which has the same class of hardcoded-step-order fragility. User chose to fix now rather than defer to Phase 1.3.
+
+**Fix applied** in `cmd/root_test.go`:
+- `TestSessionLog_AdvancedTrueWhenStateChanges` (~line 750-776): inserted an extra `goto --data '{"step":"interview"}'` call between `spec new` and the existing `goto overview` call, preserving the test's walk-through-real-steps intent rather than just renaming. This shifted the event count from 3→4 and the asserted event index from `events[2]`→`events[3]` (the test asserts properties of the overview→requirements transition, which is now the 4th event, not the 3rd).
+- `TestSessionLog_SameSessionIDAcrossFoundingAndResumedCalls` (~line 850-854): simple rename, `"overview"` → `"interview"`, since this test only asserts session-ID equality across calls, not the specific step name — no event-count or index shift needed.
+- Verified: `go build ./...` clean, `go test ./cmd/...` passes in full, `go test ./...` (whole repo) now has exactly the 2 originally-expected failures in `internal/steps/spec` and nothing else.
+
+**Remaining note for Phase 1.3**: when that phase runs, be aware `cmd/root_test.go` already got its fix here — do not re-flag it as needing a change, and do not duplicate the `interview` goto insertion.
+
+## Phase 1.1 update_plan step (done)
+
+Checked off Phase 1.1's heading and 3 of 4 acceptance criteria in plan.md. Left the 4th ("step-order and full-workflow-walk unit tests pass with the new step in place") unchecked with an inline note — deliberately deferred to Phase 1.3 per user decision, since fixing those two tests is explicitly that phase's job and they're currently failing by design. Verified the "resumes with findings intact" criterion concretely via sub-agent before checking it: confirmed via `internal/workflow/workflow.go`'s generic `Goto`/`renderStep` (name-agnostic, proven by `TestGotoSameStepReRenders` in `workflow_test.go:87` using arbitrary step names) plus `templates/steps/resume.md`'s directory-glob read-back of `.spektacular/work/{{name}}/*` working files (not a fixed filename list) — both pre-existing, generic mechanisms needed no interview-specific code.
+
+## Phase 1.1 update_changelog step (done)
+
+First `## Changelog` section created in plan.md (appended after `## Out of Scope`), with Phase 1.1's entry. No knowledge-capture offer made — the two candidate discoveries (no filename-numbering test enforcement; `TestContextDirectivePresent`'s auto-covering directory walk) were judged too narrow/plan-specific to clear the durable-and-non-obvious bar.
+
+**User has authorized running through all remaining 7 phases without pausing to ask between each one** (asked once after Phase 1.1, user chose "continue through all phases"). Do not re-ask before each subsequent phase's update_changelog step — loop straight through via `analyze` unless a STOP-on-mismatch condition fires.
+
+## Phase 1.2 implementation (done)
+
+Relocated the repo-roster mechanism and wired it into the spec workflow's interview step:
+- New `internal/repo/roster.go`: `Roster(cfg config.Config, root string, git GitRunner) []map[string]any` — verbatim body of the old `cmd/plan.go` `repoRoster`, now taking `git` as an explicit param instead of closing over the package-level `repoGit` var (since `cmd/spec.go` needed its own call site too).
+- `cmd/plan.go`: removed `repoRoster`, both call sites (`runPlanNew`, `runPlanGoto`) now call `repo.Roster(cfg, root, repoGit)`. Removed now-unused `strings`/`internal/config` imports.
+- `internal/stepkit/stepkit.go`: added `RepoRosterExtra(data workflow.Data) map[string]any`, verbatim body of the old `internal/steps/plan/steps.go` `repoRosterExtra`, placed after `RenderTemplate`.
+- `internal/steps/plan/steps.go`: removed `repoRosterExtra`; `discovery()`/`architecture()` now call `stepkit.RepoRosterExtra(data)`.
+- `internal/steps/spec/steps.go`: `interview()`'s Extra arg changed from `nil` to `stepkit.RepoRosterExtra(data)`.
+- `cmd/spec.go`: added `internal/repo` import; added `wf.SetData("repos", repo.Roster(cfg, root, repoGit))` in both `runSpecNew` (after `wf := workflow.New(...)`, before the `extraData` loop) and `runSpecGoto` (same placement pattern as `cmd/plan.go`'s `runPlanGoto`). This resolved the drift-check gap accepted at read_plan (missing import + no repoGit in scope) — build succeeded immediately once `repoGit` (a package-level var already in `package cmd` via `cmd/repo.go`) was referenced, no additional wiring needed since it's same-package.
+- `templates/steps/spec/00b-interview.md`: added a `{{#repos}}...{{/repos}}`/`{{^repos}}` block (adapted from `templates/steps/plan/02-discovery.md`) plus prose instructing the interview to ask a cross-repo question — shaped by each other repo's own role/description, not generic — when the feature reads as focused on one repo and more than one repo is registered.
+
+**Test relocation** (required to keep the codebase compiling after moving `repoRoster`, not new test authoring): `cmd/plan_test.go`'s two direct-unit tests of the old `repoRoster` (`TestRepoRoster_MaterializedRepoReportsOwnMetadata`, `TestRepoRoster_UnmaterializedRepoReportsNameOnly`) moved to new `internal/repo/roster_test.go` as `TestRoster_MaterializedRepoReportsOwnMetadata`/`TestRoster_UnmaterializedRepoReportsNameOnly`, reusing `set_test.go`'s existing `writeRepoConfig` helper instead of the removed `cmd`-package-local `writeDirRepoFootprint`. Removed now-unused `os`/`internal/config` imports from `cmd/plan_test.go`.
+
+**Bug caught and fixed during relocation**: the relocated test initially failed — `writeRepoConfig(t, target, config.RepoConfig{...})` (a bare struct literal) fails `RepoConfigFromYAMLFile`'s `cfg.Validate()` because `Knowledge`/`Changelog` sub-configs are zero-value instead of defaulted. Fixed by constructing via `config.NewDefaultRepoConfig()` first and overriding only the descriptive fields, matching the original `cmd/plan_test.go` test's construction pattern (`writeDirRepoFootprint` also called `NewDefaultRepoConfig()` internally) which I'd initially dropped when simplifying to use `writeRepoConfig`. Confirmed fixed and passing before moving on.
+
+Verified: `go build ./...` clean, `go test ./...` has exactly the 2 expected `internal/steps/spec` failures (deferred to Phase 1.3), nothing else broke — plan-workflow's own regression tests (`TestDiscoveryAndArchitectureStepsRenderRepoRoster`, `TestDiscoveryAndArchitectureStepsRenderEmptyRegistryFallback`, etc.) pass unmodified, confirming the relocation was behavior-neutral for the plan workflow.
+
+## Phase 1.2 test step (done)
+
+Sub-agent added `renderStepWithData` helper to `internal/steps/spec/steps_test.go` (mirroring `internal/steps/plan/steps_test.go`'s equivalent), plus 3 new tests: `TestInterviewStepRendersRepoRoster`, `TestInterviewStepRendersEmptyRegistryFallback` (table test, 2 cases: empty roster, absent key), `TestInterviewStepDirectsCrossRepoQuestion` (asserts stable substrings from the actual template prose). All pass. Regression check for criterion 3 (plan workflow's repo-roster rendering unchanged) confirmed via `go test ./internal/steps/plan/... ./internal/repo/... ./internal/stepkit/...` — all pass. Verified directly (not just trusting sub-agent report): `go build ./...` clean, full `go test ./...` has only the 2 expected `internal/steps/spec` failures.
+
+## Phase 1.2 verify step (done — clean)
+
+`go build ./...` pass, `make test` fails only the 2 expected `internal/steps/spec` tests (nothing else), `make lint` (`go vet`) pass. No new gaps found this time (unlike Phase 1.1's cmd/root_test.go surprise).
+
+## Phase 1.2 update_plan step (done)
+
+Checked off Phase 1.2's heading and all 3 acceptance criteria in plan.md — all genuinely verified.
+
+## Phase 1.2 update_changelog step (done)
+
+Appended Phase 1.2's changelog entry under the existing `## Changelog` section. Offered knowledge capture for the RepoConfig-construction gotcha discovered during test relocation; user accepted. Saved via spek-knowledge to project scope, `gotchas/repoconfig-must-start-from-default.md`.
+
+6 phases remain (1.3, 2.1-2.3, 3.1-3.2). User already authorized running through all phases without re-asking (see earlier note) — proceeding straight to Phase 1.3 via `analyze`.
+
+## Phase 1.3 implementation (done)
+
+- `internal/steps/spec/steps_test.go`: added `"interview"` to `TestStepsOrderMatchesExpected`'s expected slice and `TestFSMWalkFromNewToFinished`'s expectedStates slice, both between `"new"` and `"overview"`. Both tests (and the whole suite) now pass — the 2 previously-deferred failures from Phase 1.1 are resolved.
+- `tests/harbor/spec-workflow/tests/test_spec_workflow.py`: added `"interview"` to `EXPECTED_STEP_ORDER`; added new `TestInterviewStep` class (mirrors `TestNewStep`'s shape: `test_step_completed`, `test_tool_called`) after `TestNewStep`; updated `TestOverviewStep.test_tool_called` (stale comment/assertion said "reached automatically after spec new" — now correctly asserts `"spec goto interview"` was called, since `overview` is no longer auto-reached from `new`).
+- `tests/harbor/spec-workflow/solution/solve.sh`: added explicit `spektacular spec goto --data '{"step":"interview"}'` call before the step loop; also added `overview` to the loop's step list (it was previously omitted from the loop because it was auto-reached from `new` — no longer true now that `interview` sits between them).
+- `templates/skills/workflows/spek-new/SKILL.md`: updated the stale "(the `overview` step)" reference to "(the `interview` step)"; added a new "# The interview step" section covering what it does, repo-roster awareness + cross-repo question, the stopping condition, the working-file convention, and mid-interview resume behavior.
+- `templates/work_files_test.go`: added `"steps/spec/00b-interview.md"` to `TestSpecPlanGatheringStepsReferenceWorkDir`'s `specGathering` slice, per the plan's explicit instruction (the assertion is a substring check for `.spektacular/work/{{spec_name}}/`, which the interview template already satisfies).
+
+**Deliberately not touched**: `.claude/skills/spek-new/SKILL.md` and `.bob/skills/spek-new/SKILL.md` — these are git-tracked but *generated* installed copies of the template (rendered with `{{command}}` → `go run .`), refreshed only by an explicit user-initiated `go run . init <agent>` re-run, per AGENTS.md's own documented convention ("Hand edits will not survive the next init"). Confirmed no Makefile target regenerates them and no prior plan's changelog shows a precedent for force-regenerating them mid-implementation. Editing only the source template is correct.
+
+**cmd/root_test.go**: NOT touched in this phase — already fixed during Phase 1.1's verify step (the two `TestSessionLog_*` tests), which context.md's original Phase 1.3 notes hadn't anticipated but which the user chose to fix immediately rather than deferring. No duplicate work needed here.
+
+Verified: `go build ./...` clean, `go test ./...` fully green (zero failures anywhere, first phase where that's true), `go vet ./...` clean.
+
+## Phase 1.3 test step (done)
+
+No new production code in this phase (the changes ARE test/doc updates), so delegated a verification-only pass instead of new test authoring. All 3 acceptance criteria confirmed PASS via direct file inspection. `go build ./...` clean, `go test ./...` FULLY green (zero failures anywhere — first phase where that's true). Python (`py_compile`) and bash (`bash -n`) syntax checks both clean on the harbor test/solve files.
+
+## Phase 1.3 verify step (done — all green)
+
+`go build`, `make test`, `make lint` all clean, zero failures.
+
+## Phase 1.3 update_plan step (done) — Milestone 1 complete
+
+Checked off Phase 1.3's heading and all 3 criteria. Milestone 1 (interview mechanics) is fully done: Phases 1.1, 1.2, 1.3 all checked, full test suite green.
+
+## Phase 1.3 update_changelog step (done)
+
+Appended Phase 1.3's changelog entry. No knowledge-capture offer — the one discovery (installed skill copies lag until next init) just restates AGENTS.md's own already-documented convention, not new durable knowledge.
+
+5 phases remain (2.1-2.3, 3.1-3.2). Continuing per prior authorization.
+
+## Phase 2.1 implementation (done)
+
+Replaced each of the 7 section templates' opening "Ask the user: [scripted question]" block with drafting-from-interview instructions (draft from `.spektacular/work/{{spec_name}}/interview.md` + any already-confirmed prior-section working files, present the draft, ask for confirmation or correction), leaving every other existing rule (format rules, altitude boundaries, stakeholder-readability, blackbox-level for acceptance criteria, non-duplication rules, working-file write instruction, context-directive footer) completely untouched:
+- `01-overview.md`: draft 2-3 sentence overview from interview findings.
+- `02-requirements.md`: draft testable behaviours from interview findings.
+- `03-acceptance_criteria.md`: draft pass/fail conditions per requirement (from requirements.md + interview.md).
+- `04-constraints.md`: draft hard constraints from interview findings; also updated the "before accepting no constraints, check common sources" paragraph to check against interview findings first, only asking the user directly for gaps, and to draft-then-confirm an empty section rather than blindly "capture their response."
+- `05-technical_approach.md`: draft technical direction from interview findings; updated "Capture their response, if blank note nothing decided" to "draft the section as saying so plainly" (same treatment).
+- `06-success_metrics.md`: draft success metrics from interview findings; same empty-section treatment.
+- `07-non_goals.md`: adapted the section's PRE-EXISTING "propose inferred non-goals, get explicit confirmation" pattern (this section already had a draft-like flow before this phase) to draft from interview findings as well as prior spec sections; kept the "drafting is not deciding" / explicit-confirmation-required framing intact since it maps directly onto the new model.
+
+Did NOT touch `templates/steps/spec/08-verification.md` (Phase 2.2's job) or `00b-interview.md` (already correct from Phase 1.1/1.2).
+
+Verified: `go build ./...` clean, `go test ./...` fully green including both critical contract tests (`TestContextDirectivePresent`, `TestSpecPlanGatheringStepsReferenceWorkDir`). Confirmed via grep the harbor Python suite asserts nothing about the old "Ask the user"/scripted wording, so no harbor test needed updating for this phase specifically (Phase 2.3 owns the new cross-section-amendment scenario).
+
+## Phase 2.1 test step (done)
+
+New `templates/section_drafting_test.go`: `TestSectionStepsDraftFromInterviewAndConfirm` (iterates all 7 templates, asserts interview.md reference + exact draft-confirm sentence present, asserts 6 old scripted-question fragments absent) and `TestInterviewAndVerificationStepsUntouched` (guards 00b-interview.md/08-verification.md don't carry the new marker — scope boundary check). Verified directly: build clean, new tests pass, full suite green.
+
+## Phase 2.1 verify step (done — all green)
+
+## Phase 2.1 update_plan step (done)
+
+## Phase 2.1 update_changelog step (done). 4 phases remain (2.2, 2.3, 3.1, 3.2).
+
+## Phase 2.2 implementation + test (done — wrote both directly, no delegation needed)
+
+Added identical "**If the user rejects this draft.**" paragraph to all 8 gathering-step templates (00b-interview.md, 01-overview.md through 07-non_goals.md), positioned after the goto command and before the context-directive footer's `---` separator. Exact wording per context.md's Phase 2.2 spec, verbatim across all 8. Verified via grep: exactly 1 occurrence in each of the 8, 0 in 08-verification.md.
+
+New `templates/rejection_repair_directive_test.go`: `TestRejectionRepairPresent` (iterates all 8 templates via a fixed list — not a directory walk, since 08-verification.md and other non-gathering templates must NOT carry this marker — asserts marker present exactly once) and `TestRejectionRepairAbsentFromVerification` (guards 08-verification.md doesn't carry it, scope boundary check mirroring Phase 2.1's `TestInterviewAndVerificationStepsUntouched` pattern).
+
+Verified: build clean, new tests pass, full suite green (including Phase 2.1's tests — confirmed the two rejection/draft markers are distinct strings and don't interfere with each other).
+
+## Phase 2.2 test step (done)
+
+Re-checked Phase 2.2's 4 acceptance criteria against plan.md. Criterion 3 ("edits to more than one section, or none, not bound to exactly one change") wasn't fully covered by the initial paragraph wording, so strengthened all 8 templates with one additional sentence: "The follow-up conversation may surface edits to more than one section, or conclude that nothing needs to change after all — do not assume the fix is exactly one edit to exactly the section under review." Verified via grep: exactly 1 occurrence in each of the 8 files. Existing `rejectionRepairMarker` test string unaffected (it's a substring that's still present unchanged). Full suite re-verified green after the strengthening.
+
+All 4 criteria now covered: (1) ask-why-first — original paragraph; (2) cross-section editing, no new confirmation gate — original paragraph; (3) unbounded edit count — new sentence; (4) template unit tests — `templates/rejection_repair_directive_test.go` written during implementation.
+
+## Phase 2.2 verify + update_plan steps (done — all green, all 4 criteria checked)
+
+## Phase 2.2 update_changelog step (done). 3 phases remain (2.3, 3.1, 3.2).
+
+## Phase 2.3 implementation (done) — resolved the solve.sh Open Question
+
+**Open Question resolved**: `tests/harbor/spec-workflow/tests/test.sh` just runs `pytest test_spec_workflow.py` — it never invokes `solution/solve.sh`. No `task.toml` or other harbor config references `solve.sh` either. `solve.sh` is a Harbor-framework convention: a standalone "known-good solution" the framework can run independently to sanity-check the task setup, entirely separate from the live-agent-driven pytest suite. Conclusion: `solve.sh` does NOT need to demonstrate the cross-section-amendment scenario (a scripted non-interactive CLI walkthrough has no "rejection" to script against) — noted this explicitly as a comment in solve.sh rather than leaving it silently unaddressed. This resolves the plan's stated Open Question in favor of the "note as agent-only" fallback it already named.
+
+**Scenario designed**: Added a "A rejection that reveals a missing requirement" section to `instruction.md` — scripts the test-driving agent to reject the Constraints draft, explain (when asked why) that token revocation must be supported (a Requirements-level behavior, not a Constraints-level boundary), and expect the agent to fold this into the already-confirmed Requirements working file without re-opening/re-confirming Requirements in the moment.
+
+**Assertions added**: New `TestCrossSectionAmendment` class in `test_spec_workflow.py` (after `TestConstraintsStep`): `test_requirements_mentions_revocation` (checks final spec's Requirements section for "revoc", via the persisted assembled spec — NOT the working files, which are deleted by `08-verification.md`'s cleanup step before the harness ever gets to inspect them) and `test_requirements_not_reconfirmed_after_constraints` (asserts at most one `spec goto requirements` call in the transcript, proving no fresh confirmation gate reopened for the amended section).
+
+**Files changed**: `tests/harbor/spec-workflow/instruction.md`, `tests/harbor/spec-workflow/tests/test_spec_workflow.py`, `tests/harbor/spec-workflow/solution/solve.sh` (comment only, functionally unchanged).
+
+Verified: `go build`/`go test ./...` unaffected (pure harbor-suite work, no Go code touched) and fully green; Python syntax (`py_compile`) and bash syntax (`bash -n` on both solve.sh and test.sh) all clean.
+
+## Phase 2.3 test step (done — no delegation needed, test authoring already done during implementation)
+
+Re-verified all 3 criteria against plan.md: (1) adaptive-interview-opens — already covered by Phase 1.3's `TestInterviewStep` + updated `TestOverviewStep.test_tool_called`; (2) cross-section-amendment observable — new `TestCrossSectionAmendment` (2 assertions); (3) per-section content checks unaffected — confirmed I didn't touch any existing `test_section_has_content`/`test_content_is_relevant` assertions across the other step classes. Python syntax re-confirmed clean.
+
+## Phase 2.3 verify + update_plan steps (done) — Milestone 2 complete
+
+Milestones 1 and 2 fully done (Phases 1.1-2.3). Only Milestone 3 remains: docs site work in the SEPARATE spektacular-website repo (local path `../spektacular-website`, confirmed via `go run . repo list` earlier by a research sub-agent).
+
+## Phase 2.3 update_changelog step (done). Knowledge capture: harbor working-file-cleanup-timing gotcha saved (project scope, gotchas/harbor-working-files-deleted-before-inspection.md).
+
+2 phases remain: 3.1, 3.2 — BOTH entirely in the separate `docs` repo (spektacular-website), confirmed materialized locally at /home/nicj/code/github.com/jumppad-labs/spektacular-website via `go run . repo list`.
+
+## Phase 3.1 implementation (done — in the docs repo, /home/nicj/code/github.com/jumppad-labs/spektacular-website)
+
+**Deviation from context.md's Phase 3.1 notes**: `PipelineStage.astro` only supports a default slot and `slot="body"` — it does NOT support `slot="example"` (that's `SpecFormat.astro`-only, confirmed by reading the component source). Rather than extend the component (out of scope for a docs-content plan), embedded both example exchanges as plain fenced code blocks directly within the existing `Fragment slot="body"`, matching the site's existing convention of fenced blocks inside body prose.
+
+- `src/pages/how-it-works.mdx` Stage 1 "Specification" body (`Fragment slot="body"`): fully rewritten per plan.md's Content outline — opening line naming Flipped Interaction with prompt-engineering-research attribution, first example exchange (verbatim from the plan's illustrative copy), stopping-condition sentence, cross-repo worked example (verbatim from the plan, linking to `/repo-configuration/`, confirmed that page exists), transition sentence covering draft-and-confirm + rejection-repair, closing spec-worthy-discussion paragraph preserved unchanged.
+- `PipelineNode` sub-text for the "New" step (line ~221) changed from "structured markdown spec template" to "adaptive interview, then drafted sections" (the optional cosmetic tweak, taken).
+- Quick-start Step 3 (lines ~60-76): added one sentence noting the interview happens first, adaptive questions, before section drafting/confirmation.
+
+Verified: `npx astro check` — 0 errors, 0 warnings (3 pre-existing unrelated hints in files I didn't touch: `main.js`/`Shell.astro` `document.execCommand` deprecation notices). `npm run build` succeeds, `how-it-works.mdx` builds to `/how-it-works/index.html` without error, all 12 pages build.
+
+## Phase 3.1 test step (done — no Go tests apply, docs repo verified via its own toolchain)
+
+Re-confirmed all 3 acceptance criteria via grep: "Flipped Interaction" present, "prompt-engineering research" attribution present, cross-repo example present. Matches plan.md's own Testing Strategy note that Phase 3.1/3.2 are verified by npm run build / npx astro check, not this repo's Go suite.
+
+## Phase 3.1 verify + update_plan steps (done — all criteria checked)
+
+## Phase 3.1 update_changelog step (done, used `docs: ` prefix on file path). 1 phase remains: 3.2 (the LAST phase).
+
+## Phase 3.2 implementation + verify (done — in the docs repo)
+
+Added a new `FeatureCard` to `src/pages/index.mdx`'s `FeaturesGrid`, positioned right after "Spec-driven workflow" (chose add-new over reframe, since the existing card is about the overall pipeline, not specifically the interview): icon 💬, title "Flipped Interaction interview", body copy taken verbatim from the plan's content outline illustrative text. `FeatureCard.astro` needed no changes (existing icon/title props sufficient).
+
+Verified: `npx astro check` 0 errors/0 warnings (same 3 pre-existing unrelated hints), `npm run build` succeeds, all 12 pages build including index.mdx. Confirmed via grep the exact title text appears once.
+
+No Go tests apply (docs-only phase, same as 3.1) — docs repo's own toolchain is Phase 3.2's test/verify step per plan.md's Testing Strategy.
+
+## Phase 3.2 update_plan step (done — both criteria checked). ALL 8 phases now complete.
+
+## All 8 phases complete, changelog entries for all 8 written to plan.md's inline ## Changelog section. Confirmed 0 unchecked phases remain via grep.
+
+## update_repo_changelog step (done)
+
+Prepended `### FINAL SUMMARY` block to plan.md's `## Changelog` section (above all 8 per-phase entries) per the update-changelog skill's own lifecycle instructions — the FSM step itself didn't explicitly call for this, but it's the skill's documented final-invocation convention, so did it before writing repo-level changelogs.
+
+Updated BOTH affected repos' root CHANGELOG.md (work spanned two repos): `/home/nicj/code/github.com/jumppad-labs/spektacular/CHANGELOG.md` (CLI/behavior-focused summary) and `/home/nicj/code/github.com/jumppad-labs/spektacular-website/CHANGELOG.md` (docs-page-focused summary, matching that repo's own changelog convention of describing what the pages now say). Both prepended above existing top entry, `## 000043_flipped-interaction-spec-interview` header per plan slug.
+
+## test_plan step (done)
+
+Wrote `test-plan.md` with 3 manual verification procedures, matching plan.md's Testing Approach's 3 "Manual — captured in the implementation test plan" success metrics: (1) vague-starting-point spec quality — real fresh-project session procedure; (2) corrections-decrease-over-time trend — informal longitudinal tracking across next 5-10 real sessions; (3) docs positioning as genuine differentiator — cold-read comprehension check by a second person. Each grounded in the actual implementation (real commands, real file paths, real repo). Confirmed written via plan file read.
+
+## update_feature_changelog step (done)
+
+Wrote central changelog record (`changelog file write 000043_flipped-interaction-spec-interview.md`) grounded in the spec's Overview + plan's `## Changelog` phase entries. Wrote derived entry for the `docs` repo (the only affected registered repo besides the colocated one), via `--repo docs`, with the required "Derived from project..." reference line — confirmed the CLI auto-stamped provenance frontmatter (project/spec/plan) correctly.
+
+## reconcile_spec step (done)
+
+Judged all 26 spec checkboxes (13 Requirements + 13 Acceptance Criteria) against the plan's Changelog phase entries. Checked 23, left 3 unchecked deliberately — all three are genuinely emergent/conversational-quality criteria with no direct e2e proof, conservatively left unchecked per the step's own "if in doubt, leave unchecked" instruction:
+- "Interview questions vary with the answers given" — no test proves two different sessions produce different questions.
+- "Interview ends without exhausting every possible question" — same category, qualitative/emergent.
+- "A single-repo-focused feature prompts a cross-repo question" — the harbor e2e suite's scenario tests cross-section-amendment, not this specific cross-repo-question trigger condition; no direct proof exists.
+
+These three exactly match the plan's own "Deliberate gaps" note in Testing Approach ("not unit-testable prose judgement... covered by... manual review of the actual first real usage") and are exactly the kind of thing the test-plan.md manual procedures (#1 vague-starting-point session, #2 corrections-trend) are meant to observe over real usage. Confirmed final write: 23 checked.
+
+Next: finished step — the terminal step of the implement workflow.

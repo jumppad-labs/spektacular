@@ -125,3 +125,16 @@ func RenderTemplate(templatePath string, data map[string]any) (string, error) {
 	}
 	return mustache.Render(string(tmplBytes), data)
 }
+
+// RepoRosterExtra pulls the registered-repo roster (identity metadata,
+// refreshed from config by the command layer on every invocation) out of
+// workflow data so a step's instruction renders with it embedded — the agent
+// starts already knowing the codebases the project spans, without running a
+// command first.
+func RepoRosterExtra(data workflow.Data) map[string]any {
+	repos, ok := data.Get("repos")
+	if !ok {
+		return nil
+	}
+	return map[string]any{"repos": repos}
+}

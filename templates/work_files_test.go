@@ -22,6 +22,7 @@ func mustReadTemplate(t *testing.T, p string) string {
 // overview step (which drafts no section) does not.
 func TestSpecPlanGatheringStepsReferenceWorkDir(t *testing.T) {
 	specGathering := []string{
+		"steps/spec/00b-interview.md",
 		"steps/spec/01-overview.md",
 		"steps/spec/02-requirements.md",
 		"steps/spec/03-acceptance_criteria.md",

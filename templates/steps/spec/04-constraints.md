@@ -1,6 +1,6 @@
 ## Step {{step}}: {{title}}
 
-Ask the user: Are there any hard constraints or boundaries the solution must operate within?
+Draft the hard constraints and boundaries the solution must operate within, from the interview findings in `.spektacular/work/{{spec_name}}/interview.md` (and this section's own working file, if one already exists from a prior pass). Present the draft to the user and ask them to confirm it or tell you what's wrong.
 
 Examples:
 • Must integrate with the existing authentication system
@@ -23,13 +23,13 @@ Hard rules belong here. Non-binding direction — "use X if convenient", "prefer
 
 (Hard rules about what the feature must *do* — its behaviour — are Requirements, captured in the previous step. Constraints are the hard rules about *how / within what bounds* it is built.)
 
-Capture their response. Before accepting "no constraints", check the most common sources of real boundaries so an empty section is a deliberate choice and not an oversight — ask the user about each that the work might touch:
+Before drafting an empty section, check the most common sources of real boundaries against the interview findings so an empty section is a deliberate choice and not an oversight — if the interview doesn't already rule these out, ask the user about each that the work might touch:
 
 • An **existing system** the work must integrate with or replace (e.g. an existing datastore, file format, or API whose data or shape must be preserved).
 • A **deployment or runtime** boundary (e.g. must run as a single self-contained binary, no separate server process, a fixed runtime or platform).
 • A **compatibility** guarantee (e.g. must not break a public response shape or an existing deployment contract).
 
-If, after checking these, the user confirms there are genuinely none, note that there are no constraints — a blank section is a valid outcome.
+If, after checking these, there are genuinely none, draft the section as empty and say so plainly when presenting it — a blank section is a valid outcome, but the user should still confirm it was a deliberate check, not a skip.
 
 **Format each constraint as its own bullet point** (`- ...`), one hard rule per line, rather than a paragraph running multiple rules together. Write the working file in this shape from the start — it is assembled into the final spec largely as-is.
 
@@ -39,6 +39,7 @@ Once you are satisfied, move to the next step by running the command:
 
 {{config.command}} spec goto --data '{"step":"{{next_step}}"}'
 
+**If the user rejects this draft.** If the user indicates this draft is wrong, ask a follow-up question to understand why before changing anything, the issue may reveal a broader need you didn't surface, or may be a genuine miss on your part, and the follow-up conversation determines which. Apply any resulting changes directly to the working file(s) they belong to, which may include a different section's working file than the one under review; a section amended this way does not need a fresh confirmation step now, the end-of-workflow verification step is where everything, including this change, gets reviewed together. The follow-up conversation may surface edits to more than one section, or conclude that nothing needs to change after all — do not assume the fix is exactly one edit to exactly the section under review.
 
 ---
 

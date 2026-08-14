@@ -92,28 +92,15 @@ func overview() workflow.StepCallback {
 	}
 }
 
-// repoRosterExtra pulls the registered-repo roster (identity metadata,
-// refreshed from config by the command layer on every invocation) out of
-// workflow data so the discovery and architecture instructions render with
-// it embedded — the agent starts every plan already knowing the codebases
-// the project spans, without running a command first.
-func repoRosterExtra(data workflow.Data) map[string]any {
-	repos, ok := data.Get("repos")
-	if !ok {
-		return nil
-	}
-	return map[string]any{"repos": repos}
-}
-
 func discovery() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("discovery", "architecture", "steps/plan/02-discovery.md", data, out, st, cfg, repoRosterExtra(data))
+		return "", writeStep("discovery", "architecture", "steps/plan/02-discovery.md", data, out, st, cfg, stepkit.RepoRosterExtra(data))
 	}
 }
 
 func architecture() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("architecture", "components", "steps/plan/03-architecture.md", data, out, st, cfg, repoRosterExtra(data))
+		return "", writeStep("architecture", "components", "steps/plan/03-architecture.md", data, out, st, cfg, stepkit.RepoRosterExtra(data))
 	}
 }
 

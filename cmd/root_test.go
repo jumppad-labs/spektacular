@@ -757,6 +757,9 @@ func TestSessionLog_AdvancedTrueWhenStateChanges(t *testing.T) {
 		_, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 		require.Equal(t, 0, code)
 
+		_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"interview"}`)
+		require.Equal(t, 0, code)
+
 		_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"overview"}`)
 		require.Equal(t, 0, code)
 
@@ -764,8 +767,8 @@ func TestSessionLog_AdvancedTrueWhenStateChanges(t *testing.T) {
 		require.Equal(t, 0, code)
 
 		events := readSessionLogEvents(t, dir)
-		require.Len(t, events, 3)
-		ev := events[2]
+		require.Len(t, events, 4)
+		ev := events[3]
 		require.NotNil(t, ev.StateBefore)
 		require.Equal(t, "overview", ev.StateBefore.CurrentStep)
 		require.NotNil(t, ev.StateAfter)
@@ -847,7 +850,7 @@ func TestSessionLog_SameSessionIDAcrossFoundingAndResumedCalls(t *testing.T) {
 	_, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing"}`)
 	require.Equal(t, 0, code)
 
-	_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"overview"}`)
+	_, _, code = runRootCmd(t, "spec", "goto", "--data", `{"step":"interview"}`)
 	require.Equal(t, 0, code)
 
 	events := readSessionLogEvents(t, dir)

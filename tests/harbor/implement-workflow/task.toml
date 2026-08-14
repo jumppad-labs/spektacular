@@ -1,0 +1,28 @@
+version = "1.0"
+
+[metadata]
+author_name = "Jumppad Labs"
+author_email = "team@jumppad.dev"
+difficulty_explanation = "Multi-repo CLI workflow requiring the agent to drive the tail of the spektacular implement workflow — authoring a project-level changelog record and one repo-level record per affected member (colocated and external) — through the CLI, without falling back to built-in file tools"
+category = "agent-orchestration"
+tags = ["spektacular", "implement-workflow", "multi-repo", "changelog", "cli"]
+
+[agent]
+timeout_sec = 1200.0
+
+[verifier]
+timeout_sec = 120.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+
+[[artifacts]]
+source = "/app/.spektacular"
+destination = "spektacular"
+
+[[artifacts]]
+source = "/opt/docs-repo/.spektacular"
+destination = "docs-repo-spektacular"

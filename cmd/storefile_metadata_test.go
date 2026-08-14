@@ -52,11 +52,11 @@ func kindFixtures() []kindFixture {
 		{
 			kind:       "changelog",
 			configYAML: "changelog:\n  config:\n    directory: docs/changelog\n",
-			// The CLI-facing name stays flat; on disk the store injects the
-			// project-named namespace folder (writeSpecCommandConfig writes
-			// `name: testproj`) below the CLI surface.
+			// Central (no --repo) writes land flat under the configured
+			// changelog directory; no project subfolder — that is a
+			// repo-routed concern (see repoRoutedStore in cmd/storefile.go).
 			artifactName: "20260709000000-release-notes.md",
-			storeRelPath: filepath.Join("docs", "changelog", "testproj", "20260709000000-release-notes.md"),
+			storeRelPath: filepath.Join("docs", "changelog", "20260709000000-release-notes.md"),
 		},
 	}
 }

@@ -99,11 +99,10 @@ func listFilterFixtures() []listFilterFixture {
 		{
 			kind:       "changelog",
 			configYAML: "changelog:\n  config:\n    directory: docs/changelog\n",
-			// Changelog records live under the project-named namespace folder
-			// (writeSpecCommandConfig writes `name: testproj`); the CLI's
-			// listPath stays "" because the namespace is injected below the
-			// CLI surface.
-			artifactPath: func(name string) string { return filepath.Join("docs", "changelog", "testproj", name) },
+			// Central (no --repo) changelog records live flat under the
+			// configured directory; a project subfolder appears only under a
+			// member repo's changelog store when --repo is used.
+			artifactPath: func(name string) string { return filepath.Join("docs", "changelog", name) },
 			listPath:     "",
 		},
 		{

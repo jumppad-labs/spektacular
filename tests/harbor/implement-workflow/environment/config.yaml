@@ -1,0 +1,21 @@
+name: auth-service
+command: spektacular
+agent: claude
+spec:
+    provider: file
+    id_method: counter
+    config:
+        directory: .spektacular/specs
+plan:
+    provider: file
+    config:
+        directory: .spektacular/plans
+changelog:
+    provider: file
+    config:
+        directory: .spektacular/changelog
+repos:
+    - name: auth
+      local: .
+    - name: docs
+      local: /opt/docs-repo

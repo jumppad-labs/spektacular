@@ -21,6 +21,7 @@ type scopedStore struct {
 	scope    string
 	provider string
 	location string
+	repo     string
 	store    store.Store
 }
 
@@ -55,11 +56,14 @@ type AlwaysAppliedEntry struct {
 	Category string `json:"category"`
 }
 
-// SourceInfo describes one configured knowledge source.
+// SourceInfo describes one configured knowledge source. Repo names the
+// registry repo whose config declared the source; it is empty for
+// project-owned sources.
 type SourceInfo struct {
 	Scope    string `json:"scope"`
 	Provider string `json:"provider"`
 	Location string `json:"location"`
+	Repo     string `json:"repo,omitempty"`
 }
 
 // NewSet resolves the configured knowledge sources into live stores. The
@@ -85,7 +89,8 @@ func NewSet(cfg config.Config, projectRoot string) (*Set, error) {
 				scope:    src.Scope,
 				provider: src.Provider,
 				location: location,
-				store:    store.NewFileStore(location, src.Scope),
+				repo:     src.Repo,
+				store:    store.NewSourceStore(location, src.Scope),
 			})
 		default:
 			return nil, fmt.Errorf("knowledge source %q: provider %q is not supported", src.Scope, src.Provider)
@@ -204,8 +209,13 @@ func (s *Set) List() ([]Entry, error) {
 // in full on every task rather than searched. A scope that lacks a category's
 // directory contributes nothing rather than erroring, so fresh or
 // partially-populated scopes still resolve cleanly.
-func (s *Set) AlwaysAppliedEntries() ([]AlwaysAppliedEntry, error) {
-	return s.readCategories(AlwaysApplied())
+//
+// If repos is non-empty, sources declared by a registered repo are included
+// only when that repo's name appears in repos; project-owned sources (no
+// repo attribution) are always included, since they aren't scoped to any
+// single repo. An empty repos loads every source, unfiltered.
+func (s *Set) AlwaysAppliedEntries(repos ...string) ([]AlwaysAppliedEntry, error) {
+	return s.readCategories(AlwaysApplied(), repos)
 }
 
 // Conventions reads every always-apply convention across every configured
@@ -216,7 +226,7 @@ func (s *Set) AlwaysAppliedEntries() ([]AlwaysAppliedEntry, error) {
 // unchanged. A scope that has no such directory contributes nothing rather than
 // erroring.
 func (s *Set) Conventions() ([]Convention, error) {
-	entries, err := s.readCategories([]string{"conventions"})
+	entries, err := s.readCategories([]string{"conventions"}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -231,9 +241,20 @@ func (s *Set) Conventions() ([]Convention, error) {
 // across every configured scope, in configured scope order then the given
 // category order, tagging each entry with its category. A scope missing a
 // category's directory contributes nothing rather than erroring.
-func (s *Set) readCategories(categories []string) ([]AlwaysAppliedEntry, error) {
+//
+// If repos is non-empty, a scope declared by a registered repo (src.repo
+// set) is skipped unless its repo name appears in repos; scopes with no
+// repo attribution (project-owned) are never filtered out.
+func (s *Set) readCategories(categories []string, repos []string) ([]AlwaysAppliedEntry, error) {
+	repoSet := make(map[string]bool, len(repos))
+	for _, r := range repos {
+		repoSet[r] = true
+	}
 	var entries []AlwaysAppliedEntry
 	for _, src := range s.sources {
+		if len(repoSet) > 0 && src.repo != "" && !repoSet[src.repo] {
+			continue
+		}
 		for _, category := range categories {
 			files, err := listFiles(src.store, category)
 			if err != nil {
@@ -258,7 +279,7 @@ func (s *Set) readCategories(categories []string) ([]AlwaysAppliedEntry, error) 
 func (s *Set) Sources() []SourceInfo {
 	infos := make([]SourceInfo, len(s.sources))
 	for i, src := range s.sources {
-		infos[i] = SourceInfo{Scope: src.scope, Provider: src.provider, Location: src.location}
+		infos[i] = SourceInfo{Scope: src.scope, Provider: src.provider, Location: src.location, Repo: src.repo}
 	}
 	return infos
 }

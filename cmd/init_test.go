@@ -1,15 +1,57 @@
 package cmd
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/jumppad-labs/spektacular/internal/agent"
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/stretchr/testify/require"
 )
+
+// resetInitFlags clears the --name flag on the package-level init command
+// between runs so a name set by one test does not leak into the next.
+func resetInitFlags(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		require.NoError(t, initCmd.Flags().Set("name", ""))
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+// snapshotDir maps every file under root (as a slash-separated relative path)
+// to a sha256 of its content, so two snapshots compare both the file list and
+// every file's bytes.
+func snapshotDir(t *testing.T, root string) map[string]string {
+	t.Helper()
+	snap := map[string]string{}
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		snap[filepath.ToSlash(rel)] = fmt.Sprintf("%x", sha256.Sum256(data))
+		return nil
+	}))
+	return snap
+}
 
 func TestInit_Claude(t *testing.T) {
 	dir := t.TempDir()
@@ -170,7 +212,7 @@ func TestInit_CustomCommand(t *testing.T) {
 
 	// Override the command in config
 	configPath := filepath.Join(dir, ".spektacular", "config.yaml")
-	require.NoError(t, os.WriteFile(configPath, []byte("command: \"go run .\"\n"), 0644))
+	require.NoError(t, os.WriteFile(configPath, []byte("name: testproj\ncommand: \"go run .\"\n"), 0644))
 
 	// Re-init — should use the custom command when rendering templates.
 	rootCmd.SetArgs([]string{"init", "claude"})
@@ -215,4 +257,147 @@ func TestInit_Idempotent(t *testing.T) {
 	versionData, err := os.ReadFile(filepath.Join(dir, ".spektacular", "version"))
 	require.NoError(t, err)
 	require.Equal(t, "0.1.0\n", string(versionData))
+}
+
+// Criterion 3: a second init run produces no changes — the full recursive
+// directory state (file list and every file's content hash) is identical
+// before and after the re-run.
+func TestInit_SecondRunProducesNoChanges(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+	before := snapshotDir(t, dir)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+	after := snapshotDir(t, dir)
+
+	require.Equal(t, before, after, "a second init run must not add, remove, or modify any file")
+}
+
+// Criterion 1: breaking a member repo's footprint and re-running init repairs
+// it — the member's repo.yaml is restored valid — and once everything is
+// healthy, a further re-init is a no-change operation over both the project
+// and the member repo.
+func TestInit_RepairsBrokenMemberFootprint(t *testing.T) {
+	project := t.TempDir()
+	member := t.TempDir()
+	t.Chdir(project)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	// Register the sibling member repo; repo add creates its footprint.
+	_, _, err := runRepo(t, "add", "--data", repoAddJSON(t, map[string]any{
+		"name":  "member",
+		"local": member,
+	}))
+	require.NoError(t, err)
+	memberRepoConfig := filepath.Join(member, ".spektacular", config.RepoConfigFileName)
+	require.FileExists(t, memberRepoConfig)
+
+	// Break the member's footprint.
+	require.NoError(t, os.Remove(memberRepoConfig))
+
+	// Re-running init in the project cascades over the registry and repairs it.
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+	_, err = config.RepoConfigFromYAMLFile(memberRepoConfig)
+	require.NoError(t, err, "the member's repo.yaml must be restored valid by re-init")
+
+	// A healthy project re-init changes nothing, in the project or the member.
+	beforeProject := snapshotDir(t, project)
+	beforeMember := snapshotDir(t, member)
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+	require.Equal(t, beforeProject, snapshotDir(t, project), "a healthy re-init must not change the project")
+	require.Equal(t, beforeMember, snapshotDir(t, member), "a healthy re-init must not change the member repo")
+}
+
+// initProjectWithAddressOnlyRepo initialises a claude project in a temp dir,
+// hand-registers an address-only repo named "ghost" that is not on disk, and
+// returns the project root, leaving the working directory inside it.
+func initProjectWithAddressOnlyRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	// Register directly in the config: going through `repo add` would
+	// materialize the repo by cloning, and these tests need an entry that is
+	// registered but not on disk.
+	cfgPath := filepath.Join(dir, ".spektacular", "config.yaml")
+	cfg, err := config.FromYAMLFile(cfgPath)
+	require.NoError(t, err)
+	cfg.Repos = append(cfg.Repos, config.RepoEntry{
+		Name:    "ghost",
+		Address: "https://example.invalid/ghost.git",
+	})
+	require.NoError(t, cfg.ToYAMLFile(cfgPath))
+
+	return dir
+}
+
+// Init notices: re-running init over a registry containing an address-only,
+// unmaterialized repo prints a Notice naming that repo instead of failing.
+func TestInit_NoticesUnmaterializedRepo(t *testing.T) {
+	initProjectWithAddressOnlyRepo(t)
+
+	out, _ := setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	require.Contains(t, out.String(), "Notice:")
+	require.Contains(t, out.String(), `"ghost"`, "the notice must name the skipped repo")
+}
+
+// Cascade never clones: init with an address-only, unmaterialized registry
+// entry does not create a materialized clone for it.
+func TestInit_CascadeNeverClonesUnmaterializedRepo(t *testing.T) {
+	dir := initProjectWithAddressOnlyRepo(t)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	require.NoDirExists(t, filepath.Join(dir, ".spektacular", repo.MaterializeDirName, "ghost"))
+}
+
+// TestInit_NameFlagSetsProjectName asserts that `init --name` records the
+// given name in config.yaml instead of deriving it from the directory.
+func TestInit_NameFlagSetsProjectName(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude", "--name", "custom-name"})
+	require.NoError(t, rootCmd.Execute())
+
+	cfg, err := config.FromYAMLFile(filepath.Join(dir, ".spektacular", "config.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, "custom-name", cfg.Name)
+}
+
+// TestInit_NameFlagOverridesStoredName asserts that an explicit --name on a
+// re-init replaces the name already recorded in config.yaml.
+func TestInit_NameFlagOverridesStoredName(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	resetInitFlags(t)
+
+	rootCmd.SetArgs([]string{"init", "claude", "--name", "first-name"})
+	require.NoError(t, rootCmd.Execute())
+
+	rootCmd.SetArgs([]string{"init", "claude", "--name", "second-name"})
+	require.NoError(t, rootCmd.Execute())
+
+	cfg, err := config.FromYAMLFile(filepath.Join(dir, ".spektacular", "config.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, "second-name", cfg.Name)
 }

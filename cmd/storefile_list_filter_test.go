@@ -97,9 +97,13 @@ func listFilterFixtures() []listFilterFixture {
 			listPath:     "",
 		},
 		{
-			kind:         "changelog",
-			configYAML:   "changelog:\n  config:\n    directory: docs/changelog\n",
-			artifactPath: func(name string) string { return filepath.Join("docs", "changelog", name) },
+			kind:       "changelog",
+			configYAML: "changelog:\n  config:\n    directory: docs/changelog\n",
+			// Changelog records live under the project-named namespace folder
+			// (writeSpecCommandConfig writes `name: testproj`); the CLI's
+			// listPath stays "" because the namespace is injected below the
+			// CLI surface.
+			artifactPath: func(name string) string { return filepath.Join("docs", "changelog", "testproj", name) },
 			listPath:     "",
 		},
 		{

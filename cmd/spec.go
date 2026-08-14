@@ -12,6 +12,7 @@ import (
 
 	"github.com/jumppad-labs/spektacular/internal/identifier"
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/jumppad-labs/spektacular/internal/steps/spec"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -208,7 +209,7 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("parsing --data: %w", err)
 	}
 
-	st := store.NewFileStore(root, "project")
+	st := store.NewSourceStore(root, "project")
 	extraData := workflowDataBuffer{}
 	if err := readInputIntoWorkflow(cmd, extraData); err != nil {
 		return err
@@ -226,10 +227,11 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ProjectName: cfg.Name}
 	steps := spec.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, statePath, wfCfg, st, out)
+	wf.SetData("repos", repo.Roster(cfg, root, repoGit))
 	for k, v := range extraData {
 		if k != "name" {
 			wf.SetData(k, v)
@@ -294,10 +296,11 @@ func runSpecGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "spec", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ProjectName: cfg.Name}
 	steps := spec.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
+	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewSourceStore(root, "project"), out)
+	wf.SetData("repos", repo.Roster(cfg, root, repoGit))
 
 	for k, v := range input {
 		if k != "step" {

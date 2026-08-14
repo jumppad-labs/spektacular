@@ -1,0 +1,17 @@
+description: Agent-agnostic CLI tool for spec-driven development, providing skills and integrations for coding agents (Claude, Bob, Codex) to plan and implement work from a written spec.
+role: tool
+tags:
+    - go
+    - cli
+    - spec-driven-development
+deployment: binary-release
+knowledge:
+    sources:
+        - scope: project
+          provider: file
+          config:
+            location: .spektacular/knowledge
+changelog:
+    provider: file
+    config:
+        directory: .spektacular/changelog

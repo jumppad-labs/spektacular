@@ -423,6 +423,81 @@ func TestUpdateFeatureChangelogStepMentionsSourcesAndCommitCommand(t *testing.T)
 	require.NotContains(t, out, `"step":"finished"`, "update_feature_changelog must not direct a goto to finished — the FSM rejects that transition")
 }
 
+// Criterion 3: the update_feature_changelog instruction directs deriving one
+// entry per affected repo — discovering repos via `repo list`, identifying
+// affected repos from the Files-changed repo prefixes, writing each derived
+// entry through `changelog file write --repo`, carrying the readable
+// reference line, and skipping the colocated repo and the whole step when no
+// member repo was touched.
+func TestUpdateFeatureChangelogStepDerivesOneEntryPerAffectedRepo(t *testing.T) {
+	out := renderStep(t, updateFeatureChangelog())
+
+	require.Contains(t, out, "one entry per affected repo",
+		"update_feature_changelog must direct deriving one entry per affected repo")
+	require.Contains(t, out, "spektacular repo list",
+		"update_feature_changelog must discover repos via `repo list`")
+	require.Contains(t, out, "changelog file write test.md --repo <repo-name> --from .spektacular/tmp/changelog_derived_<repo>.md",
+		"derived entries must be committed through `changelog file write --repo`")
+	require.Contains(t, out, "> Derived from project",
+		"each derived entry must carry a human-readable reference line")
+	require.Contains(t, out, "spec/plan test.",
+		"the reference line must name the resolved spec/plan identifier")
+	require.Contains(t, out, "only that repo's changes",
+		"each derived entry must be scoped to that repo's own changes")
+	require.Contains(t, out, "other than the project's own colocated repo",
+		"the colocated repo must be skipped — the central record already covers it")
+	require.Contains(t, out, "skip this step entirely",
+		"the step must be skipped when no member repo was touched")
+	require.Contains(t, out, "do not write empty derived entries",
+		"unaffected repos must not receive empty entries")
+}
+
+// Criterion 3: a derived write failing on a missing/broken repo footprint is
+// surfaced to the user via the error's repair offer, never skipped silently.
+func TestUpdateFeatureChangelogStepSurfacesFootprintRepair(t *testing.T) {
+	out := renderStep(t, updateFeatureChangelog())
+	lower := strings.ToLower(out)
+	require.Contains(t, lower, "footprint is missing or broken",
+		"the STOP section must cover a failed derived write's footprint error")
+	require.Contains(t, lower, "surface the repair offer",
+		"the footprint repair offer must be surfaced to the user")
+	require.Contains(t, lower, "rather than skipping the repo silently",
+		"a footprint failure must never be skipped silently")
+}
+
+// Criterion 3: the update_changelog instruction directs prefixing member-repo
+// paths in Files-changed lists with `<repo-name>: ` (colocated paths stay
+// unprefixed), which is what the feature-changelog step derives repos from.
+func TestUpdateChangelogStepDirectsRepoPrefixedFilesChanged(t *testing.T) {
+	out := renderStep(t, updateChangelog())
+
+	require.Contains(t, out, "`<repo-name>: path",
+		"the Files-changed example must show the repo-name prefix shape")
+	lower := strings.ToLower(out)
+	require.Contains(t, lower, "prefix every path that lives in a registered member repo",
+		"member-repo paths must carry the repo-name prefix")
+	require.Contains(t, lower, "colocated repo carry no prefix",
+		"colocated paths must stay unprefixed")
+	require.Contains(t, lower, "one entry per affected repo",
+		"the prefix rule must be tied to the downstream per-repo derivation")
+}
+
+// Criterion 3: the update_repo_changelog instruction covers the root
+// CHANGELOG.md of each affected repo — resolved via `repo list` — no longer
+// implying exactly one repo root.
+func TestUpdateRepoChangelogStepCoversEachAffectedRepo(t *testing.T) {
+	out := renderStep(t, updateRepoChangelog())
+
+	require.Contains(t, out, "each repo the plan's work changed",
+		"update_repo_changelog must target each affected repo's root CHANGELOG.md")
+	require.Contains(t, out, "spektacular repo list",
+		"member-repo roots must be resolved via `repo list`")
+	require.Contains(t, out, "every repo whose files were changed",
+		"only repos whose files changed receive a summary")
+	require.Contains(t, out, "each summary scoped to what changed in that repo",
+		"each repo's summary must be scoped to that repo's own changes")
+}
+
 func TestReconcileSpecStepMentionsSourcesAndCommitCommand(t *testing.T) {
 	out := renderStep(t, reconcileSpec())
 	require.Contains(t, out, "spec file read test.md", "reconcile_spec must read the feature's spec via `spec file read`")
@@ -434,9 +509,10 @@ func TestReconcileSpecStepMentionsSourcesAndCommitCommand(t *testing.T) {
 // --- Phase 1.5: terminal-step closure of test-plan and changelog artifacts ---
 
 // TestImplementFinished_ClosesTestPlanAndChangelog seeds both terminal
-// artifacts (test-plan.md under PlanDir and <name>.md under ChangelogDir) with
-// in-progress metadata dated in the past, then asserts finished() transitions
-// both to completed with today's closed_date while preserving created_date.
+// artifacts (test-plan.md under PlanDir and the project-namespaced <name>.md
+// under ChangelogDir) with in-progress metadata dated in the past, then
+// asserts finished() transitions both to completed with today's closed_date
+// while preserving created_date.
 func TestImplementFinished_ClosesTestPlanAndChangelog(t *testing.T) {
 	tmp := t.TempDir()
 	st := store.NewFileStore(tmp, "project")
@@ -445,12 +521,13 @@ func TestImplementFinished_ClosesTestPlanAndChangelog(t *testing.T) {
 		PlanDir:      "plans",
 		ChangelogDir: "changelog",
 		SpecDir:      "specs",
+		ProjectName:  "testproj",
 	}
 	planName := "fixture"
 
 	created := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
 	testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
-	changelogPath := filepath.Join(cfg.ChangelogDir, planName+".md")
+	changelogPath := "changelog/testproj/fixture.md"
 
 	for _, p := range []string{testPlanPath, changelogPath} {
 		seed, err := metadata.Render(metadata.Metadata{

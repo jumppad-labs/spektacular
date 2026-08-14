@@ -37,7 +37,8 @@ const binarySniffBytes = 8000
 // Score is the sum of all terms' occurrence counts across the file.
 // The store is category-agnostic: it scans every directory and never excludes
 // one by name — tier-based exclusion of always-applied categories lives in the
-// knowledge layer. Binary files are skipped, and
+// knowledge layer, and .spektacular_ignore exclusion lives in the ignore-aware
+// wrapper (NewIgnoreStore), never here. Binary files are skipped, and
 // a file containing an over-long line is scanned only up to that line. A
 // query with no terms — empty or all whitespace — or one with no matches
 // returns an empty result, not an error.

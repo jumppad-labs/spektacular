@@ -2,6 +2,17 @@
 
 Decide the shape of the solution and lock in the chosen direction. This step produces the **Architecture & Design Decisions** section of `plan.md` — the load-bearing section of the whole plan. A reviewer should be able to spot missing patterns or design gaps from this section alone.
 
+**The repos this project spans.** The architecture must place every part of the work in the repo it belongs to:
+
+{{#repos}}
+- **{{name}}**{{#description}} — {{description}}{{/description}}{{#role}} (role: {{role}}){{/role}}{{#tags}} [tags: {{tags}}]{{/tags}}{{#deployment}} (deployment: {{deployment}}){{/deployment}}
+{{/repos}}
+{{^repos}}
+- No repos are registered in this project's configuration; all work targets the colocated repo.
+{{/repos}}
+
+For every requirement, the drafted architecture must name **which repo (and which files within it)** the requirement is carried out against, using the repos' metadata above and the discovery findings; consult `{{config.command}} repo list` for resolved local paths when you need to look inside a repo. Record the requirement-to-repo-and-files resolution in the plan's context document as part of the per-phase technical detail — no separate document.
+
 ### Step 1: Weigh Options
 
 Enumerate 2-3 viable design options. For each:

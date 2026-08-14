@@ -94,13 +94,13 @@ func overview() workflow.StepCallback {
 
 func discovery() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("discovery", "architecture", "steps/plan/02-discovery.md", data, out, st, cfg, nil)
+		return "", writeStep("discovery", "architecture", "steps/plan/02-discovery.md", data, out, st, cfg, stepkit.RepoRosterExtra(data))
 	}
 }
 
 func architecture() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("architecture", "components", "steps/plan/03-architecture.md", data, out, st, cfg, nil)
+		return "", writeStep("architecture", "components", "steps/plan/03-architecture.md", data, out, st, cfg, stepkit.RepoRosterExtra(data))
 	}
 }
 

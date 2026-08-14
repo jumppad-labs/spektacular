@@ -25,7 +25,8 @@ func SpecFilePath(dir, name string) string {
 func Steps() []workflow.StepConfig {
 	return []workflow.StepConfig{
 		{Name: "new", Src: []string{"start"}, Dst: "new", Callback: new()},
-		{Name: "overview", Src: []string{"new"}, Dst: "overview", Callback: overview()},
+		{Name: "interview", Src: []string{"new"}, Dst: "interview", Callback: interview()},
+		{Name: "overview", Src: []string{"interview"}, Dst: "overview", Callback: overview()},
 		{Name: "requirements", Src: []string{"overview"}, Dst: "requirements", Callback: requirements()},
 		{Name: "acceptance_criteria", Src: []string{"requirements"}, Dst: "acceptance_criteria", Callback: acceptanceCriteria()},
 		{Name: "constraints", Src: []string{"acceptance_criteria"}, Dst: "constraints", Callback: constraints()},
@@ -68,7 +69,7 @@ func writeStep(stepName, nextStep, templatePath string, data workflow.Data, out 
 func new() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
 		if cfg.DryRun {
-			return "", writeStep("new", "overview", "steps/spec/00-new.md", data, out, st, cfg, nil)
+			return "", writeStep("new", "interview", "steps/spec/00-new.md", data, out, st, cfg, nil)
 		}
 		if st == nil {
 			return "", fmt.Errorf("store required for new step")
@@ -94,7 +95,13 @@ func new() workflow.StepCallback {
 			return "", fmt.Errorf("clearing context.md: %w", err)
 		}
 		
-		return "", writeStep("new", "overview", "steps/spec/00-new.md", data, out, st, cfg, nil)
+		return "", writeStep("new", "interview", "steps/spec/00-new.md", data, out, st, cfg, nil)
+	}
+}
+
+func interview() workflow.StepCallback {
+	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
+		return "", writeStep("interview", "overview", "steps/spec/00b-interview.md", data, out, st, cfg, stepkit.RepoRosterExtra(data))
 	}
 }
 

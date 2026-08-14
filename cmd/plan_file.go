@@ -10,5 +10,6 @@ func init() {
 		"Read and write files in the plan store",
 		func(c config.Config) string { return c.Plan.Config.Directory },
 		true,
+		false,
 	))
 }

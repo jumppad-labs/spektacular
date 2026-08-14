@@ -26,6 +26,10 @@ type Config struct {
 	SpecDir      string
 	PlanDir      string
 	ChangelogDir string
+	// ProjectName is the project's configured name. Changelog stores
+	// namespace their entries under a folder bearing it, so path strategies
+	// need it to render true on-disk changelog paths.
+	ProjectName string
 }
 
 // ResultWriter is implemented by the output writer and passed into step callbacks.

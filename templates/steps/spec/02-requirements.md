@@ -1,12 +1,12 @@
 ## Step {{step}}: {{title}}
 
-Ask the user to list the specific, testable behaviours this feature must deliver.
+Draft the specific, testable behaviours this feature must deliver from the interview findings in `.spektacular/work/{{spec_name}}/interview.md` (and this section's own working file, if one already exists from a prior pass). Present the draft to the user and ask them to confirm it or tell you what's wrong.
 
 Use active voice:
 • 'Users can...'
 • 'The system must...'
 
-Each item should be independently verifiable. One behaviour per line.
+Each item should be independently verifiable. One behaviour per line. If the interview findings don't give you enough to draft complete, testable requirements, ask the user directly rather than guessing.
 
 **Format each requirement as a checklist item:** a short, bold title on the checkbox line, with the full testable detail indented on the line below —
 
@@ -35,6 +35,7 @@ Once you are satisfied with the requirements, move to the next step by running t
 
 {{config.command}} spec goto --data '{"step":"{{next_step}}"}'
 
+**If the user rejects this draft.** If the user indicates this draft is wrong, ask a follow-up question to understand why before changing anything, the issue may reveal a broader need you didn't surface, or may be a genuine miss on your part, and the follow-up conversation determines which. Apply any resulting changes directly to the working file(s) they belong to, which may include a different section's working file than the one under review; a section amended this way does not need a fresh confirmation step now, the end-of-workflow verification step is where everything, including this change, gets reviewed together. The follow-up conversation may surface edits to more than one section, or conclude that nothing needs to change after all — do not assume the fix is exactly one edit to exactly the section under review.
 
 ---
 

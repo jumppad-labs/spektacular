@@ -32,6 +32,25 @@ When writing content for each section, use these details about the feature:
 
 Write meaningful, non-placeholder content for every section.
 
+## A rejection that reveals a missing requirement
+
+When you reach the **Constraints** step and it presents its draft to you, reject
+that draft: tell the agent the draft is missing something, and when it asks a
+follow-up question to understand why, explain that **token revocation must be
+supported** — a user's refresh token needs to be invalidated immediately if
+their account is compromised, and there is currently no requirement covering
+this.
+
+This is a **Requirements** gap, not a Constraints one: token revocation is a
+behavior the system must deliver, not a boundary the solution must operate
+within. Expect the agent to recognize this, add a revocation requirement to
+the already-confirmed Requirements section on its own initiative — without
+asking you to stop and re-review Requirements in the moment — and then
+continue presenting the Constraints draft for you to confirm.
+
+Confirm the Constraints draft once you're satisfied with it, and continue
+through the remaining steps as normal.
+
 ## After completion
 
 Copy the `.spektacular` directory to `/logs/artifacts/` so results are collected:

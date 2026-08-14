@@ -17,6 +17,7 @@ func TestPlanNew_InProgressSpecReportedCrossKind(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 
 	writeInProgressState(t, dataDir, workflow.State{
 		Kind:           "spec",
@@ -39,3 +40,7 @@ func TestPlanNew_InProgressSpecReportedCrossKind(t *testing.T) {
 	require.Equal(t, "overview", er.State.Current)
 	require.Contains(t, er.Message, "spec", "message must name the in-progress kind")
 }
+
+// The repo-roster construction tests (materialized-repo metadata,
+// unmaterialized-repo name-only fallback) relocated to
+// internal/repo/roster_test.go alongside the Roster function itself.

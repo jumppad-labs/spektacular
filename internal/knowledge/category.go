@@ -1,5 +1,10 @@
 package knowledge
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Tier declares how a category's entries are retrieved. A category's tier is
 // stated once, here in the registry, and every behaviour that depends on it —
 // project scaffolding, search exclusion, and the always-applied reader — reads
@@ -87,6 +92,17 @@ var Categories = []Category{
 		Tier:       TierLookedUp,
 		EntryShape: "A record of the decision, the alternatives considered, and the rationale for the choice made.",
 	},
+}
+
+// README renders the category's self-documenting README content from its
+// registry definition. Project init and repo-footprint creation both write
+// this file, so the rendering lives with the registry it projects.
+func (c Category) README() string {
+	title := strings.Title(c.Name) //nolint:staticcheck // simple capitalisation
+	return fmt.Sprintf(
+		"# %s\n\n**Tier:** %s\n\n**Purpose:** %s\n\n**Belongs elsewhere:** %s\n\n**Entry shape:** %s\n",
+		title, c.Tier, c.Purpose, c.Boundary, c.EntryShape,
+	)
 }
 
 // AlwaysApplied returns the names of the categories in the always-applied tier,

@@ -44,7 +44,15 @@ func (c *captureWriter) WriteResult(v any) error {
 
 func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	t.Helper()
-	data := &testData{values: map[string]any{"name": "test"}}
+	return renderStepWithData(t, cb, map[string]any{"name": "test"})
+}
+
+// renderStepWithData drives a step callback the way renderStep does but with
+// caller-supplied workflow data, for steps whose templates render values the
+// command layer injects into the workflow (e.g. the repo roster).
+func renderStepWithData(t *testing.T, cb workflow.StepCallback, values map[string]any) string {
+	t.Helper()
+	data := &testData{values: values}
 	writer := &captureWriter{}
 	st := store.NewFileStore(t.TempDir(), "project")
 	_, err := cb(data, writer, st, workflow.Config{Command: "spektacular"})
@@ -558,4 +566,163 @@ func TestWriteStep_CommitsOwnDocument(t *testing.T) {
 		"write_plan must report plan.md is already committed once it is in the store")
 	require.NotContains(t, writer.result.Instruction, "--from .spektacular/tmp/plan_template.md",
 		"write_plan must not re-instruct the commit once plan.md is in the store")
+}
+
+// --- Phase 4.2: workflows and skills go cross-repo ---
+
+// TestDiscoveryAndArchitectureStepsRenderRepoRoster asserts each registered
+// repo's identity metadata is embedded directly in the rendered discovery and
+// architecture instructions — the agent starts already knowing the codebases
+// the project spans, without running any command first.
+func TestDiscoveryAndArchitectureStepsRenderRepoRoster(t *testing.T) {
+	// The roster reaches workflow data as it would after a state.json JSON
+	// round-trip: a []any of map[string]any entries, matching the shape the
+	// command layer's repoRoster projection deserializes back to.
+	repos := []any{
+		map[string]any{
+			"name":        "billing-api",
+			"description": "the payments backend",
+			"role":        "backend",
+			"tags":        "go, api",
+			"deployment":  "kubernetes",
+		},
+		map[string]any{
+			"name":        "docs-site",
+			"description": "the user documentation",
+			"role":        "documentation",
+			"tags":        "docs",
+			"deployment":  "static-site",
+		},
+	}
+
+	steps := map[string]workflow.StepCallback{
+		"discovery":    discovery(),
+		"architecture": architecture(),
+	}
+	for name, cb := range steps {
+		t.Run(name, func(t *testing.T) {
+			out := renderStepWithData(t, cb, map[string]any{"name": "test", "repos": repos})
+
+			// Criterion 1: both repos' name, description, and role appear in
+			// the rendered instruction without the agent running any command.
+			require.Contains(t, out, "billing-api", "%s must render the first repo's name", name)
+			require.Contains(t, out, "the payments backend", "%s must render the first repo's description", name)
+			require.Contains(t, out, "role: backend", "%s must render the first repo's role", name)
+			require.Contains(t, out, "docs-site", "%s must render the second repo's name", name)
+			require.Contains(t, out, "the user documentation", "%s must render the second repo's description", name)
+			require.Contains(t, out, "role: documentation", "%s must render the second repo's role", name)
+
+			// Criterion 1: a populated roster leaves no mustache artifacts and
+			// suppresses the empty-registry fallback line.
+			require.NotContains(t, out, "{{#repos}}", "%s must not leak an unrendered section open tag", name)
+			require.NotContains(t, out, "{{/repos}}", "%s must not leak an unrendered section close tag", name)
+			require.NotContains(t, out, "No repos are registered", "%s must not render the fallback when repos exist", name)
+		})
+	}
+}
+
+// TestDiscoveryAndArchitectureStepsRenderEmptyRegistryFallback asserts the
+// roster block degrades cleanly when the project registers no repos: the
+// inverted-section fallback line renders and no mustache artifacts remain —
+// both when the command layer set an empty roster (the empty-registry case)
+// and when the "repos" key is absent from workflow data entirely.
+func TestDiscoveryAndArchitectureStepsRenderEmptyRegistryFallback(t *testing.T) {
+	cases := []struct {
+		step     string
+		cb       workflow.StepCallback
+		fallback string
+	}{
+		{"discovery", discovery(), "No repos are registered in this project's configuration; research the colocated repo."},
+		{"architecture", architecture(), "No repos are registered in this project's configuration; all work targets the colocated repo."},
+	}
+	variants := map[string]func() map[string]any{
+		// The command layer sets "repos" on every invocation — an empty slice
+		// when the registry is empty.
+		"empty roster": func() map[string]any { return map[string]any{"name": "test", "repos": []any{}} },
+		// Absent key: repoRosterExtra returns nil extras and the template's
+		// inverted section still renders the fallback.
+		"absent key": func() map[string]any { return map[string]any{"name": "test"} },
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.step, func(t *testing.T) {
+			for variant, values := range variants {
+				t.Run(variant, func(t *testing.T) {
+					out := renderStepWithData(t, tc.cb, values())
+
+					// Criterion 1: the fallback line renders with no artifacts.
+					require.Contains(t, out, tc.fallback, "%s must render the empty-registry fallback line", tc.step)
+					require.NotContains(t, out, "{{#repos}}", "%s must not leak an unrendered section open tag", tc.step)
+					require.NotContains(t, out, "{{^repos}}", "%s must not leak an unrendered inverted-section tag", tc.step)
+					require.NotContains(t, out, "{{/repos}}", "%s must not leak an unrendered section close tag", tc.step)
+				})
+			}
+		})
+	}
+}
+
+// TestDiscoveryStepDirectsRepoScopedResearch asserts the discovery instruction
+// directs per-repo research scoping: resolved paths and staleness come from
+// `repo list`, the roster's metadata scopes which repos each question belongs
+// to, Files-examined entries carry the repo prefix, and the ignore-file note
+// clarifies native tools are unaffected.
+func TestDiscoveryStepDirectsRepoScopedResearch(t *testing.T) {
+	out := renderStep(t, discovery())
+
+	// Criterion 2: resolved locations come from `repo list`.
+	require.Contains(t, out, "spektacular repo list",
+		"discovery must direct `repo list` for resolved paths and staleness")
+
+	// Criterion 2: research questions are scoped to repos via their metadata.
+	require.Contains(t, out, "tags to scope which repos",
+		"discovery must direct using repo metadata to scope research questions")
+
+	// Criterion 2: multi-repo Files-examined entries carry the repo prefix.
+	require.Contains(t, out, "<repo>:path:line",
+		"discovery's Files-examined entries must carry the repo-name prefix in multi-repo projects")
+
+	// Criterion 2: the ignore-file note states native tools are not bound.
+	require.Contains(t, out, ".spektacular_ignore",
+		"discovery must mention the .spektacular_ignore exclusions")
+	require.Contains(t, out, "native file tools are not bound",
+		"discovery must state native file tools are not bound by the ignore file")
+}
+
+// TestArchitectureStepRequiresRepoAttribution asserts the architecture
+// instruction requires attributing every requirement to a repo and files,
+// recorded in the plan's context document, with resolved paths from
+// `repo list`.
+func TestArchitectureStepRequiresRepoAttribution(t *testing.T) {
+	out := renderStep(t, architecture())
+
+	// Criterion 2: every requirement names its repo and files.
+	require.Contains(t, out, "which repo (and which files within it)",
+		"architecture must require naming each requirement's repo and files")
+
+	// Criterion 2: resolved locations come from `repo list`.
+	require.Contains(t, out, "spektacular repo list",
+		"architecture must direct `repo list` for resolved local paths")
+
+	// Criterion 2: the attribution is recorded in the plan's context document.
+	require.Contains(t, out, "requirement-to-repo-and-files resolution",
+		"architecture must record the requirement-to-repo-and-files resolution")
+	require.Contains(t, out, "context document",
+		"architecture must record the attribution in the plan's context document")
+}
+
+// TestPhasesStepCarriesRepoAttributionIntoPlanAndContext asserts the phases
+// instruction carries attribution into both outputs: plan.md phases carry a
+// dedicated Repo line and context.md file changes carry the repo-name
+// prefix.
+func TestPhasesStepCarriesRepoAttributionIntoPlanAndContext(t *testing.T) {
+	out := renderStep(t, phases())
+
+	// Criterion 2: every phase carries a dedicated Repo line naming its
+	// target repo, always present regardless of repo count.
+	require.Contains(t, out, "**Repo:**",
+		"phases must direct plan.md to include a dedicated Repo line naming the phase's target repo")
+
+	// Criterion 2: context.md file changes carry the repo prefix.
+	require.Contains(t, out, "<repo>:path:line",
+		"phases must direct context.md File-changes to carry the repo-name prefix")
 }

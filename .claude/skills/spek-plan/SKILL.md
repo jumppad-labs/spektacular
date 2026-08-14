@@ -48,6 +48,8 @@ The working sidecar `.spektacular/context.md` (at the repo's `.spektacular/` roo
 
 # How to start
 
+> **Cross-repo planning.** A project may register multiple member repos (see `go run . repo list`). The workflow's discovery and architecture instructions open with a roster of the registered repos and direct you to attribute every requirement to the repo (and files) it belongs to — research across all registered repos, not just the directory you are running in, and record the attribution in the plan's context document.
+
 Ask the user which spec to plan against before proceeding. To enumerate the available specs, run `go run . spec file list` — the CLI's list is the source of truth for what counts as a spec. **Do not** use `ls`, `find`, or the `Read` tool against `.spektacular/specs/` to discover specs; those bypass Spektacular's configured spec directory and may show entries the CLI does not consider valid. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
 Start the plan workflow by running:

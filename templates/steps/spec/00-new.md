@@ -1,6 +1,6 @@
 ---
 step: new
-next: overview
+next: interview
 ---
 
 The spec scaffold has been created at `{{spec_path}}`.
@@ -14,8 +14,8 @@ Before proceeding to the overview step, write the current conversation context t
 
 If no meaningful context exists (e.g., the user simply said "create a spec for X" without elaboration), leave context.md empty.
 
-Once context is written (or confirmed empty), proceed to the overview step:
+Once context is written (or confirmed empty), proceed to the interview step:
 
 ```
-{{command}} spec goto --data '{"step":"overview"}'
+{{command}} spec goto --data '{"step":"interview"}'
 ```

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/jumppad-labs/spektacular/internal/steps/plan"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -122,11 +123,12 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ProjectName: cfg.Name}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, statePath, wfCfg, store.NewFileStore(root, "project"), out)
+	wf := workflow.New(steps, statePath, wfCfg, store.NewSourceStore(root, "project"), out)
 	wf.SetData("name", input.Name)
+	wf.SetData("repos", repo.Roster(cfg, root, repoGit))
 
 	if err := readInputIntoWorkflow(cmd, wf); err != nil {
 		return err
@@ -189,10 +191,11 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ProjectName: cfg.Name}
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewFileStore(root, "project"), out)
+	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewSourceStore(root, "project"), out)
+	wf.SetData("repos", repo.Roster(cfg, root, repoGit))
 
 	for k, v := range input {
 		if k != "step" {

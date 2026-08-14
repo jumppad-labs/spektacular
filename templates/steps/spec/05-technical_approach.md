@@ -1,8 +1,8 @@
 ## Step {{step}}: {{title}}
 
-Ask the user: Do you have any technical direction already decided?
+Draft any technical direction already decided, from the interview findings in `.spektacular/work/{{spec_name}}/interview.md` (and this section's own working file, if one already exists from a prior pass). Present the draft to the user and ask them to confirm it or tell you what's wrong.
 
-Examples:
+Examples of the kind of direction to look for:
 • Key architectural decisions already made
 • Preferred patterns or technologies
 • Integration points with existing systems
@@ -16,7 +16,7 @@ Technical Approach is **non-binding direction** — preferences and suggestions 
 
 **Do not restate content already captured in another section.** Anything that belongs in Constraints (e.g. "must use an embedded datastore", "must replace the existing file storage", "the database file location must be configurable") lives there, not here — do not copy it back into Technical Approach. Capture only *additional* technical direction that is not already a requirement or constraint. If there is none beyond what is already captured, say exactly that in one line — e.g. "No technical direction has been decided beyond the captured constraints; the detailed design is left for the plan workflow to propose." — without re-listing those constraints.
 
-Capture their response. If blank, note that no technical direction has been decided.
+If the interview surfaced no technical direction beyond what's already captured elsewhere, draft the section as saying so plainly rather than leaving it blank with no explanation.
 
 **Format each direction or steer as its own bullet point** (`- ...`), one per line, rather than a paragraph running multiple points together. Write the working file in this shape from the start — it is assembled into the final spec largely as-is.
 
@@ -26,6 +26,7 @@ Once you are satisfied, move to the next step by running the command:
 
 {{config.command}} spec goto --data '{"step":"{{next_step}}"}'
 
+**If the user rejects this draft.** If the user indicates this draft is wrong, ask a follow-up question to understand why before changing anything, the issue may reveal a broader need you didn't surface, or may be a genuine miss on your part, and the follow-up conversation determines which. Apply any resulting changes directly to the working file(s) they belong to, which may include a different section's working file than the one under review; a section amended this way does not need a fresh confirmation step now, the end-of-workflow verification step is where everything, including this change, gets reviewed together. The follow-up conversation may surface edits to more than one section, or conclude that nothing needs to change after all — do not assume the fix is exactly one edit to exactly the section under review.
 
 ---
 

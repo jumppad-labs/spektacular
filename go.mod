@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/cbroglie/mustache v1.4.0
 	github.com/looplab/fsm v1.0.3
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
 	gopkg.in/yaml.v3 v3.0.1

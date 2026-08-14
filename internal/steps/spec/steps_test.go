@@ -45,7 +45,15 @@ func (c *captureWriter) WriteResult(v any) error {
 
 func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	t.Helper()
-	data := &testData{values: map[string]any{"name": "test"}}
+	return renderStepWithData(t, cb, map[string]any{"name": "test"})
+}
+
+// renderStepWithData drives a step callback the way renderStep does but with
+// caller-supplied workflow data, for steps whose templates render values the
+// command layer injects into the workflow (e.g. the repo roster).
+func renderStepWithData(t *testing.T, cb workflow.StepCallback, values map[string]any) string {
+	t.Helper()
+	data := &testData{values: values}
 	writer := &captureWriter{}
 	st := store.NewFileStore(t.TempDir(), "project")
 	_, err := cb(data, writer, st, workflow.Config{Command: "spektacular"})
@@ -56,6 +64,7 @@ func renderStep(t *testing.T, cb workflow.StepCallback) string {
 func TestStepsOrderMatchesExpected(t *testing.T) {
 	expected := []string{
 		"new",
+		"interview",
 		"overview",
 		"requirements",
 		"acceptance_criteria",
@@ -86,9 +95,10 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 	require.Equal(t, "start", wf.Current())
 
 	// After the "new" step change, the workflow stays at "new" state and returns
-	// an instruction. The next transition advances to "overview".
+	// an instruction. The next transition advances to "interview".
 	expectedStates := []string{
 		"new",
+		"interview",
 		"overview",
 		"requirements",
 		"acceptance_criteria",
@@ -451,4 +461,116 @@ func TestNewStep_InstructionIncludesCaveat(t *testing.T) {
 	
 	instruction := writer.result.Instruction
 	require.Contains(t, instruction, "no meaningful context", "instruction should include caveat about skipping if no context")
+}
+
+// --- Phase 1.2: give the interview access to the project's repo roster and a
+// cross-repo question ---
+
+// TestInterviewStepRendersRepoRoster asserts each registered repo's identity
+// metadata (name, role, description) is embedded directly in the rendered
+// interview instruction — mirroring plan's discovery/architecture roster
+// rendering (internal/steps/plan/steps_test.go,
+// TestDiscoveryAndArchitectureStepsRenderRepoRoster).
+func TestInterviewStepRendersRepoRoster(t *testing.T) {
+	// The roster reaches workflow data as it would after a state.json JSON
+	// round-trip: a []any of map[string]any entries, matching the shape the
+	// command layer's repoRoster projection deserializes back to.
+	repos := []any{
+		map[string]any{
+			"name":        "billing-api",
+			"description": "the payments backend",
+			"role":        "backend",
+			"tags":        "go, api",
+			"deployment":  "kubernetes",
+		},
+		map[string]any{
+			"name":        "docs-site",
+			"description": "the user documentation",
+			"role":        "documentation",
+			"tags":        "docs",
+			"deployment":  "static-site",
+		},
+	}
+
+	out := renderStepWithData(t, interview(), map[string]any{"name": "test", "repos": repos})
+
+	// Criterion 1: both repos' name, description, and role appear in the
+	// rendered instruction without the agent running any command.
+	require.Contains(t, out, "billing-api", "interview must render the first repo's name")
+	require.Contains(t, out, "the payments backend", "interview must render the first repo's description")
+	require.Contains(t, out, "role: backend", "interview must render the first repo's role")
+	require.Contains(t, out, "docs-site", "interview must render the second repo's name")
+	require.Contains(t, out, "the user documentation", "interview must render the second repo's description")
+	require.Contains(t, out, "role: documentation", "interview must render the second repo's role")
+
+	// A populated roster leaves no mustache artifacts and suppresses the
+	// empty-registry fallback line.
+	require.NotContains(t, out, "{{#repos}}", "interview must not leak an unrendered section open tag")
+	require.NotContains(t, out, "{{/repos}}", "interview must not leak an unrendered section close tag")
+	require.NotContains(t, out, "No repos are registered", "interview must not render the fallback when repos exist")
+}
+
+// TestInterviewStepRendersEmptyRegistryFallback asserts the roster block
+// degrades cleanly when the project registers no repos: the inverted-section
+// fallback line renders and no mustache artifacts remain — both when the
+// command layer set an empty roster (the empty-registry case) and when the
+// "repos" key is absent from workflow data entirely.
+func TestInterviewStepRendersEmptyRegistryFallback(t *testing.T) {
+	const fallback = "No repos are registered in this project's configuration; the interview is scoped to the colocated repo only."
+
+	variants := map[string]func() map[string]any{
+		// The command layer sets "repos" on every invocation — an empty slice
+		// when the registry is empty.
+		"empty roster": func() map[string]any { return map[string]any{"name": "test", "repos": []any{}} },
+		// Absent key: stepkit.RepoRosterExtra returns nil extras and the
+		// template's inverted section still renders the fallback.
+		"absent key": func() map[string]any { return map[string]any{"name": "test"} },
+	}
+
+	for variant, values := range variants {
+		t.Run(variant, func(t *testing.T) {
+			out := renderStepWithData(t, interview(), values())
+
+			require.Contains(t, out, fallback, "interview must render the empty-registry fallback line")
+			require.NotContains(t, out, "{{#repos}}", "interview must not leak an unrendered section open tag")
+			require.NotContains(t, out, "{{^repos}}", "interview must not leak an unrendered inverted-section tag")
+			require.NotContains(t, out, "{{/repos}}", "interview must not leak an unrendered section close tag")
+		})
+	}
+}
+
+// TestInterviewStepDirectsCrossRepoQuestion asserts the interview
+// instruction's prose directs asking a cross-repo impact question — shaped by
+// what each OTHER repo's role/description actually is, not generically —
+// whenever the feature reads as focused on one repo and more than one repo is
+// registered. This is instructional prose in the template rather than
+// dynamic per-invocation behavior, so the assertion is a stable-substring
+// content check against the actual template wording
+// (templates/steps/spec/00b-interview.md).
+func TestInterviewStepDirectsCrossRepoQuestion(t *testing.T) {
+	repos := []any{
+		map[string]any{
+			"name":        "billing-api",
+			"description": "the payments backend",
+			"role":        "backend",
+			"tags":        "go, api",
+			"deployment":  "kubernetes",
+		},
+		map[string]any{
+			"name":        "docs-site",
+			"description": "the user documentation",
+			"role":        "documentation",
+			"tags":        "docs",
+			"deployment":  "static-site",
+		},
+	}
+
+	out := renderStepWithData(t, interview(), map[string]any{"name": "test", "repos": repos})
+
+	require.Contains(t, out,
+		"ask at least one question about whether it also needs changes in another registered repo",
+		"interview must direct asking a cross-repo impact question when the feature reads as focused on one repo")
+	require.Contains(t, out,
+		"Shape the question by what that other repo actually is, not generically",
+		"interview must direct shaping the cross-repo question by the other repo's actual role/description")
 }

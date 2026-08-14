@@ -1,3 +1,4 @@
+name: spektacular
 command: go run .
 agent: claude
 spec_trigger_threshold: moderate
@@ -16,9 +17,9 @@ changelog:
     provider: file
     config:
         directory: .spektacular/changelog
-knowledge:
-    sources:
-        - scope: project
-          provider: file
-          config:
-            location: .spektacular/knowledge
+repos:
+    - name: spektacular
+      local: .
+    - name: docs
+      address: git@github.com:jumppad-labs/spektacular-website.git
+      local: ../spektacular-website

@@ -397,6 +397,155 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+// Criterion 3: front matter round-trips the four provenance fields — a
+// Metadata carrying project, project_source, spec, and plan survives
+// Render → Split with every field intact alongside the date/status fields.
+func TestRender_SplitRoundTripProvenanceFields(t *testing.T) {
+	meta := Metadata{
+		CreatedDate:   time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Status:        StatusInProgress,
+		Project:       "testproj",
+		ProjectSource: "https://github.com/example/testproj",
+		Spec:          "000039_project-level-capabilities",
+		Plan:          "000039_project-level-capabilities",
+	}
+	body := []byte("# Changelog record\n")
+
+	rendered, err := Render(meta, body)
+	require.NoError(t, err)
+
+	gotMeta, gotBody, err := Split(rendered)
+	require.NoError(t, err)
+	require.NotNil(t, gotMeta)
+	require.Equal(t, meta.Project, gotMeta.Project)
+	require.Equal(t, meta.ProjectSource, gotMeta.ProjectSource)
+	require.Equal(t, meta.Spec, gotMeta.Spec)
+	require.Equal(t, meta.Plan, gotMeta.Plan)
+	require.True(t, gotMeta.CreatedDate.Equal(meta.CreatedDate))
+	require.Equal(t, meta.Status, gotMeta.Status)
+	require.Equal(t, string(body), string(gotBody))
+}
+
+// Criterion 3: an entry without provenance keys parses with empty provenance
+// fields — the new keys are optional and their absence is not an error.
+func TestSplit_MissingProvenanceKeysParseAsEmpty(t *testing.T) {
+	raw := "---\n" +
+		"created_date: 2026-07-01\n" +
+		"status: in-progress\n" +
+		"---\n\n" +
+		"body\n"
+
+	meta, _, err := Split([]byte(raw))
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.Empty(t, meta.Project)
+	require.Empty(t, meta.ProjectSource)
+	require.Empty(t, meta.Spec)
+	require.Empty(t, meta.Plan)
+}
+
+// Criterion 3: a Metadata whose provenance fields are empty marshals WITHOUT
+// emitting the provenance keys (omitempty) — pre-existing artifacts must not
+// suddenly grow empty `project:` / `spec:` / `plan:` lines on rewrite.
+func TestRender_OmitsEmptyProvenanceKeys(t *testing.T) {
+	rendered, err := Render(Metadata{
+		CreatedDate: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Status:      StatusInProgress,
+	}, []byte("body\n"))
+	require.NoError(t, err)
+
+	got := string(rendered)
+	// "project" also covers "project_source" as a substring.
+	require.NotContains(t, got, "project")
+	require.NotContains(t, got, "spec")
+	require.NotContains(t, got, "plan")
+}
+
+// Criterion 3: Merge on a fresh write stamps the opts provenance fields into
+// the new frontmatter block alongside the usual created_date/status stamp.
+func TestMerge_FreshWriteStampsProvenance(t *testing.T) {
+	got, err := Merge(nil, []byte("# body\n"), UpdateOptions{
+		Today:         fixedToday(),
+		Project:       "testproj",
+		ProjectSource: "https://github.com/example/testproj",
+		Spec:          "000039_spec",
+		Plan:          "000039_plan",
+	})
+	require.NoError(t, err)
+
+	meta, _, err := Split(got)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.Equal(t, "testproj", meta.Project)
+	require.Equal(t, "https://github.com/example/testproj", meta.ProjectSource)
+	require.Equal(t, "000039_spec", meta.Spec)
+	require.Equal(t, "000039_plan", meta.Plan)
+	require.True(t, meta.CreatedDate.Equal(fixedToday()))
+	require.Equal(t, StatusInProgress, meta.Status)
+}
+
+// Criterion 3: Merge on existing content preserves the stored provenance when
+// the opts fields are empty — an empty incoming value means "no change", never
+// "clear the field".
+func TestMerge_ExistingProvenancePreservedWhenOptsEmpty(t *testing.T) {
+	existing := "---\n" +
+		"created_date: 2026-07-01\n" +
+		"status: in-progress\n" +
+		"project: testproj\n" +
+		"project_source: https://github.com/example/testproj\n" +
+		"spec: 000039_spec\n" +
+		"plan: 000039_plan\n" +
+		"---\n\n" +
+		"# Existing body\n"
+
+	got, err := Merge([]byte(existing), []byte("# Updated body\n"), UpdateOptions{Today: fixedToday()})
+	require.NoError(t, err)
+
+	meta, body, err := Split(got)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.Equal(t, "testproj", meta.Project)
+	require.Equal(t, "https://github.com/example/testproj", meta.ProjectSource)
+	require.Equal(t, "000039_spec", meta.Spec)
+	require.Equal(t, "000039_plan", meta.Plan)
+	require.Equal(t, "# Updated body\n", string(body))
+}
+
+// Criterion 3: Merge on existing content overwrites provenance when the opts
+// fields are set — incoming wins over stored, field by field, while the
+// date/status merge invariants stay intact (created_date preserved).
+func TestMerge_ExistingProvenanceOverwrittenWhenOptsSet(t *testing.T) {
+	existing := "---\n" +
+		"created_date: 2026-07-01\n" +
+		"status: in-progress\n" +
+		"project: oldproj\n" +
+		"project_source: https://old.example\n" +
+		"spec: 000001_old\n" +
+		"plan: 000001_old\n" +
+		"---\n\n" +
+		"# Existing body\n"
+
+	got, err := Merge([]byte(existing), []byte("# Existing body\n"), UpdateOptions{
+		Today:         fixedToday(),
+		Project:       "newproj",
+		ProjectSource: "https://new.example",
+		Spec:          "000002_new",
+		Plan:          "000002_new",
+	})
+	require.NoError(t, err)
+
+	meta, _, err := Split(got)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.Equal(t, "newproj", meta.Project)
+	require.Equal(t, "https://new.example", meta.ProjectSource)
+	require.Equal(t, "000002_new", meta.Spec)
+	require.Equal(t, "000002_new", meta.Plan)
+	require.True(t, meta.CreatedDate.Equal(time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)),
+		"created_date must survive a provenance overwrite")
+	require.Equal(t, StatusInProgress, meta.Status)
+}
+
 // TestMerge_UsesInjectedClock double-checks that the caller-injected clock is
 // the only source of "today" — Merge must not fall back to wall-clock time
 // when opts.Today is explicitly set.

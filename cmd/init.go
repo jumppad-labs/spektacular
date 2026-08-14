@@ -18,6 +18,10 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
+func init() {
+	initCmd.Flags().String("name", "", "project name (slug-safe); defaults to the directory name")
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	a, err := agent.Lookup(args[0])
 	if err != nil {
@@ -29,11 +33,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
 
-	if err := project.Init(cwd, true); err != nil {
+	name, _ := cmd.Flags().GetString("name")
+	notices, err := project.Init(cwd, name, true)
+	if err != nil {
 		return fmt.Errorf("initialising project: %w", err)
 	}
 
-	cfg, err := loadConfig()
+	// Init is a bootstrap command: it must load config leniently, since it
+	// runs precisely where no project exists yet.
+	cfg, err := loadConfigLenient()
 	if err != nil {
 		return err
 	}
@@ -52,6 +60,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "Spektacular initialised for %s.\n", a.Name())
 	fmt.Fprintf(cmd.OutOrStdout(), "  Project:  %s\n", filepath.Join(cwd, ".spektacular"))
 	fmt.Fprintf(cmd.OutOrStdout(), "  Version:  %s (%s)\n", versionPath, version)
+	for _, n := range notices {
+		fmt.Fprintf(cmd.OutOrStdout(), "  Notice:   %s\n", n)
+	}
 
 	return a.Install(cwd, cfg, cmd.OutOrStdout())
 }

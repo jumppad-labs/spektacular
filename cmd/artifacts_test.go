@@ -131,8 +131,8 @@ func TestArtifactsList_UnfilteredReturnsAllKindsTagged(t *testing.T) {
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "context.md"), m, []byte("context body"))
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "research.md"), m, []byte("research body"))
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "test-plan.md"), m, []byte("test-plan body"))
-	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260710000000-first.md"), m, []byte("changelog 1"))
-	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260711000000-second.md"), m, []byte("changelog 2"))
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260710000000-first.md"), m, []byte("changelog 1"))
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260711000000-second.md"), m, []byte("changelog 2"))
 
 	resetArtifactsListFlags(t)
 	resp := runArtifactsListJSON(t)
@@ -169,8 +169,8 @@ func TestArtifactsList_KindFilterNarrowsToRequestedClasses(t *testing.T) {
 		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "context.md"), m, []byte("context"))
 		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "research.md"), m, []byte("research"))
 		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "test-plan.md"), m, []byte("test-plan"))
-		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260710000000-first.md"), m, []byte("cl1"))
-		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260711000000-second.md"), m, []byte("cl2"))
+		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260710000000-first.md"), m, []byte("cl1"))
+		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260711000000-second.md"), m, []byte("cl2"))
 	}
 
 	t.Run("single kind narrows to just that class", func(t *testing.T) {
@@ -238,8 +238,8 @@ func TestArtifactsList_StatusFilterAppliedAcrossAllKinds(t *testing.T) {
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "specs", "20260702000000-done.md"), done, []byte("done"))
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "plan.md"), ip, []byte("open"))
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-feature", "context.md"), done, []byte("done"))
-	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260710000000-open.md"), ip, []byte("open"))
-	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260711000000-done.md"), done, []byte("done"))
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260710000000-open.md"), ip, []byte("open"))
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260711000000-done.md"), done, []byte("done"))
 
 	resetArtifactsListFlags(t)
 	resp := runArtifactsListJSON(t, "--status", "completed")
@@ -281,7 +281,7 @@ func TestArtifactsList_CreatedDateRangeFiltersAcrossAllKinds(t *testing.T) {
 		m := metadata.Metadata{CreatedDate: d.when, Status: metadata.StatusInProgress}
 		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "specs", "20260701000000-"+d.suf+".md"), m, []byte(d.suf))
 		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "plans", "20260709000000-"+d.suf, "plan.md"), m, []byte(d.suf))
-		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260710000000-"+d.suf+".md"), m, []byte(d.suf))
+		seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260710000000-"+d.suf+".md"), m, []byte(d.suf))
 	}
 
 	resetArtifactsListFlags(t)
@@ -313,8 +313,8 @@ func TestArtifactsList_CombinedFiltersIntersect(t *testing.T) {
 	// Only spec+completed satisfies --kind spec --status completed.
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "specs", "20260701000000-open.md"), ip, []byte("open"))
 	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "specs", "20260702000000-done.md"), done, []byte("done"))
-	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260710000000-open.md"), ip, []byte("open"))
-	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "20260711000000-done.md"), done, []byte("done"))
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260710000000-open.md"), ip, []byte("open"))
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "20260711000000-done.md"), done, []byte("done"))
 
 	resetArtifactsListFlags(t)
 	resp := runArtifactsListJSON(t, "--kind", "spec", "--status", "completed")
@@ -426,6 +426,53 @@ func TestArtifactsList_MissingConfiguredDirectoriesAreTreatedAsEmpty(t *testing.
 
 	require.NotNil(t, resp.Artifacts)
 	require.Empty(t, resp.Artifacts)
+}
+
+// Criterion 2: changelog artifacts remain visible to artifact listing under
+// the new project-namespaced layout — the scanner lists one folder level down
+// (`<changelogDir>/<projectName>/`), so an entry seeded there surfaces with
+// kind changelog and its flat name.
+func TestArtifactsList_ChangelogEntriesListedFromProjectNamespaceFolder(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, artifactsListConfigYAML)
+
+	created := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "changelog", "testproj", "000002_x.md"),
+		metadata.Metadata{CreatedDate: created, Status: metadata.StatusInProgress}, []byte("changelog body"))
+
+	resetArtifactsListFlags(t)
+	resp := runArtifactsListJSON(t)
+
+	require.Len(t, resp.Artifacts, 1)
+	entry := findArtifactByKindAndName(resp.Artifacts, "changelog", "000002_x.md")
+	require.NotNil(t, entry, "the namespaced changelog entry must appear in the listing")
+	require.Equal(t, "docs/changelog/testproj/000002_x.md", entry["path"])
+	require.Equal(t, "2026-01-10", entry["created_date"])
+	require.Equal(t, "in-progress", entry["status"])
+}
+
+// Criterion 2: a project whose changelog namespace folder does not exist yet
+// lists cleanly — the changelog directory is present but no entry has ever
+// been written for this project, so no `<projectName>/` folder exists, and
+// the scan must treat that as empty rather than erroring.
+func TestArtifactsList_MissingChangelogNamespaceFolderListsCleanly(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, artifactsListConfigYAML)
+
+	// The changelog directory itself exists, but holds no testproj/ folder.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs", "changelog"), 0o755))
+
+	created := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
+	seedArtifactWithMetadata(t, dir, filepath.Join("docs", "specs", "20260709000000-feature.md"),
+		metadata.Metadata{CreatedDate: created, Status: metadata.StatusInProgress}, []byte("spec body"))
+
+	resetArtifactsListFlags(t)
+	resp := runArtifactsListJSON(t)
+
+	require.Len(t, resp.Artifacts, 1, "only the spec must appear; the missing namespace folder is empty, not an error")
+	require.Equal(t, "spec", resp.Artifacts[0]["kind"])
 }
 
 // TestParseKindFlag_EmptyMeansAllKinds asserts the private helper's contract:

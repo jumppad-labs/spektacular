@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/knowledge"
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +62,8 @@ var knowledgeCategoriesCmd = &cobra.Command{
 	Short: "List the knowledge categories and their definitions, tiers, and entry shapes",
 	RunE:  runKnowledgeCategories,
 }
+
+var knowledgeAlwaysAppliedRepos []string
 
 var knowledgeAlwaysAppliedCmd = &cobra.Command{
 	Use:   "always-applied",
@@ -138,8 +143,11 @@ var knowledgeScopePathInputSchema = &schemaObj{
 	Required: []string{"scope", "path"},
 }
 
-// newKnowledgeSet builds a knowledge.Set from the project configuration,
-// resolving relative source locations against the working directory.
+// newKnowledgeSet builds a knowledge.Set from the aggregated knowledge
+// configuration: every registered repo's declared sources in registry order
+// (the colocated repo first by construction), followed by any project-owned
+// sources from the project config. A repo's knowledge travels with the repo
+// into every project that registers it.
 func newKnowledgeSet() (*knowledge.Set, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -149,7 +157,82 @@ func newKnowledgeSet() (*knowledge.Set, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getting working directory: %w", err)
 	}
+
+	sources, err := aggregateKnowledgeSources(cfg, cwd)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Knowledge = config.KnowledgeConfig{Sources: sources}
+
 	return knowledge.NewSet(cfg, cwd)
+}
+
+// aggregateKnowledgeSources builds the effective knowledge source list for
+// the project: each registered repo's declared sources (its repo.yaml, read
+// from the repo's on-disk root; registry order, so repo-declared sources
+// take precedence and the colocated repo comes first), then project-owned
+// sources declared in the project config. Repos not materialized locally
+// are skipped — their knowledge joins the set once the repo is on disk.
+// Relative source locations in a repo's config resolve against that repo's
+// root, and each source is stamped with its repo's name for attribution.
+func aggregateKnowledgeSources(cfg config.Config, projectRoot string) ([]config.SourceConfig, error) {
+	entries := cfg.Repos
+	if len(entries) == 0 {
+		// A project written before the registry existed (or a minimal
+		// hand-written config) is still a project of one: treat the
+		// colocated repo as implicitly registered.
+		entries = []config.RepoEntry{{Name: cfg.Name, Local: "."}}
+	}
+
+	regCfg := cfg
+	regCfg.Repos = entries
+	set, err := repo.New(regCfg, projectRoot, repoGit)
+	if err != nil {
+		return nil, err
+	}
+
+	var sources []config.SourceConfig
+	for _, e := range set.Entries() {
+		root, ok := set.LocalRoot(e.Name)
+		if !ok {
+			continue
+		}
+
+		rc := config.NewDefaultRepoConfig()
+		rcPath := filepath.Join(root, ".spektacular", config.RepoConfigFileName)
+		if _, err := os.Stat(rcPath); os.IsNotExist(err) {
+			// The colocated repo may predate the config split; its own store
+			// is synthesised from defaults. A member repo without a footprint
+			// is broken and gets a repair offer instead.
+			if root != projectRoot {
+				return nil, output.NewError(
+					"repo_footprint",
+					fmt.Sprintf("repo %q at %s is missing its %s", e.Name, root, filepath.Join(".spektacular", config.RepoConfigFileName)),
+				).WithResource(rcPath).
+					WithNextAction(fmt.Sprintf("run `%s repo add --data '{\"name\":%q}'` to repair the repo's footprint", cfg.Command, e.Name))
+			}
+		} else {
+			loaded, err := config.RepoConfigFromYAMLFile(rcPath)
+			if err != nil {
+				return nil, output.NewError(
+					"repo_footprint",
+					fmt.Sprintf("repo %q at %s has an invalid repo config: %v", e.Name, root, err),
+				).WithResource(rcPath).
+					WithNextAction(fmt.Sprintf("fix %s, or run `%s repo add --data '{\"name\":%q}'` to repair the repo's footprint", rcPath, cfg.Command, e.Name))
+			}
+			rc = loaded
+		}
+
+		for _, src := range rc.WithDefaults(root).Knowledge.Sources {
+			src.Repo = e.Name
+			if src.Provider == config.ProviderFile && !filepath.IsAbs(src.Config.Location) {
+				src.Config.Location = filepath.Join(root, src.Config.Location)
+			}
+			sources = append(sources, src)
+		}
+	}
+
+	return append(sources, cfg.Knowledge.Sources...), nil
 }
 
 func runKnowledgeSearch(cmd *cobra.Command, args []string) error {
@@ -284,7 +367,7 @@ func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := set.AlwaysAppliedEntries()
+	entries, err := set.AlwaysAppliedEntries(knowledgeAlwaysAppliedRepos...)
 	if err != nil {
 		return err
 	}
@@ -342,6 +425,7 @@ func init() {
 	knowledgeReadCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().String("file", "", "Read entry content from the file at <path> (relative to cwd); stdin is used when omitted")
+	knowledgeAlwaysAppliedCmd.Flags().StringArrayVar(&knowledgeAlwaysAppliedRepos, "repo", nil, "Limit repo-declared sources to the named registered repo(s) (repeatable); project-owned sources always load; omit to load every source")
 
 	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd, knowledgeCategoriesCmd, knowledgeAlwaysAppliedCmd)
 }

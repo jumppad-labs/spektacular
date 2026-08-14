@@ -65,7 +65,7 @@ func setupImplementCmd(t *testing.T) (*bytes.Buffer, *bytes.Buffer) {
 func TestImplementNew_RejectsMissingPlan(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular"), 0o755))
+	writeSpecCommandConfig(t, dir, "")
 
 	setupImplementCmd(t)
 	rootCmd.SetArgs([]string{"implement", "new", "--data", `{"name":"nosuch"}`})
@@ -92,7 +92,7 @@ func TestImplementNew_SucceedsWithExistingPlan(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
-	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	writeSpecCommandConfig(t, dir, "")
 	writeFixturePlan(t, dataDir, "fixture")
 
 	stdout, _ := setupImplementCmd(t)
@@ -111,7 +111,7 @@ func TestImplementNew_SucceedsWithExistingPlan(t *testing.T) {
 func TestImplementGoto_RequiresActiveWorkflow(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular"), 0o755))
+	writeSpecCommandConfig(t, dir, "")
 
 	setupImplementCmd(t)
 	rootCmd.SetArgs([]string{"implement", "goto", "--data", `{"step":"analyze"}`})
@@ -125,7 +125,7 @@ func TestImplementGoto_AdvancesThroughStep(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
-	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	writeSpecCommandConfig(t, dir, "")
 	writeFixturePlan(t, dataDir, "fixture")
 
 	// Start the workflow — state file is written with name=fixture.
@@ -147,7 +147,7 @@ func TestImplementGoto_UpdateFeatureChangelogInstructsChangelogWrite(t *testing.
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
-	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	writeSpecCommandConfig(t, dir, "")
 	writeFixturePlan(t, dataDir, "fixture")
 
 	setupImplementCmd(t)
@@ -185,7 +185,7 @@ func TestImplementStatus_ReportsUncheckedPhases(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
-	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	writeSpecCommandConfig(t, dir, "")
 	writeFixturePlan(t, dataDir, "fixture")
 
 	setupImplementCmd(t)
@@ -245,6 +245,7 @@ func TestImplementNew_InProgressReturnsWorkflowInProgressError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir, "")
 	writeFixturePlan(t, dataDir, "fixture")
 
 	writeInProgressState(t, dataDir, workflow.State{

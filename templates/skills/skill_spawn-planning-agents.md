@@ -4,7 +4,11 @@ Orchestrate parallel research agents to investigate the codebase for planning pu
 
 ## Instructions
 
-Use your agent orchestration capability to run multiple research tasks in parallel. Launch the following agents concurrently:
+Use your agent orchestration capability to run multiple research tasks in parallel.
+
+**Multi-repo projects**: when the project registers more than one repo, fan the research out per repo — run the `repo list` command for each registered repo's resolved local path and metadata, and give every research agent below an explicit repo root (or one agent per repo per question, for questions that span repos). Each repo's description, role, and tags tell you which repos a question is even relevant to; don't send every agent into every repo indiscriminately.
+
+Launch the following agents concurrently:
 
 ### Agent 1: File Discovery
 Find all files related to the feature being planned. Organize results by category:

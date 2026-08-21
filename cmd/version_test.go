@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
@@ -225,4 +226,362 @@ func TestVersionCheck_Schema(t *testing.T) {
 	require.Contains(t, stdout, "match")
 	require.Contains(t, stdout, "mismatch")
 	require.Contains(t, stdout, "missing")
+	require.Contains(t, stdout, "migration_needed")
+}
+
+// TestVersionCheck_MigrationNeeded covers Phase 3.2 acceptance criteria:
+// migration prompt appears when legacy config detected, prompt explains
+// changes, and normal version check proceeds when repo.yaml exists.
+func TestVersionCheck_MigrationNeeded(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupFiles     func(t *testing.T, dir string)
+		wantStatus     string
+		wantAction     bool
+		actionContains []string
+	}{
+		{
+			name: "legacy config triggers migration prompt",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				configPath := filepath.Join(dataDir, "config.yaml")
+				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
+			},
+			wantStatus: "migration_needed",
+			wantAction: true,
+			actionContains: []string{
+				"legacy single-file format",
+				"config.yaml.old",
+				"repo.yaml",
+				"migration",
+			},
+		},
+		{
+			name: "already migrated proceeds with normal version check",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				configPath := filepath.Join(dataDir, "config.yaml")
+				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
+				repoPath := filepath.Join(dataDir, "repo.yaml")
+				require.NoError(t, os.WriteFile(repoPath, []byte("description: test\n"), 0o644))
+				versionPath := filepath.Join(dataDir, "version")
+				require.NoError(t, os.WriteFile(versionPath, []byte("0.1.0\n"), 0o644))
+			},
+			wantStatus: "match",
+			wantAction: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			tt.setupFiles(t, dir)
+
+			m, code := runVersionCheckJSON(t)
+			require.Equal(t, 0, code)
+			require.Equal(t, false, m["error"])
+			require.Equal(t, tt.wantStatus, m["status"])
+
+			if tt.wantAction {
+				action, ok := m["action"].(string)
+				require.True(t, ok, "action field must be present and be a string")
+				require.NotEmpty(t, action)
+				for _, substr := range tt.actionContains {
+					require.Contains(t, action, substr)
+				}
+			} else {
+				require.NotContains(t, m, "action", "no action should be present for normal version check")
+			}
+		})
+	}
+}
+
+// TestDetectMigrationNeeded covers Phase 1.1 acceptance criteria: detection
+// correctly identifies legacy configs, skips when already migrated, and
+// handles missing directories gracefully.
+func TestDetectMigrationNeeded(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupFiles     func(t *testing.T, dir string)
+		wantMigration  bool
+		wantErr        bool
+	}{
+		{
+			name: "legacy config without repo.yaml needs migration",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				configPath := filepath.Join(dataDir, "config.yaml")
+				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
+			},
+			wantMigration: true,
+			wantErr:       false,
+		},
+		{
+			name: "already migrated with both files skips migration",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				configPath := filepath.Join(dataDir, "config.yaml")
+				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
+				repoPath := filepath.Join(dataDir, "repo.yaml")
+				require.NoError(t, os.WriteFile(repoPath, []byte("description: test\n"), 0o644))
+			},
+			wantMigration: false,
+			wantErr:       false,
+		},
+		{
+			name: "missing .spektacular directory skips migration",
+			setupFiles: func(t *testing.T, dir string) {
+				// Don't create .spektacular directory
+			},
+			wantMigration: false,
+			wantErr:       false,
+		},
+		{
+			name: "missing config.yaml skips migration",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				// Don't create config.yaml
+			},
+			wantMigration: false,
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tt.setupFiles(t, dir)
+
+			dataDir := filepath.Join(dir, ".spektacular")
+			gotMigration, err := detectMigrationNeeded(dataDir)
+
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantMigration, gotMigration)
+		})
+	}
+}
+
+// TestExecuteMigration covers Phase 2.1 acceptance criteria: migration
+// creates backup, writes repo.yaml, verifies files, and rolls back on error.
+func TestExecuteMigration(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupFiles    func(t *testing.T, dir string)
+		simulateError string
+		wantErr       bool
+		checkResult   func(t *testing.T, dir string)
+	}{
+		{
+			name: "successful migration creates backup and repo.yaml",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				configPath := filepath.Join(dataDir, "config.yaml")
+				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
+			},
+			wantErr: false,
+			checkResult: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				// Verify backup exists
+				backupPath := filepath.Join(dataDir, "config.yaml.old")
+				backupData, err := os.ReadFile(backupPath)
+				require.NoError(t, err)
+				require.Equal(t, "project: test\n", string(backupData))
+				
+				// Verify repo.yaml exists
+				repoPath := filepath.Join(dataDir, "repo.yaml")
+				_, err = os.Stat(repoPath)
+				require.NoError(t, err)
+				
+				// Verify original config.yaml still exists
+				configPath := filepath.Join(dataDir, "config.yaml")
+				_, err = os.Stat(configPath)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "rollback restores config.yaml and removes repo.yaml on write error",
+			setupFiles: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				require.NoError(t, os.MkdirAll(dataDir, 0o755))
+				configPath := filepath.Join(dataDir, "config.yaml")
+				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
+				// Make dataDir read-only to simulate write error
+				require.NoError(t, os.Chmod(dataDir, 0o555))
+			},
+			wantErr: true,
+			checkResult: func(t *testing.T, dir string) {
+				dataDir := filepath.Join(dir, ".spektacular")
+				// Restore write permissions for cleanup
+				os.Chmod(dataDir, 0o755)
+				
+				// Verify no backup remains
+				backupPath := filepath.Join(dataDir, "config.yaml.old")
+				_, err := os.Stat(backupPath)
+				require.True(t, os.IsNotExist(err) || err != nil)
+				
+				// Verify no repo.yaml was created
+				repoPath := filepath.Join(dataDir, "repo.yaml")
+				_, err = os.Stat(repoPath)
+				require.True(t, os.IsNotExist(err))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tt.setupFiles(t, dir)
+
+			dataDir := filepath.Join(dir, ".spektacular")
+			cfg := config.NewDefaultRepoConfig()
+			cfg.Description = "Test project"
+			cfg.Role = "application"
+			cfg.Tags = []string{"test"}
+			cfg.Deployment = "manual"
+
+			err := executeMigration(dataDir, &cfg)
+
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tt.checkResult != nil {
+				tt.checkResult(t, dir)
+			}
+		})
+	}
+}
+
+// TestScanProjectMetadata covers Phase 1.2 acceptance criteria: scanner
+// extracts metadata from project files and provides defaults when files
+// are missing or unparseable.
+func TestScanProjectMetadata(t *testing.T) {
+	tests := []struct {
+		name            string
+		setupFiles      func(t *testing.T, dir string)
+		wantDescription string
+		wantRole        string
+		wantTags        []string
+		wantDeployment  string
+	}{
+		{
+			name: "extracts description from README H1 title",
+			setupFiles: func(t *testing.T, dir string) {
+				readme := "# My Awesome Project\n\nSome description here."
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0o644))
+			},
+			wantDescription: "My Awesome Project",
+			wantRole:        "application",
+			wantTags:        []string{"general"},
+			wantDeployment:  "manual",
+		},
+		{
+			name: "extracts description from README first paragraph",
+			setupFiles: func(t *testing.T, dir string) {
+				readme := "This is the first paragraph.\n\nSecond paragraph."
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0o644))
+			},
+			wantDescription: "This is the first paragraph.",
+			wantRole:        "application",
+			wantTags:        []string{"general"},
+			wantDeployment:  "manual",
+		},
+		{
+			name: "detects Go project via go.mod",
+			setupFiles: func(t *testing.T, dir string) {
+				goMod := "module github.com/example/project\n\ngo 1.21\n"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644))
+			},
+			wantDescription: "A Spektacular project",
+			wantRole:        "application",
+			wantTags:        []string{"go"},
+			wantDeployment:  "manual",
+		},
+		{
+			name: "detects Node.js project via package.json",
+			setupFiles: func(t *testing.T, dir string) {
+				packageJSON := `{"name": "my-project", "version": "1.0.0"}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(packageJSON), 0o644))
+			},
+			wantDescription: "A Spektacular project",
+			wantRole:        "application",
+			wantTags:        []string{"nodejs"},
+			wantDeployment:  "manual",
+		},
+		{
+			name: "infers docker deployment from Dockerfile",
+			setupFiles: func(t *testing.T, dir string) {
+				dockerfile := "FROM golang:1.21\nCOPY . .\nRUN go build\n"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644))
+			},
+			wantDescription: "A Spektacular project",
+			wantRole:        "application",
+			wantTags:        []string{"general"},
+			wantDeployment:  "docker",
+		},
+		{
+			name: "infers make deployment from Makefile",
+			setupFiles: func(t *testing.T, dir string) {
+				makefile := "build:\n\tgo build\n"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), []byte(makefile), 0o644))
+			},
+			wantDescription: "A Spektacular project",
+			wantRole:        "application",
+			wantTags:        []string{"general"},
+			wantDeployment:  "make",
+		},
+		{
+			name: "provides defaults when all heuristics fail",
+			setupFiles: func(t *testing.T, dir string) {
+				// Don't create any project files
+			},
+			wantDescription: "A Spektacular project",
+			wantRole:        "application",
+			wantTags:        []string{"general"},
+			wantDeployment:  "manual",
+		},
+		{
+			name: "combines multiple heuristics",
+			setupFiles: func(t *testing.T, dir string) {
+				readme := "# Spektacular CLI Tool\n\nA command-line tool."
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0o644))
+				goMod := "module github.com/example/cli\n\ngo 1.21\n"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644))
+				dockerfile := "FROM golang:1.21\n"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644))
+			},
+			wantDescription: "Spektacular CLI Tool",
+			wantRole:        "application",
+			wantTags:        []string{"go"},
+			wantDeployment:  "docker",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tt.setupFiles(t, dir)
+
+			cfg, err := scanProjectMetadata(dir)
+			require.NoError(t, err)
+			require.NotNil(t, cfg)
+			require.Equal(t, tt.wantDescription, cfg.Description)
+			require.Equal(t, tt.wantRole, cfg.Role)
+			require.Equal(t, tt.wantTags, cfg.Tags)
+			require.Equal(t, tt.wantDeployment, cfg.Deployment)
+		})
+	}
 }

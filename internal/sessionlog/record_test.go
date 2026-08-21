@@ -180,6 +180,76 @@ func TestRecordMkdirFailureDoesNotPanic(t *testing.T) {
 	require.Len(t, lines, 1)
 }
 
+// TestLogFilePath_StartMintsFreshTimestampedFile asserts that when start is
+// true, LogFilePath always mints a brand-new filename stamped with the
+// given moment, the agent, and the session id — even when a file for the
+// same session already exists (e.g. a `--force` restart of the same named
+// workflow) — rather than reusing it.
+func TestLogFilePath_StartMintsFreshTimestampedFile(t *testing.T) {
+	dir := t.TempDir()
+	earlier := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	later := earlier.Add(time.Hour)
+
+	first := LogFilePath(dir, "claude", "plan:billing", true, earlier)
+	require.NoError(t, os.WriteFile(first, []byte(`{}`+"\n"), 0644))
+
+	second := LogFilePath(dir, "claude", "plan:billing", true, later)
+
+	require.NotEqual(t, first, second, "a second start must mint a distinct file, not reuse the first")
+	require.Contains(t, filepath.Base(first), "claude")
+	require.Contains(t, filepath.Base(first), "plan_billing")
+	require.Contains(t, filepath.Base(second), "plan_billing")
+}
+
+// TestLogFilePath_ResumeAppendsToLatestMatchingFile asserts that when start
+// is false, LogFilePath finds and reuses the most recently started file for
+// the same session id — the one a resumed workflow (or any other command
+// sharing that session) should keep appending to — even when an older,
+// unrelated file for the same session also exists on disk.
+func TestLogFilePath_ResumeAppendsToLatestMatchingFile(t *testing.T) {
+	dir := t.TempDir()
+	older := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	newer := time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)
+
+	oldSession := LogFilePath(dir, "claude", "plan:billing", true, older)
+	require.NoError(t, os.WriteFile(oldSession, []byte(`{}`+"\n"), 0644))
+	newSession := LogFilePath(dir, "claude", "plan:billing", true, newer)
+	require.NoError(t, os.WriteFile(newSession, []byte(`{}`+"\n"), 0644))
+
+	resumed := LogFilePath(dir, "claude", "plan:billing", false, newer.Add(time.Minute))
+
+	require.Equal(t, newSession, resumed, "resume must append to the most recently started session file, not an older one")
+}
+
+// TestLogFilePath_ResumeWithNoExistingFileMintsOne asserts a non-start call
+// still mints a fresh file when no matching one exists yet — covering an ad
+// hoc command that runs before any workflow's `new` has ever been recorded,
+// and any session that predates this file-per-session scheme.
+func TestLogFilePath_ResumeWithNoExistingFileMintsOne(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+
+	got := LogFilePath(dir, "claude", "no-active-workflow", false, now)
+
+	require.Contains(t, filepath.Base(got), "no-active-workflow")
+	_, err := os.Stat(got)
+	require.True(t, os.IsNotExist(err), "LogFilePath only resolves the path; it must not create the file itself")
+}
+
+// TestLogFilePath_DistinctSessionsNeverShareAFile asserts that two
+// different session ids started at the exact same moment resolve to
+// different files, so unrelated workflows are never interleaved into one
+// log purely because they happened to start in the same second.
+func TestLogFilePath_DistinctSessionsNeverShareAFile(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+
+	billing := LogFilePath(dir, "claude", "plan:billing", true, now)
+	widget := LogFilePath(dir, "claude", "plan:widget", true, now)
+
+	require.NotEqual(t, billing, widget)
+}
+
 // TestRecordReadOnlyDirectoryDoesNotPanic covers the case where the log's
 // parent directory already exists but is not writable, so file creation
 // (rather than directory creation) is what fails.

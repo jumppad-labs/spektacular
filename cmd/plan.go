@@ -39,6 +39,7 @@ var planStatusOutputSchema = &schemaObj{
 var planCmd = &cobra.Command{
 	Use:   "plan",
 	Short: "Manage plan workflow",
+	RunE:  runUnknownSubcommand,
 }
 
 var planNewCmd = &cobra.Command{
@@ -84,19 +85,6 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	force, _ := cmd.Flags().GetBool("force")
 
-	if dataStr == "" {
-		return fmt.Errorf("--data is required (e.g. --data '{\"name\":\"my-feature\"}')")
-	}
-	var input struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
-		return fmt.Errorf("parsing --data: %w", err)
-	}
-	if input.Name == "" || !nameRegexp.MatchString(input.Name) || len(input.Name) > 64 {
-		return fmt.Errorf("name must match ^[a-z0-9_-]+$ and be at most 64 characters")
-	}
-
 	dataDir, err := dataDir()
 	if err != nil {
 		return err
@@ -110,6 +98,9 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Check for an in-progress workflow BEFORE requiring a name — mirrors
+	// spec new so the driving agent can offer resume without first
+	// prompting the user for a spec name.
 	statePath := stateFilePath(dataDir)
 	if dryRun {
 		statePath += ".dryrun-tmp"
@@ -121,6 +112,21 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		if handled {
 			return err
 		}
+	}
+
+	// No workflow to resume — starting fresh requires a name.
+	if dataStr == "" {
+		return output.NewError("name_required", "no spec name was provided").
+			WithNextAction(`specify the spec to plan against with --data '{"name":"<spec_name>"}'; to see existing specs, run "spec file list"`)
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+		return fmt.Errorf("parsing --data: %w", err)
+	}
+	if input.Name == "" || !nameRegexp.MatchString(input.Name) || len(input.Name) > 64 {
+		return fmt.Errorf("name must match ^[a-z0-9_-]+$ and be at most 64 characters")
 	}
 
 	wfCfg := workflow.Config{Command: cfg.Command, Kind: "plan", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
@@ -159,7 +165,8 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	if dataStr == "" {
-		return fmt.Errorf("--data is required (e.g. --data '{\"step\":\"discovery\"}')")
+		return output.NewError("step_required", "no step was provided").
+			WithNextAction(`specify the step with --data '{"step":"<step_name>"}'; run "plan steps" to see valid step names`)
 	}
 	var input map[string]any
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
@@ -167,7 +174,8 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 	}
 	stepVal, _ := input["step"].(string)
 	if stepVal == "" {
-		return fmt.Errorf("\"step\" is required in --data")
+		return output.NewError("step_required", `"step" is missing or empty in --data`).
+			WithNextAction(`include a non-empty "step" in --data, e.g. --data '{"step":"<step_name>"}'; run "plan steps" to see valid step names`)
 	}
 
 	dataDir, err := dataDir()

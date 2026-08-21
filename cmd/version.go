@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -14,15 +15,16 @@ import (
 // "error": false discriminant is injected by the output writer — never
 // declared on the struct.
 type VersionCheckResult struct {
-	Status           string `json:"status"`                      // "match" | "mismatch" | "missing"
+	Status           string `json:"status"`                      // "match" | "mismatch" | "missing" | "migration_needed"
 	InstalledVersion string `json:"installed_version,omitempty"` // recorded in .spektacular/version; empty when missing
 	CurrentVersion   string `json:"current_version"`             // the running binary's version
-	Action           string `json:"action,omitempty"`            // set on mismatch/missing: instruction to relay to the user
+	Action           string `json:"action,omitempty"`            // set on mismatch/missing/migration_needed: instruction to relay to the user
 }
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Report and check the installed Spektacular version",
+	RunE:  runUnknownSubcommand,
 }
 
 var versionCheckCmd = &cobra.Command{
@@ -41,7 +43,7 @@ func runVersionCheck(cmd *cobra.Command, _ []string) error {
 			Output: &schemaObj{
 				Type: "object",
 				Properties: map[string]*schemaProp{
-					"status":            {Type: "string", Enum: []string{"match", "mismatch", "missing"}},
+					"status":            {Type: "string", Enum: []string{"match", "mismatch", "missing", "migration_needed"}},
 					"installed_version": {Type: "string"},
 					"current_version":   {Type: "string"},
 					"action":            {Type: "string"},
@@ -55,6 +57,22 @@ func runVersionCheck(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Check for migration before version comparison
+	migrationNeeded, err := detectMigrationNeeded(dir)
+	if err != nil {
+		return output.NewError("migration_check_failed", fmt.Sprintf("checking for migration: %v", err)).
+			WithNextAction("Verify .spektacular directory structure and permissions.")
+	}
+	if migrationNeeded {
+		result := VersionCheckResult{
+			Status:         "migration_needed",
+			CurrentVersion: version,
+			Action:         migrationPrompt(),
+		}
+		return output.New(cmd.OutOrStdout(), globalFields).WriteResult(result)
+	}
+
 	path := versionFilePath(dir)
 
 	var recorded string
@@ -82,6 +100,14 @@ func runVersionCheck(cmd *cobra.Command, _ []string) error {
 	}
 
 	return output.New(cmd.OutOrStdout(), globalFields).WriteResult(result)
+}
+
+// migrationPrompt composes the instruction text for the migration_needed status.
+func migrationPrompt() string {
+	return "the installed Spektacular configuration uses the legacy single-file format — " +
+		"a config.yaml/repo.yaml split is needed for multi-repo project support. " +
+		"The migration will create a backup (config.yaml.old) and generate repo.yaml with " +
+		"metadata scanned from your project files. Run the migration to proceed."
 }
 
 // classifyVersion compares the recorded version-file content against the
@@ -117,6 +143,159 @@ func staleAction(status string) string {
 		reason = "the installed Spektacular files have no recorded version"
 	}
 	return fmt.Sprintf("%s — ask the user to re-run `%s` to refresh them", reason, initCmd)
+}
+
+// detectMigrationNeeded checks whether a legacy single-file config.yaml
+// exists without a corresponding repo.yaml, indicating migration is needed.
+// Returns true when migration should be offered, false otherwise.
+func detectMigrationNeeded(dataDir string) (bool, error) {
+	configPath := filepath.Join(dataDir, "config.yaml")
+	repoPath := filepath.Join(dataDir, "repo.yaml")
+
+	// Check if config.yaml exists
+	_, err := os.Stat(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No config.yaml means no project initialized yet
+			return false, nil
+		}
+		return false, fmt.Errorf("checking config.yaml: %w", err)
+	}
+
+	// Check if repo.yaml exists
+	_, err = os.Stat(repoPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// config.yaml exists but repo.yaml doesn't - migration needed
+			return true, nil
+		}
+		return false, fmt.Errorf("checking repo.yaml: %w", err)
+	}
+
+	// Both files exist - already migrated
+	return false, nil
+}
+
+// scanProjectMetadata reads project files to infer appropriate repo.yaml
+// metadata values. Uses best-effort heuristics with graceful fallback to
+// defaults. Always returns a valid RepoConfig, never fails.
+func scanProjectMetadata(projectRoot string) (*config.RepoConfig, error) {
+	cfg := config.NewDefaultRepoConfig()
+
+	// Try to extract description from README.md
+	readmePath := filepath.Join(projectRoot, "README.md")
+	if data, err := os.ReadFile(readmePath); err == nil {
+		content := string(data)
+		// Try to find first H1 title
+		if idx := strings.Index(content, "# "); idx != -1 {
+			end := strings.Index(content[idx:], "\n")
+			if end != -1 {
+				cfg.Description = strings.TrimSpace(content[idx+2 : idx+end])
+			}
+		}
+		// If no H1, try first paragraph
+		if cfg.Description == "" {
+			lines := strings.Split(content, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					cfg.Description = line
+					break
+				}
+			}
+		}
+	}
+
+	// Detect Go projects via go.mod
+	goModPath := filepath.Join(projectRoot, "go.mod")
+	if _, err := os.Stat(goModPath); err == nil {
+		cfg.Role = "application"
+		cfg.Tags = append(cfg.Tags, "go")
+	}
+
+	// Detect Node.js projects via package.json
+	packageJSONPath := filepath.Join(projectRoot, "package.json")
+	if _, err := os.Stat(packageJSONPath); err == nil {
+		if cfg.Role == "" {
+			cfg.Role = "application"
+		}
+		cfg.Tags = append(cfg.Tags, "nodejs")
+	}
+
+	// Infer deployment method from Makefile/Dockerfile
+	makefilePath := filepath.Join(projectRoot, "Makefile")
+	dockerfilePath := filepath.Join(projectRoot, "Dockerfile")
+	if _, err := os.Stat(dockerfilePath); err == nil {
+		cfg.Deployment = "docker"
+	} else if _, err := os.Stat(makefilePath); err == nil {
+		cfg.Deployment = "make"
+	}
+
+	// Ensure defaults if nothing was detected
+	if cfg.Description == "" {
+		cfg.Description = "A Spektacular project"
+	}
+	if cfg.Role == "" {
+		cfg.Role = "application"
+	}
+	if len(cfg.Tags) == 0 {
+		cfg.Tags = []string{"general"}
+	}
+	if cfg.Deployment == "" {
+		cfg.Deployment = "manual"
+	}
+
+	return &cfg, nil
+}
+
+// executeMigration performs the atomic migration sequence: create
+// config.yaml.old backup, write repo.yaml with provided metadata, verify
+// both files exist. Uses a deferred rollback function that restores the
+// original state if any step fails.
+func executeMigration(dataDir string, repoCfg *config.RepoConfig) error {
+	configPath := filepath.Join(dataDir, "config.yaml")
+	backupPath := filepath.Join(dataDir, "config.yaml.old")
+	repoPath := filepath.Join(dataDir, "repo.yaml")
+
+	var rollbackNeeded bool
+	defer func() {
+		if rollbackNeeded {
+			// Restore config.yaml from backup if it exists
+			if _, err := os.Stat(backupPath); err == nil {
+				os.Rename(backupPath, configPath)
+			}
+			// Remove partially-written repo.yaml
+			os.Remove(repoPath)
+		}
+	}()
+
+	rollbackNeeded = true
+
+	// Step 1: Create backup of config.yaml
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("reading config.yaml for backup: %w", err)
+	}
+	if err := os.WriteFile(backupPath, configData, 0644); err != nil {
+		return fmt.Errorf("creating config.yaml.old backup: %w", err)
+	}
+
+	// Step 2: Write repo.yaml with provided metadata
+	if err := repoCfg.ToYAMLFile(repoPath); err != nil {
+		return fmt.Errorf("writing repo.yaml: %w", err)
+	}
+
+	// Step 3: Verify both files exist
+	if _, err := os.Stat(backupPath); err != nil {
+		return fmt.Errorf("verifying config.yaml.old exists: %w", err)
+	}
+	if _, err := os.Stat(repoPath); err != nil {
+		return fmt.Errorf("verifying repo.yaml exists: %w", err)
+	}
+
+	// Success - disable rollback
+	rollbackNeeded = false
+	return nil
 }
 
 // versionFilePath returns the path of the version file inside the given

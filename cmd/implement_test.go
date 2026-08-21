@@ -78,7 +78,7 @@ func TestImplementNew_RejectsMissingPlan(t *testing.T) {
 func TestImplementNew_RejectsInvalidName(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".spektacular"), 0o755))
+	writeSpecCommandConfig(t, dir, "")
 
 	setupImplementCmd(t)
 	rootCmd.SetArgs([]string{"implement", "new", "--data", `{"name":"Invalid Name"}`})

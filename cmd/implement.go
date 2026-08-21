@@ -43,6 +43,7 @@ var implementStatusOutputSchema = &schemaObj{
 var implementCmd = &cobra.Command{
 	Use:   "implement",
 	Short: "Manage implement workflow",
+	RunE:  runUnknownSubcommand,
 }
 
 var implementNewCmd = &cobra.Command{
@@ -88,19 +89,6 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	force, _ := cmd.Flags().GetBool("force")
 
-	if dataStr == "" {
-		return fmt.Errorf("--data is required (e.g. --data '{\"name\":\"my-feature\"}')")
-	}
-	var input struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
-		return fmt.Errorf("parsing --data: %w", err)
-	}
-	if input.Name == "" || !nameRegexp.MatchString(input.Name) || len(input.Name) > 64 {
-		return fmt.Errorf("name must match ^[a-z0-9_-]+$ and be at most 64 characters")
-	}
-
 	dataDir, err := dataDir()
 	if err != nil {
 		return err
@@ -114,13 +102,9 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Precondition: the plan file must exist before an implement workflow
-	// can run against it. The workflow operates on an already-approved plan.
-	planPath := filepath.Join(root, implement.PlanFilePath(cfg.Plan.Config.Directory, input.Name))
-	if _, statErr := os.Stat(planPath); statErr != nil {
-		return fmt.Errorf("plan file not found at %s — run 'plan new' first or check the name", planPath)
-	}
-
+	// Check for an in-progress workflow BEFORE requiring a name — mirrors
+	// spec new so the driving agent can offer resume without first
+	// prompting the user for a plan name.
 	statePath := stateFilePath(dataDir)
 	if dryRun {
 		statePath += ".dryrun-tmp"
@@ -132,6 +116,28 @@ func runImplementNew(cmd *cobra.Command, _ []string) error {
 		if handled {
 			return err
 		}
+	}
+
+	// No workflow to resume — starting fresh requires a name.
+	if dataStr == "" {
+		return output.NewError("name_required", "no plan name was provided").
+			WithNextAction(`specify the plan to implement with --data '{"name":"<plan_name>"}'; to see existing plans, run "plan file list"`)
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+		return fmt.Errorf("parsing --data: %w", err)
+	}
+	if input.Name == "" || !nameRegexp.MatchString(input.Name) || len(input.Name) > 64 {
+		return fmt.Errorf("name must match ^[a-z0-9_-]+$ and be at most 64 characters")
+	}
+
+	// Precondition: the plan file must exist before an implement workflow
+	// can run against it. The workflow operates on an already-approved plan.
+	planPath := filepath.Join(root, implement.PlanFilePath(cfg.Plan.Config.Directory, input.Name))
+	if _, statErr := os.Stat(planPath); statErr != nil {
+		return fmt.Errorf("plan file not found at %s — run 'plan new' first or check the name", planPath)
 	}
 
 	wfCfg := workflow.Config{Command: cfg.Command, Kind: "implement", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory, ChangelogDir: cfg.Changelog.Config.Directory}
@@ -169,7 +175,8 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	if dataStr == "" {
-		return fmt.Errorf("--data is required (e.g. --data '{\"step\":\"analyze\"}')")
+		return output.NewError("step_required", "no step was provided").
+			WithNextAction(`specify the step with --data '{"step":"<step_name>"}'; run "implement steps" to see valid step names`)
 	}
 	var input map[string]any
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
@@ -177,7 +184,8 @@ func runImplementGoto(cmd *cobra.Command, _ []string) error {
 	}
 	stepVal, _ := input["step"].(string)
 	if stepVal == "" {
-		return fmt.Errorf("\"step\" is required in --data")
+		return output.NewError("step_required", `"step" is missing or empty in --data`).
+			WithNextAction(`include a non-empty "step" in --data, e.g. --data '{"step":"<step_name>"}'; run "implement steps" to see valid step names`)
 	}
 
 	dataDir, err := dataDir()

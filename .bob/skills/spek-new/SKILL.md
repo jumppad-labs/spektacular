@@ -3,6 +3,11 @@ name: spek-new
 description: Create a new Specification for a feature.
 ---
 
+> **Version check first.** Before running any other command, run `go run . version check`.
+> - On `status: "match"`, continue with the skill and produce no version-related output.
+> - On `"mismatch"` or `"missing"`, the installed Spektacular files are out of date: relay the response's `action` message to the user, ask them to re-run `go run . init <agent>`, and wait for their decision before continuing.
+> - Never modify or re-install any installed files yourself — refreshing the installation is always an explicit, user-initiated re-run of init.
+
 > **STOP. Read this before running any command below.**
 > A single successful CLI call — including the very first `spec new` — is **NOT** task completion. It is not a milestone to report back to the user. It is one step out of many in a workflow that you must keep driving, turn after turn, without stopping, until the CLI itself tells you the workflow is *finished*. If you find yourself about to say "successfully completed" or summarize results after calling `spec new` or `spec goto` even once, you are wrong — go back and read the `instruction` field you just received, do what it says, and call `goto` again.
 
@@ -19,7 +24,11 @@ On each turn, the CLI returns JSON containing an `instruction` field. That instr
 
 **This is a loop. Do not stop after the first step.** Keep looping — step → goto → next instruction → step — until a returned instruction tells you the workflow is *finished*. Only then should you report completion to the user.
 
-**Concretely: do not stop after `spec new`.** That command only starts the workflow — it returns the *first* instruction (the `overview` step), not a finished spec. Seeing a clean JSON response with no `error` is not a signal to stop; it is the signal to keep going. Reporting success, summarizing "spec initialized," or handing control back to the user at this point is the single most common way this skill is executed incorrectly — do not do it.
+**Concretely: do not stop after `spec new`.** That command only starts the workflow — it returns the *first* instruction (the `interview` step), not a finished spec. Seeing a clean JSON response with no `error` is not a signal to stop; it is the signal to keep going. Reporting success, summarizing "spec initialized," or handing control back to the user at this point is the single most common way this skill is executed incorrectly — do not do it.
+
+# The interview step
+
+Before any section is drafted, the workflow opens with an `interview` step: a single open-ended conversation, not a fixed script. You ask adaptive questions about what's being built, who it's for, and what constraints apply, following up on what the user has already said rather than working through a predetermined list. You have the project's full registered-repo roster available during this step — if the project spans more than one repo and the feature reads as focused on one of them, ask whether it also needs changes in another registered repo, shaped by what that other repo actually is (for example, a documentation repo invites asking whether docs need updating). Stop the interview once further questions wouldn't materially change the draft, not once every conceivable detail has been asked about — this should take a small number of exchanges, not an exhaustive back-and-forth. Save your synthesized understanding (not a transcript) to `.spektacular/work/<spec_name>/interview.md` with your own `Write` tool before advancing; every later section step drafts from this file and presents its draft back for confirmation, rather than asking its own scripted question from a blank prompt. A session interrupted mid-interview resumes on the `interview` step itself — read back `.spektacular/work/<spec_name>/interview.md` (if partially written) and `.spektacular/context.md` before continuing the conversation.
 
 # Reading and writing the spec file
 
@@ -54,7 +63,7 @@ This reads the project's single workflow state and changes nothing on disk. One 
 
 Only once you know there is no workflow to resume:
 
-Ask the user for a spec name now. Then run:
+Ask the user for a spec name now. If the user needs to see what names already exist to avoid collisions, run `go run . spec file list` — **do not** use `ls`, `find`, or the `Read` tool against `.spektacular/specs/`; the CLI's list is the source of truth for what counts as a spec. Then run:
 
 ```
 go run . spec new --data '{"name": "<spec_name>"}'

@@ -1,0 +1,6 @@
+- **`internal/config`** — Provides `Config` and `RepoConfig` types with YAML serialization. Used as-is, no changes required.
+- **`internal/project`** — Will host the new scanner and migration executor. Existing `Init()` function provides reference patterns for file writing.
+- **`cmd/version.go`** — Extended to detect old config format and coordinate migration. Existing `runVersionCheck()` and `VersionCheckResult` are modified.
+- **`gopkg.in/yaml.v3`** — External YAML library already used throughout the codebase for config serialization. No version change required.
+- **Spec 000039 (project-level-capabilities)** — Introduced the config/repo.yaml split. Must be completed (already is) before this migration can run.
+- **Spec 000042 (repo-self-describing-metadata)** — Moved descriptive metadata to repo.yaml. Must be completed (already is) to ensure the target format is stable.

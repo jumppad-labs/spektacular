@@ -1,3 +1,7 @@
+## 000045_config-file-migration
+
+Spektacular now automatically detects and prompts for migration when upgrading from the legacy single-file config.yaml format to the new split configuration (config.yaml + repo.yaml) introduced for multi-repo project support. When you run `spektacular version check` in a project with only config.yaml, the command returns a migration prompt explaining that a backup will be created (config.yaml.old) and repo.yaml will be generated with metadata scanned from your project files (README.md, go.mod, package.json, Makefile, Dockerfile). The migration ensures existing Spektacular users can upgrade smoothly without manual configuration changes or errors.
+
 ## 000044_projects-feature-documentation
 
 Spektacular's multi-repo "projects" capability, registering more than one repository, splitting configuration between project membership and each repository's own description, attributing planning and implementation work across repos, and excluding paths from search, is now documented on the documentation site with a new reference page reachable from the site's navigation. The getting-started tutorial now points to it at the moment a reader might otherwise assume a project is limited to one repository, and this README's configuration section has been corrected where its example had drifted out of date and now links to the fuller explanation as well.

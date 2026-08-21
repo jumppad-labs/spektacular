@@ -1,0 +1,1 @@
+- **Passing tests are required before calling work done** — The migration logic must be covered by tests that verify detection, prompting, backup creation, and successful split-config writing. All tests must pass before the feature is considered complete.

@@ -79,12 +79,12 @@ func emitResumeReport(command, expectedKind string, state *workflow.State) error
 		WithNextAction(instruction)
 }
 
-// detectInProgress loads the persisted workflow state at statePath and returns
-// it only when it represents an in-progress (resumable) workflow. It returns
-// (nil, nil) when no state file exists or the state is not in progress (e.g.
-// finished), and an error only when the file exists but cannot be read or
-// parsed. It never mutates anything on disk.
-func detectInProgress(statePath string) (*workflow.State, error) {
+// readState loads the persisted workflow state at statePath verbatim,
+// regardless of whether it represents an in-progress or a finished
+// workflow. It returns (nil, nil) when no state file exists, and an error
+// only when the file exists but cannot be read or parsed. It never mutates
+// anything on disk.
+func readState(statePath string) (*workflow.State, error) {
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,10 +97,20 @@ func detectInProgress(statePath string) (*workflow.State, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("parsing state file: %w", err)
 	}
-	if !state.InProgress() {
-		return nil, nil
-	}
 	return &state, nil
+}
+
+// detectInProgress loads the persisted workflow state at statePath and returns
+// it only when it represents an in-progress (resumable) workflow. It returns
+// (nil, nil) when no state file exists or the state is not in progress (e.g.
+// finished), and an error only when the file exists but cannot be read or
+// parsed. It never mutates anything on disk.
+func detectInProgress(statePath string) (*workflow.State, error) {
+	state, err := readState(statePath)
+	if err != nil || state == nil || !state.InProgress() {
+		return nil, err
+	}
+	return state, nil
 }
 
 // resumeOrClear is the shared prologue for the three `new` commands. It decides
@@ -145,18 +155,38 @@ func resumeOrClear(statePath, command, expectedKind string, force bool) (handled
 // commands operate on the persisted state directly, so they must refuse to act
 // on a workflow whose kind differs from the command's own kind — otherwise a
 // `spec goto` would apply spec steps to a plan's state. It returns handled=true
-// (with a cross-kind mismatch error) when a different-kind workflow is in
-// progress; the caller must then return immediately. A same-kind in-progress
-// workflow (the normal target), a finished workflow, a kind-less legacy
-// state, or no state at all all return handled=false so the caller proceeds
-// as before.
+// (with an error) whenever a different-kind workflow is recorded, whether
+// still in progress or already finished: a finished other-kind workflow is
+// not "no workflow" and must never be silently reinterpreted as this kind's
+// workflow — the FSM engine loads state.json's CurrentStep/CompletedSteps
+// verbatim with no kind check of its own, so letting it through here
+// previously produced a nonsensical mashup (a plan's 20 completed step names
+// reported under an implement command whose own step list only has 13,
+// yielding e.g. "progress": "20/13"). A same-kind workflow (in progress or
+// finished — the normal target either way), a kind-less legacy state, or no
+// state at all all still return handled=false so the caller proceeds as
+// before.
 func guardKind(statePath, command, expectedKind string) (handled bool, err error) {
-	state, err := detectInProgress(statePath)
+	state, err := readState(statePath)
 	if err != nil {
 		return false, err
 	}
 	if state == nil || state.Kind == "" || state.Kind == expectedKind {
 		return false, nil
 	}
-	return true, emitResumeReport(command, expectedKind, state)
+	if state.InProgress() {
+		return true, emitResumeReport(command, expectedKind, state)
+	}
+	return true, noActiveWorkflowAfterOtherKindFinished(command, expectedKind, state)
+}
+
+// noActiveWorkflowAfterOtherKindFinished builds guardKind's error for a
+// different-kind workflow that has already finished: unlike the in-progress
+// case, there is nothing to resume and nothing at risk of being clobbered —
+// the correct next step for the requested kind is simply to start it.
+func noActiveWorkflowAfterOtherKindFinished(command, expectedKind string, state *workflow.State) error {
+	name, _ := state.Data["name"].(string)
+	return output.NewError("no_active_workflow",
+		fmt.Sprintf("no active %s workflow — the last workflow recorded here was a finished %s workflow (%q)", expectedKind, state.Kind, name)).
+		WithNextAction(fmt.Sprintf("run `%s %s new` to start one", command, expectedKind))
 }

@@ -211,10 +211,29 @@ func (w *Workflow) translateTransitionError(event string, err error) error {
 
 	current := w.Current()
 	valid := w.FSM.AvailableTransitions()
+	nextAction := w.nextActionForSteps(valid)
+	if current == "walkthrough" {
+		nextAction = w.walkthroughRevisionHint() + " " + nextAction
+	}
 	return output.NewError("invalid_transition",
 		fmt.Sprintf("cannot run step %q from the current step %q", event, current)).
 		WithState(current, valid).
-		WithNextAction(w.nextActionForSteps(valid))
+		WithNextAction(nextAction)
+}
+
+// walkthroughRevisionHint explains, for a rejected transition away from
+// walkthrough specifically, that walkthrough's only forward move is
+// finished — so a request to change an earlier, already-committed section
+// must be applied as a direct edit via `file write`, never by trying to
+// goto backward to re-run that step. Without this, an agent that hits
+// invalid_transition here has no CLI-native path back to the correct move
+// and may fall back to discarding all progress with a full `new --force`
+// restart just to revise one section.
+func (w *Workflow) walkthroughRevisionHint() string {
+	name, _ := w.GetData("name")
+	return fmt.Sprintf(
+		"the walkthrough only ever advances to finished — to revise an earlier, already-committed section, edit it directly and commit with `%s %s file write %v/<doc>.md --from <scratch>`, then resume the walkthrough (do not try to goto backward to re-run a step); if no revision is needed,",
+		w.cfg.Command, w.cfg.Kind, name)
 }
 
 // nextActionForSteps renders the concrete goto command(s) that would

@@ -3,12 +3,17 @@ name: spek-implement
 description: Execute an approved Plan to implement the feature.
 ---
 
+> **Version check first.** Before running any other command, run `go run . version check`.
+> - On `status: "match"`, continue with the skill and produce no version-related output.
+> - On `"mismatch"` or `"missing"`, the installed Spektacular files are out of date: relay the response's `action` message to the user, ask them to re-run `go run . init <agent>`, and wait for their decision before continuing.
+> - Never modify or re-install any installed files yourself — refreshing the installation is always an explicit, user-initiated re-run of init.
+
 > **STOP. Read this before running any command below.**
 > A single successful CLI call — including the very first `implement new` — is **NOT** task completion. It is not a milestone to report back to the user. It is one step out of many in a workflow that you must keep driving, turn after turn, without stopping, until the CLI itself tells you the workflow is *finished*. If you find yourself about to say "successfully completed" or summarize results after calling `implement new` or `implement goto` even once, you are wrong — go back and read the `instruction` field you just received, do what it says, and call `goto` again.
 
 # What this skill does
 
-This skill drives a **multi-step interactive workflow** that executes an approved plan in `.spektacular/plans/<name>/plan.md`, producing working code, tests, and a changelog. The workflow is owned by the `go run .` CLI, not by you — the CLI is the state machine and you are the executor.
+This skill drives a **multi-step interactive workflow** that executes an approved plan held in the plan store, producing working code, tests, and a changelog. The workflow is owned by the `go run .` CLI, not by you — the CLI is the state machine and you are the executor, and the CLI (not the filesystem) is how you reach every plan document.
 
 On each turn, the CLI returns JSON containing an `instruction` field. That instruction describes exactly one step (e.g. analyze, implement a phase, verify, update changelog, write the test plan, …). You must:
 
@@ -27,14 +32,17 @@ The CLI owns the plan documents — `plan.md`, `context.md`, and `research.md`. 
 
 - `go run . plan file read <name>/<doc>.md` — read a plan document from the plan store.
 - `go run . plan file write <name>/<doc>.md --from <source-path>` — write a plan document into the plan store from a source file on disk. Stage the body under `.spektacular/tmp/` first, then `rm` the scratch file after a successful write.
+- `go run . plan file list` — list plans in the plan store.
 
 This includes the edits the implement workflow makes to `plan.md` — ticking phase checkboxes and appending changelog entries. Read the document with `plan file read`, apply the change, and commit it with `plan file write`. Never edit a plan document in place with the `Edit` tool. Path arguments are plan-directory-relative document paths (e.g. `my-feature/plan.md`).
 
 # How to start
 
-Ask the user which plan to implement before proceeding. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
+> **Cross-repo implementation.** When the plan attributes work to registered member repos, carry each part of the work out in its attributed repo's resolved root (`go run . repo list` reports resolved paths), and follow the workflow's changelog instructions to write the central record plus one derived entry per affected repo via `go run . changelog file write ... --repo <name>`.
 
-The plan file must already exist at `.spektacular/plans/<plan_name>/plan.md`. If it does not, stop and tell the user to run `go run . plan` first.
+Ask the user which plan to implement before proceeding. To enumerate the available plans, run `go run . plan file list` — the CLI's list is the source of truth for what counts as a plan. **Do not** use `ls`, `find`, or the `Read` tool against `.spektacular/plans/` to discover plans; those bypass Spektacular's configured plan directory and may show entries the CLI does not consider valid. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
+
+The plan must already exist in the plan store — confirm with `go run . plan file list`. If it does not, stop and tell the user to run `go run . plan` first.
 
 Start the implement workflow by running:
 

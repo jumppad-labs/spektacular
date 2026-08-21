@@ -72,6 +72,7 @@ var statusOutputSchema = &schemaObj{
 var specCmd = &cobra.Command{
 	Use:   "spec",
 	Short: "Manage spec workflow",
+	RunE:  runUnknownSubcommand,
 }
 
 var specNewCmd = &cobra.Command{
@@ -199,7 +200,8 @@ func runSpecNew(cmd *cobra.Command, _ []string) error {
 
 	// No workflow to resume — starting fresh requires a name.
 	if dataStr == "" {
-		return fmt.Errorf("--data is required to start a new spec (e.g. --data '{\"name\":\"my-feature\"}')")
+		return output.NewError("name_required", "no spec name was provided").
+			WithNextAction(`specify the spec name with --data '{"name":"<spec_name>"}'; to see existing specs, run "spec file list"`)
 	}
 	var input struct {
 		Name string `json:"name"`
@@ -264,7 +266,8 @@ func runSpecGoto(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	if dataStr == "" {
-		return fmt.Errorf("--data is required (e.g. --data '{\"step\":\"requirements\"}')")
+		return output.NewError("step_required", "no step was provided").
+			WithNextAction(`specify the step with --data '{"step":"<step_name>"}'; run "spec steps" to see valid step names`)
 	}
 	var input map[string]any
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
@@ -272,7 +275,8 @@ func runSpecGoto(cmd *cobra.Command, _ []string) error {
 	}
 	stepVal, _ := input["step"].(string)
 	if stepVal == "" {
-		return fmt.Errorf("\"step\" is required in --data")
+		return output.NewError("step_required", `"step" is missing or empty in --data`).
+			WithNextAction(`include a non-empty "step" in --data, e.g. --data '{"step":"<step_name>"}'; run "spec steps" to see valid step names`)
 	}
 
 	dataDir, err := dataDir()

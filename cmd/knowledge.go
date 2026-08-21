@@ -18,6 +18,7 @@ import (
 var knowledgeCmd = &cobra.Command{
 	Use:   "knowledge",
 	Short: "Search, read, list, and write across configured knowledge sources",
+	RunE:  runUnknownSubcommand,
 }
 
 var knowledgeSearchCmd = &cobra.Command{

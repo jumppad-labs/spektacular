@@ -1,6 +1,6 @@
 name: spektacular
 command: go run .
-agent: claude
+agent: bob
 spec_trigger_threshold: moderate
 debug:
     enabled: true

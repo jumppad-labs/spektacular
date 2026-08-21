@@ -142,6 +142,56 @@ func TestGotoInvalidStepFails(t *testing.T) {
 	require.Equal(t, []string{"one"}, errResp.State.ValidActions)
 }
 
+// TestGotoFromWalkthroughHintsAtFileWriteForRevisions asserts that a
+// rejected transition away from a "walkthrough" step — whose only valid
+// forward move is "finished" — gets an enriched next_action pointing the
+// agent at `<kind> file write` for revising an earlier section, rather than
+// just the bare "run: ... goto finished" suggestion. Without this hint an
+// agent stuck here has no CLI-native way back to the correct move and may
+// fall back to a full `new --force` restart just to fix one section.
+func TestGotoFromWalkthroughHintsAtFileWriteForRevisions(t *testing.T) {
+	steps := []StepConfig{
+		{Name: "one", Src: []string{"new"}, Dst: "one"},
+		{Name: "walkthrough", Src: []string{"one"}, Dst: "walkthrough"},
+		{Name: "finished", Src: []string{"walkthrough"}, Dst: "finished"},
+	}
+	sp := filepath.Join(t.TempDir(), "state.json")
+	wf := New(steps, sp, Config{Command: "go run .", Kind: "plan"}, nil, nil)
+	wf.SetData("name", "000045_config-file-migration")
+
+	require.NoError(t, wf.Next()) // new -> one
+	require.NoError(t, wf.Next()) // one -> walkthrough
+	require.Equal(t, "walkthrough", wf.Current())
+
+	err := wf.Goto("one") // trying to go backward to revise an earlier section
+	require.Error(t, err)
+
+	var errResp *output.ErrorResponse
+	require.True(t, errors.As(err, &errResp), "expected *output.ErrorResponse, got %T: %v", err, err)
+	require.Equal(t, "invalid_transition", errResp.Code)
+	require.Contains(t, errResp.NextAction, "go run . plan file write 000045_config-file-migration/<doc>.md --from <scratch>")
+	require.Contains(t, errResp.NextAction, "do not try to goto backward")
+	require.Contains(t, errResp.NextAction, `run: go run . plan goto --data '{"step":"finished"}'`)
+}
+
+// TestGotoInvalidStepFromNonWalkthroughStepOmitsRevisionHint asserts the
+// walkthrough-specific hint is scoped to walkthrough only — a rejected
+// transition from any other step keeps the plain, unembellished next_action
+// (the concrete valid goto command(s)), since only walkthrough's
+// forward-only-to-finished shape creates the "no way back" trap.
+func TestGotoInvalidStepFromNonWalkthroughStepOmitsRevisionHint(t *testing.T) {
+	sp := filepath.Join(t.TempDir(), "state.json")
+	wf := New(testSteps, sp, Config{Command: "go run .", Kind: "plan"}, nil, nil)
+
+	err := wf.Goto("nonexistent")
+	require.Error(t, err)
+
+	var errResp *output.ErrorResponse
+	require.True(t, errors.As(err, &errResp), "expected *output.ErrorResponse, got %T: %v", err, err)
+	require.NotContains(t, errResp.NextAction, "file write")
+	require.Equal(t, `run: go run . plan goto --data '{"step":"one"}'`, errResp.NextAction)
+}
+
 func TestAutoSaveOnTransition(t *testing.T) {
 	sp := filepath.Join(t.TempDir(), "state.json")
 	wf := New(testSteps, sp, Config{}, nil, nil)

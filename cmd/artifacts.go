@@ -49,6 +49,7 @@ var planSiblingKinds = map[string]string{
 var artifactsCmd = &cobra.Command{
 	Use:   "artifacts",
 	Short: "Query workflow-produced artifacts across every kind",
+	RunE:  runUnknownSubcommand,
 }
 
 func init() {

@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
@@ -29,6 +31,36 @@ var rootCmd = &cobra.Command{
 	Use:     "spektacular",
 	Short:   "Agent-driven tool for spec-driven development",
 	Version: versionString(),
+	RunE:    runUnknownSubcommand,
+}
+
+// runUnknownSubcommand handles a command group (e.g. spec/plan/implement,
+// or the root command itself) invoked with no subcommand or an unrecognized
+// one. Cobra's default behavior for a non-Runnable parent command in that
+// situation is to print its plain-text help and exit 0 — indistinguishable,
+// in a CLI whose entire contract is a structured JSON envelope, from a real
+// response; that ambiguity has caused a driving agent to misread the help
+// dump as valid output and bypass the CLI entirely. Giving every group
+// command this RunE makes it Runnable, so cobra invokes this instead of
+// silently falling through to that default: even a mistyped or missing
+// subcommand now comes back as the same JSON error shape as everything
+// else, naming the valid subcommands to retry with. `--help`/`-h` is
+// unaffected — cobra intercepts those before this ever runs.
+func runUnknownSubcommand(cmd *cobra.Command, args []string) error {
+	var names []string
+	for _, c := range cmd.Commands() {
+		if c.IsAvailableCommand() {
+			names = append(names, c.Name())
+		}
+	}
+	sort.Strings(names)
+
+	message := fmt.Sprintf("no subcommand given for %q", cmd.CommandPath())
+	if len(args) > 0 {
+		message = fmt.Sprintf("unknown subcommand %q for %q", args[0], cmd.CommandPath())
+	}
+	return output.NewError("unknown_subcommand", message).
+		WithNextAction(fmt.Sprintf("run one of: %s", strings.Join(names, ", ")))
 }
 
 // versionString combines the build-time version and sha into the string
@@ -77,7 +109,7 @@ func runRoot() int {
 		rootCmd.SetOut(io.MultiWriter(orig, buf))
 	}
 
-	err := rootCmd.Execute()
+	executedCmd, err := rootCmd.ExecuteC()
 
 	exitCode := 0
 	if err != nil {
@@ -87,23 +119,59 @@ func runRoot() int {
 
 	if debugEnabled {
 		stateAfter := readStateSnapshot()
-		if logPath, pathErr := sessionLogPath(); pathErr == nil {
+		advanced := stateAdvanced(stateBefore, stateAfter)
+		if dir, pathErr := sessionLogDir(); pathErr == nil {
+			sessionID := sessionlog.SessionID(stateAfter)
+			isStart := isWorkflowStart(executedCmd, exitCode)
+			logPath := sessionlog.LogFilePath(dir, cfg.Agent, sessionID, isStart, start)
 			sessionlog.Record(logPath, sessionlog.Event{
 				Timestamp:   start,
-				SessionID:   sessionlog.SessionID(stateAfter),
+				SessionID:   sessionID,
 				Command:     argv,
 				DurationMS:  time.Since(start).Milliseconds(),
 				ExitCode:    exitCode,
 				Response:    buf.String(),
 				StateBefore: stateBefore,
 				StateAfter:  stateAfter,
-				Advanced:    stateAdvanced(stateBefore, stateAfter),
+				Advanced:    advanced,
 			})
 		}
 		rootCmd.SetOut(orig)
 	}
 
 	return exitCode
+}
+
+// isWorkflowStart reports whether this invocation is the command that just
+// began a brand-new workflow session — a `<kind> new` call (kind ∈
+// spec/plan/implement) that actually succeeded in creating fresh state,
+// rather than bouncing off an in-progress workflow (a workflow_in_progress
+// error, which returns a non-nil error and so exitCode != 0) or running as
+// --dry-run (which never touches the real state.json). It deliberately does
+// not compare state before/after: a `--force` restart of the same named
+// workflow produces a fresh state shaped identically to the state it
+// replaced (same kind, name, and first current_step), so that comparison
+// can't tell a real restart apart from a true no-op — the command's own
+// identity and its --dry-run flag are the only reliable signal. It reads
+// the actually-executed leaf command (from ExecuteC, not raw argv) so it
+// stays correct regardless of where global flags land in the invocation.
+// This is the one moment sessionlog.LogFilePath mints a new, timestamped
+// log file instead of continuing to append to the current session's
+// existing one.
+func isWorkflowStart(executedCmd *cobra.Command, exitCode int) bool {
+	if executedCmd == nil || exitCode != 0 {
+		return false
+	}
+	if executedCmd.Name() != "new" || executedCmd.Parent() == nil {
+		return false
+	}
+	switch executedCmd.Parent().Name() {
+	case "spec", "plan", "implement":
+	default:
+		return false
+	}
+	dryRun, _ := executedCmd.Flags().GetBool("dry-run")
+	return !dryRun
 }
 
 // stateSnapshotFile is the subset of internal/workflow's State shape needed
@@ -164,14 +232,15 @@ func stateAdvanced(before, after *sessionlog.StateSnapshot) bool {
 		len(before.CompletedSteps) != len(after.CompletedSteps)
 }
 
-// sessionLogPath returns the path to the local session record file, inside
-// the project's already-gitignored debug directory.
-func sessionLogPath() (string, error) {
+// sessionLogDir returns the project's already-gitignored debug directory,
+// which holds one session log file per workflow session (see
+// sessionlog.LogFilePath) plus any ad hoc commands run outside one.
+func sessionLogDir() (string, error) {
 	dir, err := dataDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "debug", "session-log.jsonl"), nil
+	return filepath.Join(dir, "debug"), nil
 }
 
 // toErrorResponse converts any error returned by a command into the shared

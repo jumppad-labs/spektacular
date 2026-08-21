@@ -1,0 +1,1 @@
+No open questions remain. All technical approaches, design decisions, and implementation details have been resolved during planning. The scanner heuristics, migration flow, rollback behavior, and test strategy are all specified with sufficient detail for implementation to proceed without blocking uncertainties.

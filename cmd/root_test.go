@@ -460,13 +460,140 @@ func TestWrapper_FailureIsPrintedExactlyOnceWithNoCobraBoilerplate(t *testing.T)
 		stdout, stderr, code := runRootCmd(t, "no-such-command")
 		assertNoCobraBoilerplate(t, stdout, stderr, code)
 	})
+
+	// Unlike an unknown top-level command, an unrecognized (or missing)
+	// subcommand under a recognized group (e.g. `spec list` or bare `spec`)
+	// used to never reach any RunE either — but for a different reason:
+	// cobra's Find() resolves as far as "spec" and, since the group itself
+	// had no Run/RunE, silently printed its plain-text help and returned nil
+	// (exit 0), not an error. runUnknownSubcommand closes that gap.
+	t.Run("unrecognized subcommand under a group", func(t *testing.T) {
+		stdout, stderr, code := runRootCmd(t, "spec", "list")
+		assertNoCobraBoilerplate(t, stdout, stderr, code)
+	})
+
+	t.Run("group invoked with no subcommand", func(t *testing.T) {
+		stdout, stderr, code := runRootCmd(t, "spec")
+		assertNoCobraBoilerplate(t, stdout, stderr, code)
+	})
+
+	t.Run("root invoked with no arguments", func(t *testing.T) {
+		stdout, stderr, code := runRootCmd(t)
+		assertNoCobraBoilerplate(t, stdout, stderr, code)
+	})
 }
 
-// sessionLogFilePath is the fixed, project-relative location runRoot's
-// sessionLogPath() helper resolves to, mirrored here so tests can check for
-// the file's presence/absence and read it back independently of root.go.
-func sessionLogFilePath(dir string) string {
-	return filepath.Join(dir, ".spektacular", "debug", "session-log.jsonl")
+// TestUnknownSubcommand_ReturnsStructuredErrorNamingValidSubcommands covers
+// the actual incident this fix addresses: an agent invents a plausible but
+// nonexistent subcommand (e.g. `plan resume <name>`, mirroring a real
+// mis-invocation seen in practice) or omits one entirely, and must get a
+// structured, retryable error rather than cobra's silent, exit-0 help dump.
+func TestUnknownSubcommand_ReturnsStructuredErrorNamingValidSubcommands(t *testing.T) {
+	t.Run("unrecognized subcommand names the offending word and the group", func(t *testing.T) {
+		stdout, _, code := runRootCmd(t, "plan", "resume", "somename")
+		require.Equal(t, 1, code)
+
+		var er output.ErrorResponse
+		require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+		require.True(t, er.IsError)
+		require.Equal(t, "unknown_subcommand", er.Code)
+		require.Equal(t, `unknown subcommand "resume" for "spektacular plan"`, er.Message)
+		require.Equal(t, "run one of: file, goto, new, status, steps", er.NextAction)
+	})
+
+	t.Run("missing subcommand reports no subcommand given", func(t *testing.T) {
+		stdout, _, code := runRootCmd(t, "spec")
+		require.Equal(t, 1, code)
+
+		var er output.ErrorResponse
+		require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+		require.Equal(t, "unknown_subcommand", er.Code)
+		require.Equal(t, `no subcommand given for "spektacular spec"`, er.Message)
+		require.Equal(t, "run one of: file, goto, new, status, steps", er.NextAction)
+	})
+
+	t.Run("--help still works and is unaffected", func(t *testing.T) {
+		stdout, _, code := runRootCmd(t, "spec", "--help")
+		require.Equal(t, 0, code)
+		require.Contains(t, stdout, "Manage spec workflow")
+		require.NotContains(t, stdout, `"error"`)
+	})
+}
+
+// TestGotoStepRequired_ReturnsStructuredErrorAcrossAllKinds covers the
+// `goto` counterpart to the `new` commands' name_required fix: a missing or
+// empty step must return a structured error with a concrete next_action
+// (the correct --data shape, plus which `steps` subcommand discovers valid
+// step names), not a bare, unremediated string. This is the exact error an
+// agent hit mid-session trying `plan goto <name> <step>` (positional-style,
+// no --data at all) before finding the correct flag shape.
+func TestGotoStepRequired_ReturnsStructuredErrorAcrossAllKinds(t *testing.T) {
+	kinds := []struct {
+		kind       string
+		resetFlags func(t *testing.T)
+		stepsHint  string
+	}{
+		{"spec", resetSpecCommandFlags, "spec steps"},
+		{"plan", resetPlanCommandFlags, "plan steps"},
+		{"implement", resetImplementCommandFlags, "implement steps"},
+	}
+
+	for _, k := range kinds {
+		t.Run(k.kind, func(t *testing.T) {
+			t.Run("no --data at all", func(t *testing.T) {
+				k.resetFlags(t)
+				stdout, _, code := runRootCmd(t, k.kind, "goto")
+				require.Equal(t, 1, code)
+
+				var er output.ErrorResponse
+				require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+				require.Equal(t, "step_required", er.Code)
+				require.Equal(t, "no step was provided", er.Message)
+				require.Contains(t, er.NextAction, `--data '{"step":"<step_name>"}'`)
+				require.Contains(t, er.NextAction, k.stepsHint)
+			})
+
+			t.Run("--data with no step key", func(t *testing.T) {
+				k.resetFlags(t)
+				stdout, _, code := runRootCmd(t, k.kind, "goto", "--data", `{}`)
+				require.Equal(t, 1, code)
+
+				var er output.ErrorResponse
+				require.NoError(t, json.Unmarshal([]byte(stdout), &er))
+				require.Equal(t, "step_required", er.Code)
+				require.Equal(t, `"step" is missing or empty in --data`, er.Message)
+				require.Contains(t, er.NextAction, `--data '{"step":"<step_name>"}'`)
+				require.Contains(t, er.NextAction, k.stepsHint)
+			})
+		})
+	}
+}
+
+// sessionLogDebugDir is the project-relative directory runRoot's
+// sessionLogDir() helper resolves to, mirrored here so tests can list and
+// read session log files back independently of root.go.
+func sessionLogDebugDir(dir string) string {
+	return filepath.Join(dir, ".spektacular", "debug")
+}
+
+// sessionLogFiles returns every session log file present in dir's debug
+// directory, in no particular order.
+func sessionLogFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(sessionLogDebugDir(dir), "*.jsonl"))
+	require.NoError(t, err)
+	return matches
+}
+
+// sessionLogFilePath returns the path to the sole session log file in dir's
+// debug directory. Every test in this file drives at most one workflow
+// session per temp dir, so exactly one match is expected — finding zero or
+// more than one is a test-authoring error, not a case to handle gracefully.
+func sessionLogFilePath(t *testing.T, dir string) string {
+	t.Helper()
+	matches := sessionLogFiles(t, dir)
+	require.Len(t, matches, 1, "expected exactly one session log file in %s", sessionLogDebugDir(dir))
+	return matches[0]
 }
 
 // Phase 1.2, criterion 1: with debug off — either because the project config
@@ -486,8 +613,7 @@ func TestSessionLog_DisabledProducesNoRecordFile(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.Empty(t, stderr)
 
-		_, err := os.Stat(sessionLogFilePath(dir))
-		require.True(t, os.IsNotExist(err), "session log must not be created when debug is off")
+		require.Empty(t, sessionLogFiles(t, dir), "session log must not be created when debug is off")
 	})
 
 	t.Run("explicit debug.enabled false", func(t *testing.T) {
@@ -501,8 +627,7 @@ func TestSessionLog_DisabledProducesNoRecordFile(t *testing.T) {
 		require.NotEmpty(t, stdout)
 		require.Empty(t, stderr)
 
-		_, err := os.Stat(sessionLogFilePath(dir))
-		require.True(t, os.IsNotExist(err), "session log must not be created when debug is explicitly off")
+		require.Empty(t, sessionLogFiles(t, dir), "session log must not be created when debug is explicitly off")
 	})
 }
 
@@ -523,7 +648,7 @@ func TestSessionLog_EnabledRecordsSuccessAndRejection(t *testing.T) {
 
 	readSoleEvent := func(t *testing.T, dir string) sessionlog.Event {
 		t.Helper()
-		data, err := os.ReadFile(sessionLogFilePath(dir))
+		data, err := os.ReadFile(sessionLogFilePath(t, dir))
 		require.NoError(t, err)
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 		require.Len(t, lines, 1, "exactly one recorded entry expected")
@@ -713,7 +838,7 @@ func TestSessionLog_EnabledDoesNotChangeCallerVisibleOutput(t *testing.T) {
 // Phase 2.1's state-tracking tests below.
 func readSessionLogEvents(t *testing.T, dir string) []sessionlog.Event {
 	t.Helper()
-	data, err := os.ReadFile(sessionLogFilePath(dir))
+	data, err := os.ReadFile(sessionLogFilePath(t, dir))
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	events := make([]sessionlog.Event, len(lines))
@@ -941,4 +1066,65 @@ func TestSessionLog_NoActiveWorkflowSessionIDBeforeAnyWorkflow(t *testing.T) {
 	events := readSessionLogEvents(t, root)
 	require.Len(t, events, 1)
 	require.Equal(t, "no-active-workflow", events[0].SessionID)
+}
+
+// TestSessionLog_FilenameEncodesAgentAndSessionID asserts that the file a
+// workflow's founding `new` call is recorded into is named after the
+// project's configured agent and the session id (workflow kind + name), so
+// a plain directory listing identifies every session without opening a
+// file.
+func TestSessionLog_FilenameEncodesAgentAndSessionID(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "debug:\n  enabled: true\nagent: testbot\n")
+	resetPlanCommandFlags(t)
+
+	_, _, code := runRootCmd(t, "plan", "new", "--data", `{"name":"billing"}`)
+	require.Equal(t, 0, code)
+
+	path := sessionLogFilePath(t, dir)
+	name := filepath.Base(path)
+	require.Contains(t, name, "testbot")
+	require.Contains(t, name, "plan_billing")
+	require.Regexp(t, `^\d{8}T\d{6}\.\d{9}Z_`, name, "filename must start with a sortable timestamp")
+}
+
+// TestSessionLog_ForceRestartStartsANewFileNotAppendingToPrevious asserts
+// that `--force` restarting a workflow — a genuinely new session under the
+// same name, per resumeOrClear — mints a second, distinct log file rather
+// than appending onto the abandoned session's log, and later commands
+// resume into that newest file.
+func TestSessionLog_ForceRestartStartsANewFileNotAppendingToPrevious(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "debug:\n  enabled: true\n")
+	resetPlanCommandFlags(t)
+
+	_, _, code := runRootCmd(t, "plan", "new", "--data", `{"name":"billing"}`)
+	require.Equal(t, 0, code)
+	first := sessionLogFilePath(t, dir)
+
+	_, _, code = runRootCmd(t, "plan", "new", "--force", "--data", `{"name":"billing"}`)
+	require.Equal(t, 0, code)
+
+	files := sessionLogFiles(t, dir)
+	require.Len(t, files, 2, "the restart must mint a second file alongside the first, not overwrite or append to it")
+	require.Contains(t, files, first, "the first session's file must be untouched, not renamed away")
+
+	firstEvents, err := os.ReadFile(first)
+	require.NoError(t, err)
+	require.Len(t, strings.Split(strings.TrimRight(string(firstEvents), "\n"), "\n"), 1, "the abandoned session's file must still hold only its own event")
+
+	_, _, code = runRootCmd(t, "plan", "goto", "--data", `{"step":"discovery"}`)
+	require.Equal(t, 0, code)
+
+	newest := ""
+	for _, f := range files {
+		if f != first {
+			newest = f
+		}
+	}
+	newestEvents, err := os.ReadFile(newest)
+	require.NoError(t, err)
+	require.Len(t, strings.Split(strings.TrimRight(string(newestEvents), "\n"), "\n"), 2, "the goto must resume into the restarted session's file, not the abandoned one")
 }

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -52,6 +53,79 @@ type StateSnapshot struct {
 	Name           string   `json:"name"`
 	CurrentStep    string   `json:"current_step"`
 	CompletedSteps []string `json:"completed_steps"`
+}
+
+// logFileTimestampFormat stamps each minted filename with a fixed-width,
+// zero-padded moment so filenames for the same session sort chronologically
+// as plain strings — the most recently started one always sorts last.
+// Nanosecond precision (rather than just to the second) keeps two rapid
+// restarts of the same named workflow — e.g. `new --force` run again
+// moments later — from minting the same filename and silently colliding.
+const logFileTimestampFormat = "20060102T150405.000000000Z"
+
+// LogFilePath resolves which file a session's record belongs in. When start
+// is true — a `<kind> new` command just began a genuinely fresh workflow —
+// it always mints a brand-new file stamped with now, agent, and sessionID,
+// even if a file for the same sessionID already exists (e.g. a `--force`
+// restart of the same named workflow): each start is its own session, never
+// appended to a predecessor's log. Otherwise it reuses the most recently
+// started file already on disk for sessionID — what a resumed workflow, or
+// any other command sharing that session, should keep appending to — or
+// mints a fresh one if none exists yet (the session's first command ever
+// recorded, or one that predates this scheme). LogFilePath only resolves
+// the path; it never creates the file or its parent directory itself.
+func LogFilePath(dir, agent, sessionID string, start bool, now time.Time) string {
+	if !start {
+		if existing := latestLogFile(dir, sessionID); existing != "" {
+			return filepath.Join(dir, existing)
+		}
+	}
+	return filepath.Join(dir, newLogFileName(agent, sessionID, now))
+}
+
+// newLogFileName mints a filename stamped with when the session started,
+// which agent the project is configured for, and the session id (workflow
+// kind + name, or the no-active-workflow sentinel), so a plain directory
+// listing identifies every session at a glance without opening a file.
+func newLogFileName(agent, sessionID string, now time.Time) string {
+	if agent == "" {
+		agent = "unknown"
+	}
+	return now.UTC().Format(logFileTimestampFormat) + "_" + agent + "_" + sanitizeSessionID(sessionID) + ".jsonl"
+}
+
+// sessionIDFileSuffix is the filename suffix shared by every log file that
+// belongs to sessionID, regardless of which agent or moment started it.
+func sessionIDFileSuffix(sessionID string) string {
+	return "_" + sanitizeSessionID(sessionID) + ".jsonl"
+}
+
+// sanitizeSessionID replaces characters a session id may contain (the ":"
+// joining kind and name) that are unsafe or awkward in a filename.
+func sanitizeSessionID(sessionID string) string {
+	return strings.NewReplacer(":", "_", "/", "_", "\\", "_").Replace(sessionID)
+}
+
+// latestLogFile returns the filename (not full path) of the most recently
+// started log file belonging to sessionID in dir, or "" if none exists or
+// dir can't be read. Filenames sort chronologically as plain strings
+// because logFileTimestampFormat is fixed-width and zero-padded.
+func latestLogFile(dir, sessionID string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	suffix := sessionIDFileSuffix(sessionID)
+	var latest string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if name := e.Name(); strings.HasSuffix(name, suffix) && name > latest {
+			latest = name
+		}
+	}
+	return latest
 }
 
 // Record appends ev as one JSON line to the file at logPath, creating the

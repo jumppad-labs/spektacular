@@ -1,0 +1,4 @@
+- **Migrating registered repositories** — Only the current repository (the one containing `.spektacular/`) receives a `repo.yaml` file. Registered remote repos listed in the project config are not migrated. Each repo's migration happens when it is first used locally.
+- **Interactive editing of suggested metadata** — The scanner suggests metadata values based on project files, but users cannot edit these suggestions during migration. Users can manually edit `repo.yaml` after migration completes.
+- **Migrating other configuration formats** — Only the `config.yaml` → `config.yaml + repo.yaml` split is handled. Other configuration files or formats are not migrated.
+- **Preview of changes before migration** — Migration executes immediately after user confirmation. No preview step is provided to show what will change before it happens.

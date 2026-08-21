@@ -15,6 +15,7 @@ import (
 var repoCmd = &cobra.Command{
 	Use:   "repo",
 	Short: "Manage the project's registered member repos",
+	RunE:  runUnknownSubcommand,
 }
 
 var repoAddCmd = &cobra.Command{

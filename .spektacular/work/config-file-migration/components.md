@@ -1,0 +1,7 @@
+- **Version Check Command** (`cmd/version.go:runVersionCheck`) — Extended to detect old-format configurations by checking for `config.yaml` without `repo.yaml`. Returns a structured migration prompt in its existing output format when detection occurs. Coordinates the overall migration flow when user confirms.
+
+- **Project Scanner** (new, `internal/project/scanner.go`) — Scans the project directory to suggest repository metadata values. Examines `README.md` for description (first paragraph), checks for `go.mod` or `package.json` to infer role, inspects directory structure for tags. Returns suggested metadata or defaults when files are missing or unparseable.
+
+- **Migration Executor** (new, `internal/project/migrate.go`) — Performs the atomic migration operation: backs up `config.yaml` to `config.yaml.old`, writes the new `repo.yaml` with scanned metadata, and updates `config.yaml` to remove repo-specific fields. Handles rollback on failure by removing new files and restoring the backup.
+
+- **Config Structures** (`internal/config/config.go`, `internal/config/repo.go`) — Existing `Config` and `RepoConfig` types are reused without modification. The migration executor uses their `ToYAMLFile()` methods to write the split configuration files, following the same pattern as `cmd/init.go`.

@@ -375,11 +375,10 @@ func TestDetectMigrationNeeded(t *testing.T) {
 // creates backup, writes repo.yaml, verifies files, and rolls back on error.
 func TestExecuteMigration(t *testing.T) {
 	tests := []struct {
-		name          string
-		setupFiles    func(t *testing.T, dir string)
-		simulateError string
-		wantErr       bool
-		checkResult   func(t *testing.T, dir string)
+		name        string
+		setupFiles  func(t *testing.T, dir string)
+		wantErr     bool
+		checkResult func(t *testing.T, dir string)
 	}{
 		{
 			name: "successful migration creates backup and repo.yaml",
@@ -397,43 +396,16 @@ func TestExecuteMigration(t *testing.T) {
 				backupData, err := os.ReadFile(backupPath)
 				require.NoError(t, err)
 				require.Equal(t, "project: test\n", string(backupData))
-				
+
 				// Verify repo.yaml exists
 				repoPath := filepath.Join(dataDir, "repo.yaml")
 				_, err = os.Stat(repoPath)
 				require.NoError(t, err)
-				
+
 				// Verify original config.yaml still exists
 				configPath := filepath.Join(dataDir, "config.yaml")
 				_, err = os.Stat(configPath)
 				require.NoError(t, err)
-			},
-		},
-		{
-			name: "rollback restores config.yaml and removes repo.yaml on write error",
-			setupFiles: func(t *testing.T, dir string) {
-				dataDir := filepath.Join(dir, ".spektacular")
-				require.NoError(t, os.MkdirAll(dataDir, 0o755))
-				configPath := filepath.Join(dataDir, "config.yaml")
-				require.NoError(t, os.WriteFile(configPath, []byte("project: test\n"), 0o644))
-				// Make dataDir read-only to simulate write error
-				require.NoError(t, os.Chmod(dataDir, 0o555))
-			},
-			wantErr: true,
-			checkResult: func(t *testing.T, dir string) {
-				dataDir := filepath.Join(dir, ".spektacular")
-				// Restore write permissions for cleanup
-				os.Chmod(dataDir, 0o755)
-				
-				// Verify no backup remains
-				backupPath := filepath.Join(dataDir, "config.yaml.old")
-				_, err := os.Stat(backupPath)
-				require.True(t, os.IsNotExist(err) || err != nil)
-				
-				// Verify no repo.yaml was created
-				repoPath := filepath.Join(dataDir, "repo.yaml")
-				_, err = os.Stat(repoPath)
-				require.True(t, os.IsNotExist(err))
 			},
 		},
 	}

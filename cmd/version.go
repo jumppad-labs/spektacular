@@ -248,28 +248,13 @@ func scanProjectMetadata(projectRoot string) (*config.RepoConfig, error) {
 	return &cfg, nil
 }
 
-// executeMigration performs the atomic migration sequence: create
-// config.yaml.old backup, write repo.yaml with provided metadata, verify
-// both files exist. Uses a deferred rollback function that restores the
-// original state if any step fails.
+// executeMigration performs the migration sequence: create a config.yaml.old
+// backup of the legacy config, write repo.yaml with the provided metadata,
+// and verify both landed on disk.
 func executeMigration(dataDir string, repoCfg *config.RepoConfig) error {
 	configPath := filepath.Join(dataDir, "config.yaml")
 	backupPath := filepath.Join(dataDir, "config.yaml.old")
 	repoPath := filepath.Join(dataDir, "repo.yaml")
-
-	var rollbackNeeded bool
-	defer func() {
-		if rollbackNeeded {
-			// Restore config.yaml from backup if it exists
-			if _, err := os.Stat(backupPath); err == nil {
-				os.Rename(backupPath, configPath)
-			}
-			// Remove partially-written repo.yaml
-			os.Remove(repoPath)
-		}
-	}()
-
-	rollbackNeeded = true
 
 	// Step 1: Create backup of config.yaml
 	configData, err := os.ReadFile(configPath)
@@ -293,8 +278,6 @@ func executeMigration(dataDir string, repoCfg *config.RepoConfig) error {
 		return fmt.Errorf("verifying repo.yaml exists: %w", err)
 	}
 
-	// Success - disable rollback
-	rollbackNeeded = false
 	return nil
 }
 

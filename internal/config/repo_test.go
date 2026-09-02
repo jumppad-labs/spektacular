@@ -18,10 +18,10 @@ func TestNewDefaultRepoConfig_SeedsRepoStoreAndChangelog(t *testing.T) {
 	src := cfg.Knowledge.Sources[0]
 	require.Equal(t, "project", src.Scope)
 	require.Equal(t, "file", src.Provider)
-	require.Equal(t, ".spektacular/knowledge", src.Config.Location)
+	require.Equal(t, "knowledge", src.Config.Location)
 
 	require.Equal(t, "file", cfg.Changelog.Provider)
-	require.Equal(t, ".spektacular/changelog", cfg.Changelog.Config.Directory)
+	require.Equal(t, "changelog", cfg.Changelog.Config.Directory)
 }
 
 // Criterion 2: a repo.yaml parses and validates independently of any project
@@ -42,7 +42,7 @@ func TestRepoConfigFromYAMLFile_LoadsWithoutProjectConfig(t *testing.T) {
 	// ...and the absent knowledge section keeps the seeded default store.
 	require.Len(t, cfg.Knowledge.Sources, 1)
 	require.Equal(t, "project", cfg.Knowledge.Sources[0].Scope)
-	require.Equal(t, ".spektacular/knowledge", cfg.Knowledge.Sources[0].Config.Location)
+	require.Equal(t, "knowledge", cfg.Knowledge.Sources[0].Config.Location)
 }
 
 // Criterion 2: a minimal repo config with no descriptive fields set (they are
@@ -92,14 +92,13 @@ func TestRepoConfig_ToYAMLFileRoundTrip(t *testing.T) {
 }
 
 // Criterion 2: a repo config with descriptive metadata (description, role,
-// tags, deployment) round-trips through repo.yaml unchanged, alongside the
+// tags) round-trips through repo.yaml unchanged, alongside the
 // existing knowledge and changelog sections.
 func TestRepoConfig_ToYAMLFileRoundTripWithDescriptiveFields(t *testing.T) {
 	cfg := RepoConfig{
 		Description: "Handles order processing and fulfillment.",
 		Role:        "backend-service",
 		Tags:        []string{"go", "orders", "team-checkout"},
-		Deployment:  "kubernetes",
 		Knowledge: KnowledgeConfig{
 			Sources: []SourceConfig{
 				{
@@ -178,6 +177,7 @@ func TestRepoConfigValidation_IndependentOfProjectConfig(t *testing.T) {
 
 	projectCfg := NewDefault()
 	projectCfg.Name = "testproj"
+	projectCfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	projectCfg.Knowledge = validKnowledge
 	require.NoError(t, projectCfg.Validate())
 
@@ -199,7 +199,7 @@ func TestRepoConfig_WithDefaultsSynthesisesRepoStore(t *testing.T) {
 	src := cfg.Knowledge.Sources[0]
 	require.Equal(t, DefaultKnowledgeScope, src.Scope)
 	require.Equal(t, ProviderFile, src.Provider)
-	require.Equal(t, filepath.Join("/some/repo", DefaultKnowledgeLocation), src.Config.Location)
+	require.Equal(t, filepath.Join("/some/repo", DefaultRepoKnowledgeLocation), src.Config.Location)
 }
 
 // Criterion 2: WithDefaults leaves already-configured repo sources unchanged.
@@ -248,7 +248,7 @@ func TestRepoConfigFromYAMLFile_NoSourceIsNone(t *testing.T) {
 
 	cfg, err := RepoConfigFromYAMLFile(path)
 	require.NoError(t, err)
-	require.Equal(t, "", cfg.Source)
+	require.True(t, cfg.Source.IsZero(), "an absent source block leaves the source unset")
 
 	kind, value, err := cfg.ParseSource(dir)
 	require.NoError(t, err)
@@ -260,7 +260,7 @@ func TestRepoConfigFromYAMLFile_NoSourceIsNone(t *testing.T) {
 // three top-level keys — source, knowledge, and changelog.
 func TestRepoConfig_ToYAMLFileWritesSourceWhenSet(t *testing.T) {
 	cfg := NewDefaultRepoConfig()
-	cfg.Source = "/srv/code/api"
+	cfg.Source = FileSource("/srv/code/api")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, RepoConfigFileName)
@@ -275,18 +275,25 @@ func TestRepoConfig_ToYAMLFileWritesSourceWhenSet(t *testing.T) {
 	require.Contains(t, top, "source")
 	require.Contains(t, top, "knowledge")
 	require.Contains(t, top, "changelog")
-	require.Equal(t, "/srv/code/api", top["source"])
+	require.Equal(t, map[string]any{
+		"provider": "file",
+		"config":   map[string]any{"location": "/srv/code/api"},
+	}, top["source"], "source round-trips as a provider block")
 }
 
-// Phase 1.1 criterion 1: an unset (empty or whitespace-only) source
-// classifies as SourceNone with an empty value and no error.
+// An absent source block classifies as SourceNone with an empty value and
+// no error; a half-declared one names the missing half instead.
 func TestRepoConfig_ParseSource_Unset(t *testing.T) {
-	for _, src := range []string{"", "   ", "\n\t"} {
-		kind, value, err := RepoConfig{Source: src}.ParseSource("/cfg")
-		require.NoError(t, err)
-		require.Equal(t, SourceNone, kind)
-		require.Equal(t, "", value)
-	}
+	kind, value, err := RepoConfig{}.ParseSource("/cfg")
+	require.NoError(t, err)
+	require.Equal(t, SourceNone, kind)
+	require.Equal(t, "", value)
+
+	_, _, err = RepoConfig{Source: FileSource("   ")}.ParseSource("/cfg")
+	require.ErrorContains(t, err, "no location", "a provider with no location must be reported")
+
+	_, _, err = RepoConfig{Source: RepoSourceConfig{Config: RepoSourceLocation{Location: "../code"}}}.ParseSource("/cfg")
+	require.ErrorContains(t, err, "no provider", "a location with no provider must be reported")
 }
 
 // Phase 1.1 criterion 2: an absolute path classifies as a file source and
@@ -295,13 +302,13 @@ func TestRepoConfig_ParseSource_AbsoluteFile(t *testing.T) {
 	code := t.TempDir()
 	configDir := t.TempDir()
 
-	kind, value, err := RepoConfig{Source: code}.ParseSource(configDir)
+	kind, value, err := RepoConfig{Source: FileSource(code)}.ParseSource(configDir)
 	require.NoError(t, err)
 	require.Equal(t, SourceFile, kind)
 	require.Equal(t, code, value)
 
 	// A trailing separator is cleaned away; configDir plays no part.
-	kind, value, err = RepoConfig{Source: code + string(filepath.Separator)}.ParseSource(configDir)
+	kind, value, err = RepoConfig{Source: FileSource(code + string(filepath.Separator))}.ParseSource(configDir)
 	require.NoError(t, err)
 	require.Equal(t, SourceFile, kind)
 	require.Equal(t, code, value)
@@ -315,13 +322,13 @@ func TestRepoConfig_ParseSource_RelativeFile(t *testing.T) {
 	configDir := filepath.Join(parent, "repo")
 	expected := filepath.Join(parent, "code")
 
-	kind, value, err := RepoConfig{Source: "../code"}.ParseSource(configDir)
+	kind, value, err := RepoConfig{Source: FileSource("../code")}.ParseSource(configDir)
 	require.NoError(t, err)
 	require.Equal(t, SourceFile, kind)
 	require.Equal(t, expected, value)
 
 	// A plain child path anchors under configDir as well.
-	kind, value, err = RepoConfig{Source: "src"}.ParseSource(configDir)
+	kind, value, err = RepoConfig{Source: FileSource("src")}.ParseSource(configDir)
 	require.NoError(t, err)
 	require.Equal(t, SourceFile, kind)
 	require.Equal(t, filepath.Join(parent, "repo", "src"), value)
@@ -335,12 +342,12 @@ func TestRepoConfig_ParseSource_FileScheme(t *testing.T) {
 	parent := t.TempDir()
 	configDir := filepath.Join(parent, "repo")
 
-	kind, value, err := RepoConfig{Source: "file://" + code}.ParseSource(configDir)
+	kind, value, err := RepoConfig{Source: FileSource(code)}.ParseSource(configDir)
 	require.NoError(t, err)
 	require.Equal(t, SourceFile, kind)
 	require.Equal(t, code, value)
 
-	kind, value, err = RepoConfig{Source: "file://../code"}.ParseSource(configDir)
+	kind, value, err = RepoConfig{Source: FileSource("../code")}.ParseSource(configDir)
 	require.NoError(t, err)
 	require.Equal(t, SourceFile, kind)
 	require.Equal(t, filepath.Join(parent, "code"), value)
@@ -356,7 +363,7 @@ func TestRepoConfigFromYAMLFile_SourceEnvVar(t *testing.T) {
 	for _, form := range []string{"${TEST_REPO_SRC}", "file://${TEST_REPO_SRC}"} {
 		dir := t.TempDir()
 		path := filepath.Join(dir, RepoConfigFileName)
-		body := "source: \"" + form + "\"\n"
+		body := "source:\n  provider: file\n  config:\n    location: \"" + form + "\"\n"
 		require.NoError(t, os.WriteFile(path, []byte(body), 0644))
 
 		cfg, err := RepoConfigFromYAMLFile(path)
@@ -381,7 +388,13 @@ func TestRepoConfig_ParseSource_GitSchemes(t *testing.T) {
 	}
 	for _, src := range cases {
 		t.Run(src, func(t *testing.T) {
-			kind, value, err := RepoConfig{Source: src}.ParseSource("/cfg")
+			// A `repo add` payload gives the source as one value; the
+			// transport is what marks it as a git location.
+			block, err := SourceFromInput(src)
+			require.NoError(t, err)
+			require.Equal(t, GitSource(src), block)
+
+			kind, value, err := RepoConfig{Source: block}.ParseSource("/cfg")
 			require.NoError(t, err)
 			require.Equal(t, SourceGit, kind)
 			require.Equal(t, src, value)
@@ -392,18 +405,18 @@ func TestRepoConfig_ParseSource_GitSchemes(t *testing.T) {
 // Phase 1.1 criterion 3: an scp-style user@host:path value classifies as a
 // git source and is returned unchanged.
 func TestRepoConfig_ParseSource_ScpStyle(t *testing.T) {
-	kind, value, err := RepoConfig{Source: "git@github.com:org/api.git"}.ParseSource("/cfg")
+	kind, value, err := RepoConfig{Source: GitSource("git@github.com:org/api.git")}.ParseSource("/cfg")
 	require.NoError(t, err)
 	require.Equal(t, SourceGit, kind)
 	require.Equal(t, "git@github.com:org/api.git", value)
 }
 
-// Phase 1.1: a source with a scheme that is neither file:// nor a git
-// transport is rejected with an error naming the unsupported scheme.
-func TestRepoConfig_ParseSource_UnsupportedScheme(t *testing.T) {
-	kind, value, err := RepoConfig{Source: "s3://bucket/code"}.ParseSource("/cfg")
+// A source declaring a provider that is neither file nor git is rejected
+// with an error naming the unsupported provider.
+func TestRepoConfig_ParseSource_UnsupportedProvider(t *testing.T) {
+	kind, value, err := RepoConfig{Source: RepoSourceConfig{Provider: "s3", Config: RepoSourceLocation{Location: "bucket/code"}}}.ParseSource("/cfg")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported source scheme")
+	require.Contains(t, err.Error(), "unsupported source provider")
 	require.Contains(t, err.Error(), "s3")
 	require.Equal(t, SourceNone, kind)
 	require.Equal(t, "", value)
@@ -414,7 +427,7 @@ func TestRepoConfig_ParseSource_UnsupportedScheme(t *testing.T) {
 func TestRepoConfig_ToYAMLFileRoundTripWithSource(t *testing.T) {
 	cfg := RepoConfig{
 		Description: "Handles order processing and fulfillment.",
-		Source:      "git@github.com:org/api.git",
+		Source:      GitSource("git@github.com:org/api.git"),
 		Knowledge: KnowledgeConfig{
 			Sources: []SourceConfig{
 				{
@@ -437,5 +450,5 @@ func TestRepoConfig_ToYAMLFileRoundTripWithSource(t *testing.T) {
 	loaded, err := RepoConfigFromYAMLFile(path)
 	require.NoError(t, err)
 	require.Equal(t, cfg, loaded)
-	require.Equal(t, "git@github.com:org/api.git", loaded.Source)
+	require.Equal(t, GitSource("git@github.com:org/api.git"), loaded.Source)
 }

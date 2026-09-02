@@ -25,7 +25,10 @@ func TestFromYAMLFile_LoadsAndExpandsEnvVars(t *testing.T) {
 	t.Setenv("TEST_CMD", "go run .")
 
 	yaml := `name: testproj
-command: "${TEST_CMD}"`
+command: "${TEST_CMD}"
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -39,7 +42,10 @@ command: "${TEST_CMD}"`
 
 func TestFromYAMLFile_MissingSpecConfigUsesDefaults(t *testing.T) {
 	yaml := `name: testproj
-command: "go run ."`
+command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -57,7 +63,10 @@ spec:
   provider: file
   id_method: unsupported
   config:
-    directory: specs`
+    directory: specs
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -70,7 +79,10 @@ spec:
 
 func TestFromYAMLFile_UnknownSpecTriggerThresholdReturnsError(t *testing.T) {
 	yaml := `name: testproj
-spec_trigger_threshold: unsupported`
+spec_trigger_threshold: unsupported
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -91,6 +103,7 @@ func TestFromYAMLFile_MissingFile_ReturnsError(t *testing.T) {
 func TestToYAMLFile_RoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
@@ -110,6 +123,7 @@ func TestToYAMLFile_RoundTrip(t *testing.T) {
 func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Spec = SpecConfig{
 		Provider: ProviderFile,
 		IDMethod: SpecIDMethodCounter,
@@ -158,7 +172,10 @@ func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 // Criterion 2: a config with a section absent yields the documented default.
 func TestFromYAMLFile_AbsentProviderSectionsUseDefaults(t *testing.T) {
 	yaml := `name: testproj
-command: "go run ."`
+command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -214,7 +231,10 @@ func TestFromYAMLFile_UnknownSpecProviderReturnsError(t *testing.T) {
 spec:
   provider: bogus
   config:
-    directory: specs`
+    directory: specs
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -231,7 +251,10 @@ func TestFromYAMLFile_EmptySpecDirectoryReturnsError(t *testing.T) {
 spec:
   provider: file
   config:
-    directory: ""`
+    directory: ""
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -249,7 +272,10 @@ func TestFromYAMLFile_UnknownChangelogProviderReturnsError(t *testing.T) {
 changelog:
   provider: bogus
   config:
-    directory: changelog`
+    directory: changelog
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -266,7 +292,10 @@ func TestFromYAMLFile_EmptyChangelogDirectoryReturnsError(t *testing.T) {
 changelog:
   provider: file
   config:
-    directory: ""`
+    directory: ""
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -307,7 +336,10 @@ func TestKnowledgeConfig_ValidateRejectsDuplicateScope(t *testing.T) {
 // Criterion 1: a project config file with a missing name fails validation
 // with an error naming the field.
 func TestFromYAMLFile_MissingNameReturnsError(t *testing.T) {
-	yaml := `command: "go run ."`
+	yaml := `command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -323,7 +355,10 @@ func TestFromYAMLFile_MissingNameReturnsError(t *testing.T) {
 // accept so it can backfill one — while still prefilling defaults, where the
 // validating loader rejects the same file.
 func TestParseYAMLFile_MissingNameParsesWithoutValidation(t *testing.T) {
-	yaml := `command: "go run ."`
+	yaml := `command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0644))
 
@@ -337,7 +372,10 @@ func TestParseYAMLFile_MissingNameParsesWithoutValidation(t *testing.T) {
 // Criterion 1: a non-slug-safe name fails validation with an error naming
 // the field.
 func TestFromYAMLFile_NonSlugNameReturnsError(t *testing.T) {
-	yaml := `name: "Has Spaces/UPPER"`
+	yaml := `name: "Has Spaces/UPPER"
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -353,6 +391,7 @@ func TestFromYAMLFile_NonSlugNameReturnsError(t *testing.T) {
 func TestToYAMLFile_NameAndSourceRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "my-project"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Source = "github.com/example/my-project"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -390,6 +429,7 @@ func TestSlugifyName_ProducesValidNames(t *testing.T) {
 	for _, in := range []string{"My Project", "spektacular", "___", "9lives", "-lead-trim-"} {
 		cfg := NewDefault()
 		cfg.Name = SlugifyName(in)
+		cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 		require.NoError(t, cfg.Validate(), "slugified %q should validate", in)
 	}
 }
@@ -399,6 +439,7 @@ func TestSlugifyName_ProducesValidNames(t *testing.T) {
 func TestValidateRepos_DuplicateNameReturnsError(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
 		{Name: "api", Location: "."},
 		{Name: "api", Location: "./api"},
@@ -414,6 +455,7 @@ func TestValidateRepos_DuplicateNameReturnsError(t *testing.T) {
 func TestValidateRepos_NonSlugNameReturnsError(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
 		{Name: "api", Location: "."},
 		{Name: "Has Spaces/UPPER", Location: "./other"},
@@ -430,6 +472,7 @@ func TestValidateRepos_NonSlugNameReturnsError(t *testing.T) {
 func TestValidateRepos_MissingLocationReturnsError(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
 		{Name: "api"},
 	}
@@ -565,12 +608,13 @@ func TestRepoEntry_WithDefaultsResolvesProviderToGit(t *testing.T) {
 
 // A two-entry registry with every membership field populated round-trips
 // through config.yaml unchanged. RepoEntry carries membership only —
-// descriptive metadata (description/role/tags/deployment) lives in the
+// descriptive metadata (description/role/tags) lives in the
 // repo's own repo.yaml and is covered by internal/config/repo_test.go
 // instead.
 func TestToYAMLFile_ReposRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
 		{
 			Name:         "api",
@@ -599,6 +643,7 @@ func TestToYAMLFile_ReposRoundTrip(t *testing.T) {
 func TestToYAMLFile_ProjectOwnedKnowledgeSourcesRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Knowledge = KnowledgeConfig{
 		Sources: []SourceConfig{
 			{
@@ -621,4 +666,20 @@ func TestToYAMLFile_ProjectOwnedKnowledgeSourcesRoundTrip(t *testing.T) {
 	loaded, err := FromYAMLFile(path)
 	require.NoError(t, err)
 	require.Equal(t, cfg.Knowledge, loaded.Knowledge)
+}
+
+// A project must register at least one repo: an otherwise valid config with
+// no repos entry fails validation with a config_invalid error that says so.
+func TestFromYAMLFile_NoReposReturnsError(t *testing.T) {
+	yaml := `name: testproj`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(yaml), 0644))
+
+	_, err := FromYAMLFile(path)
+	require.Error(t, err)
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "config_invalid", er.Code)
+	require.Contains(t, er.Message, "no repos are registered")
 }

@@ -11,38 +11,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeFootprint creates a valid .spektacular/repo.yaml footprint under root.
+// writeFootprint creates a valid repo.yaml footprint in root.
 func writeFootprint(t *testing.T, root string) {
 	t.Helper()
-	dir := filepath.Join(root, ".spektacular")
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(filepath.Join(dir, config.RepoConfigFileName)))
+	require.NoError(t, os.MkdirAll(root, 0o755))
+	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(filepath.Join(root, config.RepoConfigFileName)))
 }
 
-// writeSourceFootprint creates a valid .spektacular/repo.yaml footprint under
-// root whose source is the given value (a file path or a git location).
+// writeSourceFootprint creates a valid repo.yaml footprint in root whose
+// source is the given value (a file path or a git location).
 func writeSourceFootprint(t *testing.T, root, source string) {
 	t.Helper()
 	cfg := config.NewDefaultRepoConfig()
-	cfg.Source = source
+	src, err := config.SourceFromInput(source)
+	require.NoError(t, err)
+	cfg.Source = src
 	writeRepoConfig(t, root, cfg)
 }
 
-// writeRepoYAML creates root/.spektacular/repo.yaml with the given raw content.
+// writeRepoYAML creates root/repo.yaml with the given raw content.
 func writeRepoYAML(t *testing.T, root, content string) {
 	t.Helper()
-	dir := filepath.Join(root, ".spektacular")
+	dir := root
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, config.RepoConfigFileName), []byte(content), 0o644))
 }
 
-// writeRepoConfig creates a valid .spektacular/repo.yaml under root carrying
+// writeRepoConfig creates a valid repo.yaml in root carrying
 // the given RepoConfig, for tests that need to control the repo's
 // descriptive metadata or source rather than just have a valid, empty
 // footprint.
 func writeRepoConfig(t *testing.T, root string, cfg config.RepoConfig) {
 	t.Helper()
-	dir := filepath.Join(root, ".spektacular")
+	dir := root
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, cfg.ToYAMLFile(filepath.Join(dir, config.RepoConfigFileName)))
 }
@@ -143,7 +144,7 @@ func TestResolve_NoSourceResolvesToRootWithoutGit(t *testing.T) {
 
 // Phase 1.3 criterion 1: a repo whose repo.yaml declares a file source
 // resolves with Root unchanged and Source set to that directory — for an
-// absolute path, a relative path anchored at <root>/.spektacular, and a
+// absolute path, a relative path anchored at the folder holding repo.yaml, and a
 // file:// path — without materializing anything or invoking git. One without
 // a source resolves with Source equal to Root.
 func TestResolve_FileSourceResolvesSourceDirWithoutGit(t *testing.T) {
@@ -152,7 +153,7 @@ func TestResolve_FileSourceResolvesSourceDirWithoutGit(t *testing.T) {
 		source func(base, code string) string
 	}{
 		{name: "absolute path", source: func(_, code string) string { return code }},
-		{name: "relative path", source: func(_, _ string) string { return filepath.Join("..", "..", "code") }},
+		{name: "relative path", source: func(_, _ string) string { return filepath.Join("..", "code") }},
 		{name: "file scheme", source: func(_, code string) string { return "file://" + code }},
 	}
 	for _, tc := range cases {
@@ -359,11 +360,13 @@ func TestResolve_InvalidFootprintReturnsFootprintError(t *testing.T) {
 	require.Equal(t, root, fe.Root)
 }
 
-// A repo.yaml whose source uses a scheme that is neither file:// nor a git
-// transport fails resolution naming the repo, without invoking git.
-func TestResolve_UnsupportedSourceSchemeErrors(t *testing.T) {
+// A repo.yaml whose source declares a provider that is neither file nor git
+// fails resolution naming the repo, without invoking git.
+func TestResolve_UnsupportedSourceProviderErrors(t *testing.T) {
 	root := t.TempDir()
-	writeSourceFootprint(t, root, "s3://bucket/lib")
+	cfg := config.NewDefaultRepoConfig()
+	cfg.Source = config.RepoSourceConfig{Provider: "s3", Config: config.RepoSourceLocation{Location: "bucket/lib"}}
+	writeRepoConfig(t, root, cfg)
 	git := newFakeGit(t)
 
 	set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
@@ -454,12 +457,13 @@ func TestResolve_LocationMissingErrorsNamingPath(t *testing.T) {
 	var er *output.ErrorResponse
 	require.ErrorAs(t, err, &er)
 	require.Equal(t, "repo_location_missing", er.Code)
-	require.Contains(t, er.Message, filepath.Join(projectRoot, "gone"))
+	require.Contains(t, er.Message, filepath.Join(projectRoot, ".spektacular", "gone"))
 	require.Zero(t, git.gitCalls())
 }
 
-// A relative location is joined to the project root.
-func TestResolve_RelativeLocationJoinedToProjectRoot(t *testing.T) {
+// A relative location is resolved from the folder holding config.yaml, so
+// a folder beside .spektacular/ is reached with a leading "..".
+func TestResolve_RelativeLocationResolvedFromConfigDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	root := filepath.Join(projectRoot, "vendor", "lib")
 	require.NoError(t, os.MkdirAll(root, 0o755))
@@ -467,7 +471,7 @@ func TestResolve_RelativeLocationJoinedToProjectRoot(t *testing.T) {
 
 	set := newSet(t, projectRoot, newFakeGit(t), config.RepoEntry{
 		Name:     "lib",
-		Location: filepath.Join("vendor", "lib"),
+		Location: filepath.Join("..", "vendor", "lib"),
 	})
 
 	r, err := set.Resolve("lib")
@@ -570,7 +574,6 @@ func TestDescriptiveMetadata_OnDiskAndReadableReturnsMetadata(t *testing.T) {
 	repoCfg.Description = "the documentation repo"
 	repoCfg.Role = "documentation"
 	repoCfg.Tags = []string{"docs", "markdown"}
-	repoCfg.Deployment = "static site on the CDN"
 	writeRepoConfig(t, root, repoCfg)
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
@@ -583,7 +586,6 @@ func TestDescriptiveMetadata_OnDiskAndReadableReturnsMetadata(t *testing.T) {
 	require.Equal(t, "the documentation repo", meta.Description)
 	require.Equal(t, "documentation", meta.Role)
 	require.Equal(t, []string{"docs", "markdown"}, meta.Tags)
-	require.Equal(t, "static site on the CDN", meta.Deployment)
 }
 
 // DescriptiveMetadata reads repo.yaml from the registered location, not
@@ -595,7 +597,7 @@ func TestDescriptiveMetadata_GitSourceReadsRootNotClone(t *testing.T) {
 	root := t.TempDir()
 	repoCfg := config.NewDefaultRepoConfig()
 	repoCfg.Description = "the member repo"
-	repoCfg.Source = gitSourceURL
+	repoCfg.Source = config.GitSource(gitSourceURL)
 	writeRepoConfig(t, root, repoCfg)
 	git := newFakeGit(t)
 
@@ -603,12 +605,12 @@ func TestDescriptiveMetadata_GitSourceReadsRootNotClone(t *testing.T) {
 
 	_, err := set.Resolve("member")
 	require.NoError(t, err)
-	require.NoFileExists(t, filepath.Join(projectRoot, ".spektacular", "repos", "member", ".spektacular", config.RepoConfigFileName))
+	require.NoFileExists(t, filepath.Join(projectRoot, ".spektacular", "repos", "member", config.RepoConfigFileName))
 
 	meta, ok := set.DescriptiveMetadata("member")
 	require.True(t, ok)
 	require.Equal(t, "the member repo", meta.Description)
-	require.Equal(t, gitSourceURL, meta.Source)
+	require.Equal(t, config.GitSource(gitSourceURL), meta.Source)
 }
 
 // DescriptiveMetadata reports absent (zero value, false) for a repo whose

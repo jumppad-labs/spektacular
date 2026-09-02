@@ -88,12 +88,10 @@ func new() workflow.StepCallback {
 		}
 
 		// Reset context.md for fresh conversation context: drop the previous
-		// session's agent-owned content but keep the CLI-managed repos block,
-		// re-rendered from the roster the command layer put in workflow data.
-		// The relative path resolves against the current working directory
-		// (which is the project root when running `go run . spec new`).
-		repos, _ := data.Get("repos")
-		if err := workingcontext.Reset(filepath.FromSlash(workingcontext.RelPath), cfg.Command, repos); err != nil {
+		// session's content so nothing carries over. The relative path
+		// resolves against the current working directory (which is the
+		// project root when running `go run . spec new`).
+		if err := workingcontext.Reset(filepath.FromSlash(workingcontext.RelPath)); err != nil {
 			return "", fmt.Errorf("resetting context.md: %w", err)
 		}
 

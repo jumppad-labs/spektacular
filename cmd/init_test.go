@@ -338,7 +338,7 @@ func initProjectWithAbsentRepo(t *testing.T) string {
 	require.NoError(t, err)
 	cfg.Repos = append(cfg.Repos, config.RepoEntry{
 		Name:     "ghost",
-		Location: "./ghost",
+		Location: "../ghost",
 	})
 	require.NoError(t, cfg.ToYAMLFile(cfgPath))
 
@@ -405,7 +405,7 @@ func TestInit_NameFlagOverridesStoredName(t *testing.T) {
 }
 
 // Phase 1.4 criterion 5: re-running init over a colocated project whose own
-// repo.yaml declares `source: file://<elsewhere>` keeps that source line,
+// repo.yaml declares a file source at <elsewhere> keeps that source block,
 // leaves the source directory byte-identical, and footprints nothing there
 // — init cascades over registered locations only, never over sources.
 func TestInit_RerunLeavesColocatedFileSourceUntouched(t *testing.T) {
@@ -423,7 +423,7 @@ func TestInit_RerunLeavesColocatedFileSourceUntouched(t *testing.T) {
 	rcPath := filepath.Join(project, ".spektacular", config.RepoConfigFileName)
 	rc, err := config.RepoConfigFromYAMLFile(rcPath)
 	require.NoError(t, err)
-	rc.Source = "file://" + elsewhere
+	rc.Source = config.FileSource(elsewhere)
 	require.NoError(t, rc.ToYAMLFile(rcPath))
 
 	beforeElsewhere := snapshotDir(t, elsewhere)
@@ -438,5 +438,5 @@ func TestInit_RerunLeavesColocatedFileSourceUntouched(t *testing.T) {
 
 	raw, err := os.ReadFile(rcPath)
 	require.NoError(t, err)
-	require.Contains(t, string(raw), "source: file://"+elsewhere+"\n", "re-init must keep the declared source")
+	require.Contains(t, string(raw), "source:\n    provider: file\n    config:\n        location: "+elsewhere+"\n", "re-init must keep the declared source")
 }

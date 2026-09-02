@@ -4,7 +4,7 @@ Guide for efficient agent orchestration during implementation phases.
 
 ## Instructions
 
-**Work belongs in its attributed repo.** When the plan attributes a phase (or part of one) to a registered member repo, carry that work out inside that repo's source — the `## Repos` section at the top of `.spektacular/context.md` lists each repo's source, and the `repo list` command reports it as `root` — not in the project's own directory. Give each implementation agent the exact source directory its files live in, and keep one agent's changes inside one repo where possible so verification and changelog derivation stay per-repo.
+**Work belongs in its attributed repo.** When the plan attributes a phase (or part of one) to a registered member repo, carry that work out inside that repo's code — the `repo list` command reports where it lives as `root` — not in the project's own directory. Give each implementation agent the exact source directory its files live in, and keep one agent's changes inside one repo where possible so verification and changelog derivation stay per-repo.
 
 When breaking implementation into agent tasks, consider the complexity tier:
 

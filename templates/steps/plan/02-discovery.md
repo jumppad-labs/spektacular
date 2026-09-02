@@ -4,7 +4,7 @@ Research the codebase to understand what's needed to implement the spec you read
 
 ### Step 1: Identify the target repos
 
-**The repos this project spans.** Every requirement is ultimately carried out in one of the project's registered repos. The `## Repos` section at the top of `.spektacular/context.md` lists each one with its description, role, tags, deployment, and source (where its code lives). Read it now if you have not already; never assume the directory you started in is a repo's code.
+**The repos this project spans.** Every requirement is ultimately carried out in one of the project's registered repos. Run `{{config.command}} repo list` now if you have not already: it reports each repo with its description, role, tags, and the `root` its code lives at. Never assume the directory you started in is a repo's code.
 
 
 From the spec and that roster's description, role, and tags alone — before reading any code — identify which registered repo(s) this plan's changes will land in. This is a quick scoping judgement call, not the codebase research itself (that's Step 2). If a repo's involvement is genuinely unclear at this point, include it rather than guessing it out; Step 2 will confirm or correct the list as research proceeds.
@@ -19,9 +19,9 @@ If the plan touches tests, read the relevant test files directly as part of Step
 
 ### Step 3: Codebase Research
 
-Research across every repo identified in Step 1, in each repo's source listed above — and if this research reveals the plan also touches a repo not identified in Step 1, add it and re-run the always-applied load above before continuing.
+Research across every repo identified in Step 1, in the `root` `repo list` reports for it — and if this research reveals the plan also touches a repo not identified in Step 1, add it and re-run the always-applied load above before continuing.
 
-Each repo's source above is where its code lives; for a repo whose code is not on disk yet, run `{{config.command}} repo list` for its registered location and `{{config.command}} repo add` for it to clone its source (`repo list` also reports staleness warnings). Use each repo's description, role, and tags to scope which repos each research question belongs to, and search within every relevant repo. Note that `.spektacular_ignore` exclusions keep noise (build artifacts, dependency directories) out of Spektacular's own listing and search results; your native file tools are not bound by them.
+A repo's `root` is where its code lives; for a repo whose code is not on disk yet, `{{config.command}} repo list` reports its registered location and staleness warnings, and `{{config.command}} repo add` clones its source. Use each repo's description, role, and tags to scope which repos each research question belongs to, and search within every relevant repo. Note that `.spektacular_ignore` exclusions keep noise (build artifacts, dependency directories) out of Spektacular's own listing and search results; your native file tools are not bound by them.
 
 Research the codebase in parallel to find:
 

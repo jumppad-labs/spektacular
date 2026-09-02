@@ -6,9 +6,9 @@ Guide for driving the repo-management CLI on the user's behalf: registering a pr
 
 A **project** is a collection of repos with central spec/plan/changelog storage; a **repo** participates by being registered in the project's configuration. Each registered entry carries a required slug-safe `name` (plans and changelog attribution reference repos by name), a required `location`, and optional `dependencies`.
 
-A repo has two locations. The registry's `location` (the older `local` key still works and means the same thing) names the folder holding its `.spektacular/`: `repo.yaml`, knowledge, and changelog. The repo's `source`, in its own `repo.yaml`, names its code: a file location (a plain or `file://` path, absolute, relative to that folder, or using `${VAR}`) or a git location (`git://`, `ssh://`, `https://`, or `user@host:path`) that is cloned into the project's `.spektacular/repos/<name>/` on first use. With no `source`, the code is the same folder: the repo is **colocated**, with its Spektacular files inside its code. With a `source`, the repo is **separate**: its Spektacular files live in a folder of their own (for example one folder per repo under the project) and the code repository receives only code changes. The registry no longer takes `address`; a repo's git origin is its `source`.
+A repo has two locations. The registry's `location` (the older `local` key still works and means the same thing) names the folder holding its `repo.yaml`, alongside its knowledge and changelog; a relative `location` is resolved from the folder holding `config.yaml` and nothing is appended to it, so the project's own footprint is `.` and a repo folder in the project is `../repos/<name>`. The repo's `source`, in its own `repo.yaml`, names its code as a provider block like every other section: `provider: file` with a `config.location` path (absolute, relative to the folder holding `repo.yaml`, or using `${VAR}`), or `provider: git` with a `config.location` git address (`git://`, `ssh://`, `https://`, or `user@host:path`) that is cloned into the project's `.spektacular/repos/<name>/` on first use. A `repo add` payload still gives `source` as one value and the transport decides the provider written to the file. A repo is **colocated** when its Spektacular files sit inside its code, in a `.spektacular/` folder whose `repo.yaml` declares a file source at `..`; this is what `repo add` scaffolds. A repo is **separate** when its Spektacular files live in a folder of their own (for example one folder per repo under the project) whose `source` points at the code elsewhere, so the code repository receives only code changes. The registry no longer takes `address`; a repo's git origin is its `source`.
 
-Descriptive metadata (what the repo does, its role, tags, and deployment type) also lives in `repo.yaml`. A repo's own footprint is minimal (its `repo.yaml` config and knowledge storage) and carries no pointer back to any project, so one repo can belong to many projects.
+Descriptive metadata (what the repo does, its role, and tags) also lives in `repo.yaml`. A repo's own footprint is minimal (its `repo.yaml` config and knowledge storage) and carries no pointer back to any project, so one repo can belong to many projects.
 
 ## Registering a repo
 
@@ -17,17 +17,17 @@ Run the `repo add` command with a JSON payload:
 A colocated repo (Spektacular files inside its code) needs only a `location`:
 
 ```
-repo add --data '{"name":"docs","location":"../docs","description":"the documentation repo","role":"documentation","tags":["docs"],"deployment":"static-site"}'
+repo add --data '{"name":"docs","location":"../../docs","description":"the documentation repo","role":"documentation","tags":["docs"]}'
 ```
 
 A separate repo adds a `source` for its code: a file location for a checkout already on disk, or a git location for Spektacular to clone:
 
 ```
-repo add --data '{"name":"api","location":"./repos/api","source":"file://${HOME}/code/api","description":"the API service","role":"backend","tags":["go"],"deployment":"kubernetes"}'
-repo add --data '{"name":"docs","location":"./repos/docs","source":"git@example.com:org/docs.git","description":"the documentation repo","role":"documentation","tags":["docs"],"deployment":"static-site"}'
+repo add --data '{"name":"api","location":"../repos/api","source":"file://${HOME}/code/api","description":"the API service","role":"backend","tags":["go"]}'
+repo add --data '{"name":"docs","location":"../repos/docs","source":"git@example.com:org/docs.git","description":"the documentation repo","role":"documentation","tags":["docs"]}'
 ```
 
-- `location` is required and is created if it does not exist yet; it is the folder that will hold the repo's `repo.yaml`, knowledge, and changelog. `source` is optional and is written into that `repo.yaml` alongside the descriptive metadata; re-adding without `source` leaves the stored value alone.
+- `location` is required and points at the repo's code; `repo add` creates a `.spektacular/` folder inside it to hold the repo's `repo.yaml`, knowledge, and changelog, writes a file source pointing at `..` there, and registers that folder. `source` is optional and is written into that `repo.yaml` alongside the descriptive metadata; re-adding without `source` leaves the stored value alone.
 - Registration is idempotent: re-adding the same entry changes nothing; re-adding with different metadata updates the registry entry in place; adding a repo already initialized by another project registers it here without disturbing its existing footprint.
 - The command registers the entry in the project config and creates or repairs the target repo's minimal footprint in one operation, reporting `{"registered": true, "footprint": "created"|"repaired"|"unchanged"}`.
 - A git source is cloned on registration, so expect the first add of a git-source repo to take as long as a clone. A file source is not checked; a wrong path surfaces when git or the agent touches it.
@@ -40,7 +40,7 @@ repo add --data '{"name":"docs","location":"./repos/docs","source":"git@example.
 repo list
 ```
 
-Reports every registered repo with its `location`, its metadata, the resolved source of its code as `root` (the file source, the clone of a git source, or the location itself when no source is set), whether it is a project-managed clone (`materialized`), and a `stale_note` when a clone has fallen behind its remote. Listing is side-effect-free: a repo whose git source has not been cloned yet reports an empty root rather than triggering a clone.
+Reports every registered repo with its `location`, its metadata, the resolved source of its code as `root` (the file source, the clone of a git source, or the location itself when no source is set), the `provider` that repo declares for its source (`file`, `git`, or absent when it declares none), whether it is a project-managed clone (`materialized`), and a `stale_note` when a clone has fallen behind its remote. Listing is side-effect-free: a repo whose git source has not been cloned yet reports an empty root rather than triggering a clone.
 
 ## Materialization and staleness
 

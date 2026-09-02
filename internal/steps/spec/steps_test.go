@@ -136,17 +136,17 @@ func TestVerificationStepPassesSpecTemplate(t *testing.T) {
 
 func TestNewStepWritesScaffold(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	// Create .spektacular directory for context.md
 	spektacularDir := filepath.Join(tmp, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
-	
+
 	// Change to temp directory so relative path resolution works
 	origWd, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmp))
 	defer os.Chdir(origWd)
-	
+
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
 	st := store.NewFileStore(tmp, "project")
@@ -168,17 +168,17 @@ func TestSpecFilePath_UsesConfiguredDirectory(t *testing.T) {
 // (Phase 2.2, criterion 1).
 func TestNewStep_WritesUnderConfiguredSpecDir(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	// Create .spektacular directory for context.md
 	spektacularDir := filepath.Join(tmp, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
-	
+
 	// Change to temp directory so relative path resolution works
 	origWd, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmp))
 	defer os.Chdir(origWd)
-	
+
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
 	st := store.NewFileStore(tmp, "project")
@@ -189,35 +189,35 @@ func TestNewStep_WritesUnderConfiguredSpecDir(t *testing.T) {
 	require.False(t, st.Exists(SpecFilePath("specs", "fixture")), "spec must not land under default specs")
 }
 
-// TestNewStep_ClearsContextMd verifies that the new step clears
-// .spektacular/context.md after creating the spec scaffold (Phase 2.1).
-func TestNewStep_ClearsContextMd(t *testing.T) {
-	// Create a temp directory that will serve as the working directory
+// TestNewStep_ResetsContextMd verifies that the new step drops the previous
+// session's working context, leaving the file empty for this run. The CLI
+// writes no roster into it: `repo list` is the live source for where code
+// lives.
+func TestNewStep_ResetsContextMd(t *testing.T) {
 	tmp := t.TempDir()
-	
-	// Create .spektacular directory and a pre-existing context.md with content
+
 	spektacularDir := filepath.Join(tmp, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
 	contextPath := filepath.Join(spektacularDir, "context.md")
 	require.NoError(t, os.WriteFile(contextPath, []byte("old context"), 0644))
-	
-	// Change to the temp directory so relative path resolution works
+
 	origWd, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmp))
 	defer os.Chdir(origWd)
-	
+
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
 	st := store.NewFileStore(tmp, "project")
-	
+
 	_, err = new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "specs"})
 	require.NoError(t, err)
-	
-	// Verify context.md was cleared
+
 	content, err := os.ReadFile(contextPath)
 	require.NoError(t, err)
-	require.Empty(t, content, "context.md should be cleared to empty")
+	body := string(content)
+	require.NotContains(t, body, "old context", "the previous session's working context must be dropped")
+	require.Empty(t, body, "the reset must leave the file entirely to the agent")
 }
 
 // TestNewStep_ReturnsInstructionToWriteContext verifies that the new step
@@ -225,24 +225,24 @@ func TestNewStep_ClearsContextMd(t *testing.T) {
 // conversation context to .spektacular/context.md (Phase 2.1).
 func TestNewStep_ReturnsInstructionToWriteContext(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	// Create .spektacular directory
 	spektacularDir := filepath.Join(tmp, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
-	
+
 	// Change to the temp directory so relative path resolution works
 	origWd, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmp))
 	defer os.Chdir(origWd)
-	
+
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
 	st := store.NewFileStore(tmp, "project")
-	
+
 	_, err = new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "specs"})
 	require.NoError(t, err)
-	
+
 	// Verify instruction was written
 	require.NotEmpty(t, writer.result.Instruction, "new step should return an instruction")
 	require.Contains(t, writer.result.Instruction, "context.md", "instruction should mention context.md")
@@ -254,24 +254,24 @@ func TestNewStep_ReturnsInstructionToWriteContext(t *testing.T) {
 // exact phrasing (Phase 2.1 acceptance criteria).
 func TestNewStep_InstructionIncludesDetailedFormat(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	// Create .spektacular directory
 	spektacularDir := filepath.Join(tmp, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
-	
+
 	// Change to the temp directory so relative path resolution works
 	origWd, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmp))
 	defer os.Chdir(origWd)
-	
+
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
 	st := store.NewFileStore(tmp, "project")
-	
+
 	_, err = new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "specs"})
 	require.NoError(t, err)
-	
+
 	instruction := strings.ToLower(writer.result.Instruction)
 	require.Contains(t, instruction, "problem", "instruction should specify capturing the problem")
 	require.Contains(t, instruction, "requirements", "instruction should specify capturing requirements")
@@ -441,24 +441,24 @@ func TestSpecStillScaffold_FrontmatterTolerant(t *testing.T) {
 // the caveat to skip if no meaningful context exists (Phase 2.1 acceptance criteria).
 func TestNewStep_InstructionIncludesCaveat(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	// Create .spektacular directory
 	spektacularDir := filepath.Join(tmp, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
-	
+
 	// Change to the temp directory so relative path resolution works
 	origWd, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmp))
 	defer os.Chdir(origWd)
-	
+
 	data := &testData{values: map[string]any{"name": "fixture"}}
 	writer := &captureWriter{}
 	st := store.NewFileStore(tmp, "project")
-	
+
 	_, err = new()(data, writer, st, workflow.Config{Command: "spektacular", SpecDir: "specs"})
 	require.NoError(t, err)
-	
+
 	instruction := writer.result.Instruction
 	require.Contains(t, instruction, "no meaningful context", "instruction should include caveat about skipping if no context")
 }
@@ -466,77 +466,15 @@ func TestNewStep_InstructionIncludesCaveat(t *testing.T) {
 // --- Phase 1.2: give the interview access to the project's repo roster and a
 // cross-repo question ---
 
-// TestInterviewStepRendersRepoRoster asserts each registered repo's identity
-// metadata (name, role, description) is embedded directly in the rendered
-// interview instruction — mirroring plan's discovery/architecture roster
-// rendering (internal/steps/plan/steps_test.go,
-// TestDiscoveryAndArchitectureStepsRenderRepoRoster).
-func TestInterviewStepRendersRepoRoster(t *testing.T) {
-	// The roster reaches workflow data as it would after a state.json JSON
-	// round-trip: a []any of map[string]any entries, matching the shape the
-	// command layer's repoRoster projection deserializes back to.
-	repos := []any{
-		map[string]any{
-			"name":        "billing-api",
-			"description": "the payments backend",
-			"role":        "backend",
-			"tags":        "go, api",
-			"deployment":  "kubernetes",
-		},
-		map[string]any{
-			"name":        "docs-site",
-			"description": "the user documentation",
-			"role":        "documentation",
-			"tags":        "docs",
-			"deployment":  "static-site",
-		},
-	}
+// The interview step carries no roster of its own: it sends the agent to
+// `repo list`, the live source for which repos exist and where their code is.
+func TestInterviewStepSendsTheAgentToRepoList(t *testing.T) {
+	out := renderStep(t, interview())
 
-	out := renderStepWithData(t, interview(), map[string]any{"name": "test", "repos": repos})
-
-	// Criterion 1: both repos' name, description, and role appear in the
-	// rendered instruction without the agent running any command.
-	require.Contains(t, out, "billing-api", "interview must render the first repo's name")
-	require.Contains(t, out, "the payments backend", "interview must render the first repo's description")
-	require.Contains(t, out, "role: backend", "interview must render the first repo's role")
-	require.Contains(t, out, "docs-site", "interview must render the second repo's name")
-	require.Contains(t, out, "the user documentation", "interview must render the second repo's description")
-	require.Contains(t, out, "role: documentation", "interview must render the second repo's role")
-
-	// A populated roster leaves no mustache artifacts and suppresses the
-	// empty-registry fallback line.
-	require.NotContains(t, out, "{{#repos}}", "interview must not leak an unrendered section open tag")
-	require.NotContains(t, out, "{{/repos}}", "interview must not leak an unrendered section close tag")
-	require.NotContains(t, out, "No repos are registered", "interview must not render the fallback when repos exist")
-}
-
-// TestInterviewStepRendersEmptyRegistryFallback asserts the roster block
-// degrades cleanly when the project registers no repos: the inverted-section
-// fallback line renders and no mustache artifacts remain — both when the
-// command layer set an empty roster (the empty-registry case) and when the
-// "repos" key is absent from workflow data entirely.
-func TestInterviewStepRendersEmptyRegistryFallback(t *testing.T) {
-	const fallback = "No repos are registered in this project's configuration; the interview is scoped to the project's single repo. Run `spektacular repo list` for its source."
-
-	variants := map[string]func() map[string]any{
-		// The command layer sets "repos" on every invocation — an empty slice
-		// when the registry is empty.
-		"empty roster": func() map[string]any { return map[string]any{"name": "test", "repos": []any{}} },
-		// Absent key: stepkit.RepoRosterExtra returns nil extras and the
-		// template's inverted section still renders the fallback.
-		"absent key": func() map[string]any { return map[string]any{"name": "test"} },
-	}
-
-	for variant, values := range variants {
-		t.Run(variant, func(t *testing.T) {
-			out := renderStepWithData(t, interview(), values())
-
-			require.Contains(t, out, fallback, "interview must render the empty-registry fallback line")
-			require.NotContains(t, out, "{{#repos}}", "interview must not leak an unrendered section open tag")
-			require.NotContains(t, out, "{{^repos}}", "interview must not leak an unrendered inverted-section tag")
-			require.NotContains(t, out, "{{/repos}}", "interview must not leak an unrendered section close tag")
-		})
-	}
+	require.Contains(t, out, "repo list", "interview must send the agent to `repo list`")
+	require.Contains(t, out, "`root`", "interview must name the root that repo list reports")
+	require.NotContains(t, out, "## Repos", "interview must not point at a Repos section")
+	require.NotContains(t, out, "{{", "interview must leave no unrendered mustache")
 }
 
 // TestInterviewStepDirectsCrossRepoQuestion asserts the interview
@@ -554,14 +492,12 @@ func TestInterviewStepDirectsCrossRepoQuestion(t *testing.T) {
 			"description": "the payments backend",
 			"role":        "backend",
 			"tags":        "go, api",
-			"deployment":  "kubernetes",
 		},
 		map[string]any{
 			"name":        "docs-site",
 			"description": "the user documentation",
 			"role":        "documentation",
 			"tags":        "docs",
-			"deployment":  "static-site",
 		},
 	}
 

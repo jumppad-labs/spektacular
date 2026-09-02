@@ -18,4 +18,4 @@ repos:
     - name: auth
       location: .
     - name: docs
-      location: ./repos/docs
+      location: ../repos/docs/.spektacular

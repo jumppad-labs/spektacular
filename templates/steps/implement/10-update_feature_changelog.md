@@ -20,7 +20,7 @@ From the spec, take the Overview/Requirements — the "why it matters" framing f
 
 ### Step 2: Identify affected repos
 
-The registered repos, with each one's source (where its code lives), are listed in the `## Repos` section at the top of `.spektacular/context.md`.
+`{{config.command}} repo list` reports the registered repos, with the `root` each one's code lives at.
 
 
 If a repo you changed is missing from that roster, or you need its materialization state, run `{{config.command}} repo list`.

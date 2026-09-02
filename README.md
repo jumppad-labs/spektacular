@@ -175,12 +175,12 @@ changelog:
   config:
     directory: .spektacular/changelog  # central changelog; entries land under <directory>/<name>/
 repos:
-  - name: my-project                # the colocated repo, registered by init
+  - name: my-project                # the colocated repo, registered by init: this .spektacular/ folder
     location: .
-  - name: docs                      # a colocated member repo checked out beside this one
-    location: ../docs
+  - name: docs                      # a repo checked out beside this one, with its own .spektacular/
+    location: ../../docs/.spektacular
   - name: lib                       # a repo folder in this project; its code is cloned from a git source
-    location: ./repos/lib
+    location: ../repos/lib
 knowledge:
   sources:                          # optional, project-owned sources only (e.g. a team share);
     - scope: team                   # each repo's own sources live in its repo.yaml
@@ -189,7 +189,7 @@ knowledge:
         location: /shared/team-kb
 ```
 
-Each repo entry needs a slug-safe unique `name` and a `location`: the folder holding that repo's `.spektacular/` (`local` is still accepted and means the same thing). Where the code lives is declared in the repo's own `repo.yaml` as `source`; the old `address` key is no longer read, and a config that still carries it fails to load with an error saying where the value now goes. `description`, `role`, `tags`, and `deployment` are optional metadata, also in `repo.yaml`, that cross-repo planning uses to attribute requirements to the right repo. Manage the registry with `spektacular repo add` and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically; a stale clone produces a warning only.
+Each repo entry needs a slug-safe unique `name` and a `location`: the folder holding that repo's `repo.yaml` (`local` is still accepted and means the same thing). A relative location is resolved from the folder holding `config.yaml`, and nothing is appended to it, so the project's own footprint is `.` and a repo folder in the project is `../repos/<name>`. `repo add` is pointed at a repo's code: it scaffolds a `.spektacular/` inside it, writes `repo.yaml` there with a file source pointing at `..`, and registers that folder. Where the code lives is declared in the repo's own `repo.yaml` as `source`; the old `address` key is no longer read, and a config that still carries it fails to load with an error saying where the value now goes. `description`, `role`, and `tags` are optional metadata, also in `repo.yaml`, that cross-repo planning uses to attribute requirements to the right repo. Manage the registry with `spektacular repo add` and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically; a stale clone produces a warning only.
 
 ### Repo configuration (`repo.yaml`)
 
@@ -197,21 +197,23 @@ Each repo entry needs a slug-safe unique `name` and a `location`: the folder hol
 description: the documentation repo
 role: documentation
 tags: [docs]
-deployment: static-site
-source: git@example.com:org/docs.git   # optional; a path (plain or file://) or a git URL; default: this folder
+source:                           # where the code is; omit when it is this folder
+  provider: file                  # file or git
+  config:
+    location: ..                  # a path relative to this file, or a git URL for the git provider
 knowledge:
   sources:
     - scope: project                # the repo's own store; synthesised if the file is absent
       provider: file
       config:
-        location: .spektacular/knowledge
+        location: knowledge
 changelog:
   provider: file
   config:
-    directory: .spektacular/changelog  # where this repo's derived entries land
+    directory: changelog            # where this repo's derived entries land
 ```
 
-A repo's Spektacular files can sit inside its code (the default, with no `source`) or in a folder of their own, for example one folder per repo under a project, with `source` pointing at a checkout on disk (absolute, relative to the folder holding `repo.yaml`, or using `${VAR}`) or at a git repository that Spektacular clones into `.spektacular/repos/<name>/` on first use. In the separate layout the code repository receives only code changes; knowledge and changelog entries land under the folder holding `repo.yaml`. `spektacular repo list` reports the resolved source as each repo's `root`. See [Multi-Repo Projects](https://spektacular.dev/projects/) for the layouts.
+A repo's Spektacular files can sit inside its code, in a `.spektacular/` folder holding `repo.yaml` with a file source pointing at `..`, or in a folder of their own, for example one folder per repo under a project, with `source` pointing at a checkout on disk (absolute, relative to the folder holding `repo.yaml`, or using `${VAR}`) or at a git repository that Spektacular clones into `.spektacular/repos/<name>/` on first use. In the separate layout the code repository receives only code changes; knowledge and changelog entries land under the folder holding `repo.yaml`. `spektacular repo list` reports the resolved source as each repo's `root`. See [Multi-Repo Projects](https://spektacular.dev/projects/) for the layouts.
 
 Knowledge aggregates across every registered repo's declared sources (in registry order) followed by the project-owned sources, so a repo's knowledge travels with it into every project that registers it. Changelog entries, central and derived per-repo, are namespaced under a folder named after the project (`<directory>/<project-name>/<id>_<slug>.md`), so multiple projects writing into one repo can never collide.
 

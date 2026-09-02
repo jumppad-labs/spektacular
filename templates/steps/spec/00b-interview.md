@@ -10,7 +10,7 @@
 
 **Do not design the *how*.** Stay at spec altitude, same as every step that follows. If the user volunteers implementation detail, capture it mentally for Technical Approach and keep steering the conversation at the level of what and why.
 
-**The repos this project spans.** Requirements described as focused on one repo can still need changes elsewhere in the project. The `## Repos` section at the top of `.spektacular/context.md` lists every registered repository — its description, role, tags, deployment, and where its code lives — not just the one this conversation is currently focused on. Read it now if you have not already.
+**The repos this project spans.** Requirements described as focused on one repo can still need changes elsewhere in the project. Run `{{config.command}} repo list` now if you have not already: it reports every registered repository — its description, role, tags, and the `root` its code lives at — not just the one this conversation is currently focused on.
 
 
 If the project has more than one registered repo and the feature as described reads as focused on one of them, ask at least one question about whether it also needs changes in another registered repo, before concluding the interview. Shape the question by what that other repo actually is, not generically — a repo whose role or tags suggest documentation invites asking whether docs need updating; one that looks like a CLI or API invites asking whether callers need corresponding changes. Do not ask this as a generic "does this affect other repos?" question when a repo's own description already makes the likely answer obvious — ask the specific question that description suggests.

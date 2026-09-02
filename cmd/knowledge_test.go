@@ -100,6 +100,9 @@ func twoScopeProject(t *testing.T) (root, projectLoc, teamLoc string) {
 	seed(teamLoc, "guidelines.md", "team guidelines reference the compass too\n")
 
 	cfg := "name: testproj\n" +
+		"repos:\n" +
+		"  - name: testproj\n" +
+		"    location: .\n" +
 		"knowledge:\n" +
 		"  sources:\n" +
 		"    - scope: team\n" +
@@ -107,6 +110,7 @@ func twoScopeProject(t *testing.T) (root, projectLoc, teamLoc string) {
 		"      config:\n" +
 		"        location: " + teamLoc + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(cfg), 0o644))
+	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(filepath.Join(dataDir, config.RepoConfigFileName)))
 
 	return root, projectLoc, teamLoc
 }
@@ -142,9 +146,9 @@ func TestKnowledgeSources_ListsConfiguredScopes(t *testing.T) {
 		Sources []knowledgeSource `json:"sources"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	// The repo-supplied "project" source is attributed to the implicitly
-	// registered colocated repo (named after the project); the project-owned
-	// "team" source carries no repo attribution.
+	// The repo-supplied "project" source is attributed to the registered
+	// colocated repo (named after the project); the project-owned "team"
+	// source carries no repo attribution.
 	require.Equal(t, []knowledgeSource{
 		{Scope: "project", Provider: "file", Location: projectLoc, Repo: "testproj"},
 		{Scope: "team", Provider: "file", Location: teamLoc},
@@ -411,8 +415,9 @@ func alwaysAppliedProject(t *testing.T) string {
 	seed("conventions/style.md", "always use tabs\n")
 	seed("glossary/compass.md", "compass: a tool that points north\n")
 
-	cfg := "name: testproj\n"
+	cfg := "name: testproj\nrepos:\n  - name: testproj\n    location: .\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(cfg), 0o644))
+	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(filepath.Join(dataDir, config.RepoConfigFileName)))
 
 	return root
 }
@@ -500,7 +505,7 @@ func seedKnowledgeFile(t *testing.T, loc, name, content string) {
 }
 
 // memberRegistryProject lays out a temp project whose config registers the
-// colocated repo (named "testproj", location ".") plus one member repo (named
+// colocated repo (named "testproj", location "..") plus one member repo (named
 // "member", at a sibling temp dir carrying a default repo.yaml), and declares
 // a project-owned "team" source. Both repos' default project-scope knowledge
 // stores exist but are empty; the caller seeds entries. It chdirs into the
@@ -512,9 +517,8 @@ func memberRegistryProject(t *testing.T) (root, member, teamLoc string) {
 	teamLoc = filepath.Join(root, "team-kb")
 	t.Chdir(root)
 
-	// The colocated repo has no repo.yaml (it predates the config split), so
-	// its store is synthesised from defaults. The member carries a default
-	// repo.yaml, as `repo add` would have written.
+	// Both repos carry a default repo.yaml, as init and `repo add` would
+	// have written (writeSpecCommandConfig supplies the colocated one).
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(member, ".spektacular", "knowledge"), 0o755))
 	require.NoError(t, os.MkdirAll(teamLoc, 0o755))
@@ -524,9 +528,9 @@ func memberRegistryProject(t *testing.T) (root, member, teamLoc string) {
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    location: \".\"\n"+
+			"    location: .\n"+
 			"  - name: member\n"+
-			"    location: "+member+"\n"+
+			"    location: "+filepath.Join(member, ".spektacular")+"\n"+
 			"knowledge:\n"+
 			"  sources:\n"+
 			"    - scope: team\n"+
@@ -548,12 +552,13 @@ func memberWithoutFootprintProject(t *testing.T) (root, member string) {
 	t.Chdir(root)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(member, ".spektacular"), 0o755))
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    location: \".\"\n"+
+			"    location: .\n"+
 			"  - name: member\n"+
-			"    location: "+member+"\n")
+			"    location: "+filepath.Join(member, ".spektacular")+"\n")
 
 	return root, member
 }
@@ -689,10 +694,11 @@ func TestKnowledgeSources_MemberInvalidFootprintErrorsWithRepairOffer(t *testing
 	require.Contains(t, envelope.NextAction, "repo add")
 }
 
-// A registry entry whose location is not on disk is skipped by knowledge
-// commands — they succeed with the remaining sources, never error, and never
-// clone.
-func TestKnowledgeSources_SkipsAbsentRepo(t *testing.T) {
+// A registry entry whose location is not on disk is a misregistration:
+// knowledge commands report it as repo_location_missing, naming the path the
+// location resolved to, rather than silently aggregating without it. Git is
+// never invoked.
+func TestKnowledgeSources_AbsentRepoIsAnError(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	git := &stubGit{}
@@ -702,23 +708,19 @@ func TestKnowledgeSources_SkipsAbsentRepo(t *testing.T) {
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    location: \".\"\n"+
+			"    location: .\n"+
 			"  - name: ghost\n"+
-			"    location: ./ghost\n")
+			"    location: ../ghost\n")
 
-	stdout, _, err := runKnowledge(t, "sources")
-	require.NoError(t, err)
+	_, _, err := runKnowledge(t, "sources")
+	require.Error(t, err)
 
-	var result struct {
-		Sources []knowledgeSource `json:"sources"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	require.Equal(t, []knowledgeSource{
-		{Scope: "project", Provider: "file", Location: filepath.Join(root, ".spektacular", "knowledge"), Repo: "testproj"},
-	}, result.Sources, "the absent repo contributes no source")
-
-	require.Zero(t, git.calls, "knowledge aggregation must never invoke git")
-	require.NoDirExists(t, filepath.Join(root, ".spektacular", repo.MaterializeDirName, "ghost"))
+	var envelope *output.ErrorResponse
+	require.ErrorAs(t, err, &envelope)
+	require.Equal(t, "repo_location_missing", envelope.Code)
+	require.Contains(t, envelope.Message, `"ghost"`)
+	require.Contains(t, envelope.Message, filepath.Join(root, "ghost"))
+	require.Zero(t, git.calls, "knowledge commands must never invoke git")
 }
 
 // Phase 2.3: `knowledge always-applied` returns every always-applied entry —
@@ -793,7 +795,7 @@ func TestKnowledgeAlwaysApplied_SchemaDeclaresEntriesArray(t *testing.T) {
 }
 
 // sourcedMemberProject lays out a temp project (chdir'd into) registering
-// the colocated repo "testproj" at "." plus a member "api" at ./repos/api
+// the colocated repo "testproj" at ".." plus a member "api" at ../repos/api
 // whose footprint — rendered via the production install path — declares
 // `source: file://<code>`, where code is a separate temp dir holding a
 // source file and its own (foreign) .spektacular/knowledge entry. It returns
@@ -808,17 +810,17 @@ func sourcedMemberProject(t *testing.T) (root, location, code string) {
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    location: \".\"\n"+
+			"    location: .\n"+
 			"  - name: api\n"+
-			"    location: ./repos/api\n")
+			"    location: ../repos/api/.spektacular\n")
 
 	location = filepath.Join(root, "repos", "api")
-	_, err := repo.EnsureFootprint(location, config.NewDefaultRepoConfig())
+	_, err := repo.EnsureFootprint(filepath.Join(location, ".spektacular"), config.NewDefaultRepoConfig())
 	require.NoError(t, err)
 	rcPath := filepath.Join(location, ".spektacular", config.RepoConfigFileName)
 	rc, err := config.RepoConfigFromYAMLFile(rcPath)
 	require.NoError(t, err)
-	rc.Source = "file://" + code
+	rc.Source = config.FileSource(code)
 	require.NoError(t, rc.ToYAMLFile(rcPath))
 
 	require.NoError(t, os.WriteFile(filepath.Join(code, "main.go"), []byte("package main\n"), 0o644))
@@ -872,7 +874,7 @@ func TestKnowledge_MemberWithFileSourceAggregatesFromLocationNotSource(t *testin
 	require.Equal(t, codeBefore, snapshotDir(t, code), "the code dir must be untouched")
 }
 
-// Phase 1.4 criterion 5: the colocated project repo (location ".") whose own
+// Phase 1.4 criterion 5: the colocated project repo (location "..") whose own
 // repo.yaml declares `source: file://<elsewhere>` still has its knowledge
 // keyed on the project root: aggregation reads the footprint at the location
 // (the project root itself), so the source directory — which has no
@@ -889,9 +891,9 @@ func TestKnowledgeSources_ColocatedRepoWithFileSourceKeyedOnProjectRoot(t *testi
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    location: \".\"\n")
+			"    location: .\n")
 	rc := config.NewDefaultRepoConfig()
-	rc.Source = "file://" + elsewhere
+	rc.Source = config.FileSource(elsewhere)
 	require.NoError(t, rc.ToYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName)))
 	elsewhereBefore := snapshotDir(t, elsewhere)
 

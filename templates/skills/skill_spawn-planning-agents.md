@@ -6,7 +6,7 @@ Orchestrate parallel research agents to investigate the codebase for planning pu
 
 Use your agent orchestration capability to run multiple research tasks in parallel.
 
-**Multi-repo projects**: when the project registers more than one repo, fan the research out per repo — the `## Repos` section at the top of `.spektacular/context.md` lists each registered repo's source and metadata (the `repo list` command reports the source as `root`), and give every research agent below an explicit source directory (or one agent per repo per question, for questions that span repos). Each repo's description, role, and tags tell you which repos a question is even relevant to; don't send every agent into every repo indiscriminately.
+**Multi-repo projects**: when the project registers more than one repo, fan the research out per repo — the `repo list` command reports each registered repo's metadata and the `root` its code lives at — and give every research agent below an explicit code directory (or one agent per repo per question, for questions that span repos). Each repo's description, role, and tags tell you which repos a question is even relevant to; don't send every agent into every repo indiscriminately.
 
 Launch the following agents concurrently:
 

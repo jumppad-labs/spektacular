@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -177,51 +178,25 @@ func newKnowledgeSet() (*knowledge.Set, error) {
 // Relative source locations in a repo's config resolve against that repo's
 // root, and each source is stamped with its repo's name for attribution.
 func aggregateKnowledgeSources(cfg config.Config, projectRoot string) ([]config.SourceConfig, error) {
-	entries := cfg.Repos
-	if len(entries) == 0 {
-		// A project written before the registry existed (or a minimal
-		// hand-written config) is still a project of one: treat the
-		// colocated repo as implicitly registered.
-		entries = []config.RepoEntry{{Name: cfg.Name, Location: "."}}
-	}
-
-	regCfg := cfg
-	regCfg.Repos = entries
-	set, err := repo.New(regCfg, projectRoot, repoGit)
+	set, err := repo.New(cfg, projectRoot, repoGit)
 	if err != nil {
 		return nil, err
 	}
 
 	var sources []config.SourceConfig
 	for _, e := range set.Entries() {
-		root, ok := set.LocalRoot(e.Name)
-		if !ok {
-			continue
-		}
-
-		rc := config.NewDefaultRepoConfig()
-		rcPath := filepath.Join(root, ".spektacular", config.RepoConfigFileName)
-		if _, err := os.Stat(rcPath); os.IsNotExist(err) {
-			// The colocated repo may predate the config split; its own store
-			// is synthesised from defaults. A member repo without a footprint
-			// is broken and gets a repair offer instead.
-			if root != projectRoot {
+		root, _ := set.LocalRoot(e.Name)
+		rc, err := set.Footprint(e.Name)
+		if err != nil {
+			var fpErr *repo.FootprintError
+			if errors.As(err, &fpErr) {
 				return nil, output.NewError(
 					"repo_footprint",
-					fmt.Sprintf("repo %q at %s is missing its %s", e.Name, root, filepath.Join(".spektacular", config.RepoConfigFileName)),
-				).WithResource(rcPath).
-					WithNextAction(fmt.Sprintf("run `%s repo add --data '{\"name\":%q}'` to repair the repo's footprint", cfg.Command, e.Name))
+					fmt.Sprintf("repo %q at %s has a missing or invalid footprint: %v", e.Name, fpErr.Root, fpErr.Err),
+				).WithResource(filepath.Join(fpErr.Root, config.RepoConfigFileName)).
+					WithNextAction(fmt.Sprintf("run `%s repo add --data '{\"name\":%q,\"location\":%q}'` to repair the repo's footprint", cfg.Command, e.Name, e.Location))
 			}
-		} else {
-			loaded, err := config.RepoConfigFromYAMLFile(rcPath)
-			if err != nil {
-				return nil, output.NewError(
-					"repo_footprint",
-					fmt.Sprintf("repo %q at %s has an invalid repo config: %v", e.Name, root, err),
-				).WithResource(rcPath).
-					WithNextAction(fmt.Sprintf("fix %s, or run `%s repo add --data '{\"name\":%q}'` to repair the repo's footprint", rcPath, cfg.Command, e.Name))
-			}
-			rc = loaded
+			return nil, err
 		}
 
 		for _, src := range rc.WithDefaults(root).Knowledge.Sources {

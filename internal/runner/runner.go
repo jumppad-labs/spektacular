@@ -294,4 +294,3 @@ type RunOptions struct {
 	LogFile   string // path to debug log file; empty disables logging
 	Model     string // model override; empty uses the agent default
 }
-

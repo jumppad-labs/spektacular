@@ -27,11 +27,11 @@ func TestEnsureFootprint_FreshDirCreates(t *testing.T) {
 	require.Equal(t, FootprintCreated, status)
 
 	// The written repo.yaml parses back as a valid repo config.
-	_, err = config.RepoConfigFromYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName))
+	_, err = config.RepoConfigFromYAMLFile(filepath.Join(root, config.RepoConfigFileName))
 	require.NoError(t, err)
 
 	for _, cat := range footprintCategories {
-		dir := filepath.Join(root, ".spektacular", "knowledge", cat)
+		dir := filepath.Join(root, "knowledge", cat)
 		require.DirExists(t, dir)
 		readme := filepath.Join(dir, "README.md")
 		require.FileExists(t, readme)
@@ -49,10 +49,10 @@ func TestEnsureFootprint_MissingREADMERepairedWithoutRewritingOthers(t *testing.
 	require.NoError(t, err)
 
 	// A user-customised README is the sentinel: repair must not rewrite it.
-	sentinel := filepath.Join(root, ".spektacular", "knowledge", "conventions", "README.md")
+	sentinel := filepath.Join(root, "knowledge", "conventions", "README.md")
 	require.NoError(t, os.WriteFile(sentinel, []byte("customised by hand\n"), 0o644))
 
-	missing := filepath.Join(root, ".spektacular", "knowledge", "gotchas", "README.md")
+	missing := filepath.Join(root, "knowledge", "gotchas", "README.md")
 	require.NoError(t, os.Remove(missing))
 
 	status, err := EnsureFootprint(root, config.NewDefaultRepoConfig())
@@ -69,7 +69,7 @@ func TestEnsureFootprint_MissingREADMERepairedWithoutRewritingOthers(t *testing.
 // the footprint ends the call valid.
 func TestEnsureFootprint_BrokenRepoYAMLRepairedWithDefaults(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".spektacular")
+	dir := root
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	path := filepath.Join(dir, config.RepoConfigFileName)
 	require.NoError(t, os.WriteFile(path, []byte("{{ this is not yaml"), 0o644))
@@ -80,7 +80,7 @@ func TestEnsureFootprint_BrokenRepoYAMLRepairedWithDefaults(t *testing.T) {
 
 	_, err = config.RepoConfigFromYAMLFile(path)
 	require.NoError(t, err, "a repaired repo.yaml must parse as a valid repo config")
-	require.FileExists(t, filepath.Join(root, ".spektacular", "knowledge", "conventions", "README.md"))
+	require.FileExists(t, filepath.Join(root, "knowledge", "conventions", "README.md"))
 }
 
 // A healthy, complete footprint is reported unchanged.
@@ -99,7 +99,7 @@ func TestEnsureFootprint_HealthyFootprintUnchanged(t *testing.T) {
 // passed-in defaults' location is ignored.
 func TestEnsureFootprint_ExistingConfigCustomLocationDrivesScaffolding(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".spektacular")
+	dir := root
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 
 	custom := config.NewDefaultRepoConfig()
@@ -113,7 +113,7 @@ func TestEnsureFootprint_ExistingConfigCustomLocationDrivesScaffolding(t *testin
 	for _, cat := range footprintCategories {
 		require.FileExists(t, filepath.Join(root, "kb", cat, "README.md"))
 	}
-	require.NoDirExists(t, filepath.Join(root, ".spektacular", "knowledge"),
+	require.NoDirExists(t, filepath.Join(root, "knowledge"),
 		"the defaults' location must not be scaffolded when the existing config names another")
 }
 
@@ -132,10 +132,10 @@ func TestEnsureFootprint_SourceDeclaredScaffoldsUnderRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, FootprintRepaired, status, "topping up the missing knowledge tree is a repair")
 
-	require.FileExists(t, filepath.Join(root, ".spektacular", "knowledge", "conventions", "README.md"))
+	require.FileExists(t, filepath.Join(root, "knowledge", "conventions", "README.md"))
 	require.NoDirExists(t, filepath.Join(code, ".spektacular"), "nothing may be scaffolded under the source")
 
-	loaded, err := config.RepoConfigFromYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName))
+	loaded, err := config.RepoConfigFromYAMLFile(filepath.Join(root, config.RepoConfigFileName))
 	require.NoError(t, err)
-	require.Equal(t, code, loaded.Source, "the declared source must survive the repair")
+	require.Equal(t, config.FileSource(code), loaded.Source, "the declared source must survive the repair")
 }

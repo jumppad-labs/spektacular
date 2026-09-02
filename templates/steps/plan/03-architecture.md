@@ -2,7 +2,7 @@
 
 Decide the shape of the solution and lock in the chosen direction. This step produces the **Architecture & Design Decisions** section of `plan.md` — the load-bearing section of the whole plan. A reviewer should be able to spot missing patterns or design gaps from this section alone.
 
-**The repos this project spans.** The architecture must place every part of the work in the repo it belongs to. The `## Repos` section at the top of `.spektacular/context.md` lists each registered repo with its metadata and source (where its code lives).
+**The repos this project spans.** The architecture must place every part of the work in the repo it belongs to. `{{config.command}} repo list` reports each registered repo with its metadata and the `root` its code lives at.
 
 
 For every requirement, the drafted architecture must name **which repo (and which files within it)** the requirement is carried out against, using the repos' metadata from that section and the discovery findings; look inside a repo at the source listed there (or run `{{config.command}} repo list` when a source is not on disk yet). Record the requirement-to-repo-and-files resolution in the plan's context document as part of the per-phase technical detail — no separate document.

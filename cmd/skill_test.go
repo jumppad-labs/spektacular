@@ -63,7 +63,7 @@ func TestSkillManageRepos_DocumentsLocationSourceAndLayouts(t *testing.T) {
 	skillProject(t)
 	instructions := fetchSkillInstructions(t, "manage-repos")
 
-	require.Contains(t, instructions, `"location":"./repos/api"`,
+	require.Contains(t, instructions, `"location":"../repos/api"`,
 		"manage-repos must show a repo add payload carrying location")
 	require.Contains(t, instructions, `"source":"file://${HOME}/code/api"`,
 		"manage-repos must show a repo add payload with a file source")
@@ -73,8 +73,12 @@ func TestSkillManageRepos_DocumentsLocationSourceAndLayouts(t *testing.T) {
 		"manage-repos must explain the colocated layout")
 	require.Contains(t, instructions, "**separate**",
 		"manage-repos must explain the separate layout")
-	require.Contains(t, instructions, "`location` is required and is created if it does not exist yet",
-		"manage-repos must say location is required and created when missing")
+	require.Contains(t, instructions, "`location` is required and points at the repo's code",
+		"manage-repos must say location points at the repo's code")
+	require.Contains(t, instructions, "writes a file source pointing at `..` there",
+		"manage-repos must say add scaffolds the footprint with a source back to the code")
+	require.Contains(t, instructions, "names its code as a provider block",
+		"manage-repos must describe source as a provider block")
 	require.Contains(t, instructions, "the resolved source of its code as `root`",
 		"manage-repos must say repo list reports the source as root")
 	// The removed key may be named only to say it is gone, never as a way
@@ -142,10 +146,10 @@ func TestSkillSpawnImplementationAgents_DirectsWorkToAttributedRepo(t *testing.T
 
 	require.Contains(t, instructions, "Work belongs in its attributed repo",
 		"the skill must open with the attributed-repo rule")
-	require.Contains(t, instructions, "carry that work out inside that repo's source",
-		"attributed work must be carried out in the repo's source")
+	require.Contains(t, instructions, "carry that work out inside that repo's code",
+		"attributed work must be carried out in the repo's code")
 	require.Contains(t, instructions, "repo list",
-		"resolved local paths must come from the `repo list` command")
+		"where a repo's code lives must come from the `repo list` command")
 	require.Contains(t, instructions, "changelog derivation stay per-repo",
 		"changes must stay per-repo so derived changelog entries follow the attribution")
 }

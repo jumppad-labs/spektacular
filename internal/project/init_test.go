@@ -289,11 +289,11 @@ func TestInit_WritesProjectAndRepoConfigsWithOwnSettings(t *testing.T) {
 		{
 			Scope:    config.DefaultKnowledgeScope,
 			Provider: config.ProviderFile,
-			Config:   config.FileKnowledgeConfig{Location: config.DefaultKnowledgeLocation},
+			Config:   config.FileKnowledgeConfig{Location: config.DefaultRepoKnowledgeLocation},
 		},
 	}, repoCfg.Knowledge.Sources)
 	require.Equal(t, config.ProviderFile, repoCfg.Changelog.Provider)
-	require.Equal(t, config.DefaultChangelogDir, repoCfg.Changelog.Config.Directory)
+	require.Equal(t, config.DefaultRepoChangelogDir, repoCfg.Changelog.Config.Directory)
 
 	rawRepo, err := os.ReadFile(repoPath)
 	require.NoError(t, err)

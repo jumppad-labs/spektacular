@@ -68,7 +68,10 @@ func Init(projectPath, name string, force bool) ([]string, error) {
 	// the repo config, not the project config, is the knowledge authority for
 	// the repo.
 	repoConfigPath := filepath.Join(spektacularDir, config.RepoConfigFileName)
+	// The colocated repo's footprint is written into .spektacular, so its
+	// code is that folder's parent: the project directory itself.
 	repoCfg := config.NewDefaultRepoConfig()
+	repoCfg.Source = config.DefaultRepoSource
 	repoConfigExisted := false
 	if _, err := os.Stat(repoConfigPath); err == nil {
 		loaded, err := config.RepoConfigFromYAMLFile(repoConfigPath)
@@ -87,7 +90,7 @@ func Init(projectPath, name string, force bool) ([]string, error) {
 	// root as knowledge.NewSet resolves them. By default this is
 	// .spektacular/knowledge.
 	var knowledgeRoots []string
-	for _, src := range repoCfg.WithDefaults(projectPath).Knowledge.Sources {
+	for _, src := range repoCfg.WithDefaults(spektacularDir).Knowledge.Sources {
 		if src.Provider != config.ProviderFile || src.Scope != config.DefaultKnowledgeScope {
 			continue
 		}
@@ -185,8 +188,8 @@ func Init(projectPath, name string, force bool) ([]string, error) {
 		}
 		// Every repo should end up consistently described; a footprint with no
 		// descriptive metadata is not an error, just something worth surfacing.
-		if meta, ok := rset.DescriptiveMetadata(e.Name); !ok || (meta.Description == "" && meta.Role == "" && meta.Deployment == "" && len(meta.Tags) == 0) {
-			notices = append(notices, fmt.Sprintf("repo %q has no descriptive metadata set; run 'repo add' with description/role/tags/deployment to describe it", e.Name))
+		if meta, ok := rset.DescriptiveMetadata(e.Name); !ok || (meta.Description == "" && meta.Role == "" && len(meta.Tags) == 0) {
+			notices = append(notices, fmt.Sprintf("repo %q has no descriptive metadata set; run 'repo add' with description/role/tags to describe it", e.Name))
 		}
 	}
 

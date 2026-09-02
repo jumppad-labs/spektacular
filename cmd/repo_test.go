@@ -24,7 +24,6 @@ type repoListEntry struct {
 	Role         string   `json:"role"`
 	Tags         []string `json:"tags"`
 	Dependencies []string `json:"dependencies"`
-	Deployment   string   `json:"deployment"`
 	Materialized bool     `json:"materialized"`
 	StaleNote    string   `json:"stale_note"`
 	MetadataNote string   `json:"metadata_note"`
@@ -189,7 +188,6 @@ func TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint(t *testing.T) {
 		"role":         "documentation",
 		"tags":         []string{"docs", "markdown"},
 		"dependencies": []string{"api"},
-		"deployment":   "static site on the CDN",
 	}))
 	require.NoError(t, err)
 
@@ -201,10 +199,10 @@ func TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint(t *testing.T) {
 	// The project config carries the entry's membership fields only.
 	cfg, err := config.FromYAMLFile(filepath.Join(project, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Len(t, cfg.Repos, 1)
-	entry := cfg.Repos[0]
+	require.Len(t, cfg.Repos, 2, "the project entry plus the added repo")
+	entry := cfg.Repos[1]
 	require.Equal(t, "docs", entry.Name)
-	require.Equal(t, target, entry.Location)
+	require.Equal(t, filepath.Join(target, ".spektacular"), entry.Location, "add registers the footprint folder it scaffolded")
 	require.Equal(t, []string{"api"}, entry.Dependencies)
 
 	// The project config's own YAML carries no descriptive metadata keys at
@@ -217,9 +215,9 @@ func TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint(t *testing.T) {
 		Repos []map[string]any `yaml:"repos"`
 	}
 	require.NoError(t, yaml.Unmarshal(rawCfg, &generic))
-	require.Len(t, generic.Repos, 1)
-	for _, field := range []string{"description", "role", "tags", "deployment"} {
-		require.NotContains(t, generic.Repos[0], field, "project config must carry no descriptive metadata fields")
+	require.Len(t, generic.Repos, 2)
+	for _, field := range []string{"description", "role", "tags"} {
+		require.NotContains(t, generic.Repos[1], field, "project config must carry no descriptive metadata fields")
 	}
 
 	// The target repo contains exactly the minimal footprint.
@@ -232,7 +230,6 @@ func TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint(t *testing.T) {
 	require.Equal(t, "the documentation repo", targetCfg.Description)
 	require.Equal(t, "documentation", targetCfg.Role)
 	require.Equal(t, []string{"docs", "markdown"}, targetCfg.Tags)
-	require.Equal(t, "static site on the CDN", targetCfg.Deployment)
 }
 
 // Criterion 2: re-running `repo add` for the same repo — from this project or
@@ -273,9 +270,9 @@ func TestRepoAdd_ReAddChangesNothingInTargetRepo(t *testing.T) {
 
 	cfg2, err := config.FromYAMLFile(filepath.Join(project2, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Len(t, cfg2.Repos, 1)
-	require.Equal(t, "docs", cfg2.Repos[0].Name)
-	require.Equal(t, target, cfg2.Repos[0].Location)
+	require.Len(t, cfg2.Repos, 2)
+	require.Equal(t, "docs", cfg2.Repos[1].Name)
+	require.Equal(t, filepath.Join(target, ".spektacular"), cfg2.Repos[1].Location)
 }
 
 // Criterion 3: `repo list` reports every registered repo with descriptive
@@ -285,7 +282,7 @@ func TestRepoAdd_ReAddChangesNothingInTargetRepo(t *testing.T) {
 // empty root, and materialized false, and listing never invokes git or
 // clones it.
 func TestRepoList_ReportsRegisteredReposWithMetadataAndRoots(t *testing.T) {
-	project := repoProject(t)
+	_ = repoProject(t)
 	git := &stubGit{}
 	swapRepoGit(t, git)
 
@@ -300,20 +297,6 @@ func TestRepoList_ReportsRegisteredReposWithMetadataAndRoots(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	// Register a repo whose location is absent directly in the config: going
-	// through `repo add` would fail on the missing location, and this
-	// criterion needs an entry that is registered but not on disk. RepoEntry
-	// carries no descriptive fields, so there is nothing to set here beyond
-	// membership.
-	cfgPath := filepath.Join(project, ".spektacular", "config.yaml")
-	cfg, err := config.FromYAMLFile(cfgPath)
-	require.NoError(t, err)
-	cfg.Repos = append(cfg.Repos, config.RepoEntry{
-		Name:     "absent",
-		Location: "./absent",
-	})
-	require.NoError(t, cfg.ToYAMLFile(cfgPath))
-
 	stdout, _, err := runRepo(t, "list")
 	require.NoError(t, err)
 
@@ -323,7 +306,7 @@ func TestRepoList_ReportsRegisteredReposWithMetadataAndRoots(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	require.Len(t, result.Repos, 2)
 
-	docs := result.Repos[0]
+	docs := result.Repos[1]
 	require.Equal(t, "docs", docs.Name)
 	require.Equal(t, "the documentation repo", docs.Description)
 	require.Equal(t, "documentation", docs.Role)
@@ -331,15 +314,70 @@ func TestRepoList_ReportsRegisteredReposWithMetadataAndRoots(t *testing.T) {
 	require.True(t, filepath.IsAbs(docs.Root))
 	require.False(t, docs.Materialized)
 
-	absent := result.Repos[1]
-	require.Equal(t, "absent", absent.Name)
-	require.Equal(t, "./absent", absent.Location, "the registered location is echoed even when it is not on disk")
-	require.Empty(t, absent.Description, "a repo not on disk has no readable repo.yaml, so metadata is absent")
-	require.Empty(t, absent.Role)
-	require.Equal(t, "", absent.Root, "a repo whose location is not on disk reports no root")
-	require.False(t, absent.Materialized)
+	require.Zero(t, git.calls, "listing must never invoke git")
+}
 
-	require.Zero(t, git.calls, "listing must never invoke git or clone the absent repo")
+// A registered repo whose location is not on disk is a misregistration, and
+// `repo list` says so instead of listing it with an empty root: the error is
+// coded repo_location_missing, names the registered value and the absolute
+// path it resolved to (so a relative location written from the project root
+// instead of from config.yaml's folder is visible at a glance), and git is
+// never invoked.
+func TestRepoList_MissingLocationIsAnError(t *testing.T) {
+	project := repoProject(t)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+
+	writeSpecCommandConfig(t, project,
+		"repos:\n"+
+			"  - name: absent\n"+
+			"    location: ./repos/absent\n")
+
+	stdout, stderr, err := runRepo(t, "list")
+	require.Error(t, err)
+	require.Empty(t, stderr)
+
+	var envelope output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+	require.True(t, envelope.IsError)
+	require.Equal(t, "repo_location_missing", envelope.Code)
+	require.Contains(t, envelope.Message, `"absent"`, "the error must name the repo")
+	require.Contains(t, envelope.Message, `"./repos/absent"`, "the error must echo the registered location")
+	require.Contains(t, envelope.Message, filepath.Join(project, ".spektacular", "repos", "absent"), "the error must name the absolute path the location resolved to")
+	require.Contains(t, envelope.Message, "config.yaml", "the error must say what a relative location is resolved from")
+	require.Contains(t, envelope.NextAction, "repos[].location")
+	require.Zero(t, git.calls, "listing must never invoke git")
+}
+
+// A registered location that exists but holds no .spektacular/repo.yaml is
+// reported as repo_footprint_missing, naming the file that was expected, so
+// a repo.yaml placed one level too high is not silently ignored.
+func TestRepoList_MissingFootprintIsAnError(t *testing.T) {
+	project := repoProject(t)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+
+	writeSpecCommandConfig(t, project,
+		"repos:\n"+
+			"  - name: api\n"+
+			"    location: ../repos/api/.spektacular\n")
+	location := filepath.Join(project, "repos", "api")
+	require.NoError(t, os.MkdirAll(filepath.Join(location, ".spektacular"), 0o755))
+	// The footprint file sits one level above the registered folder, so it
+	// is not where the CLI looks.
+	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(filepath.Join(location, config.RepoConfigFileName)))
+
+	stdout, stderr, err := runRepo(t, "list")
+	require.Error(t, err)
+	require.Empty(t, stderr)
+
+	var envelope output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+	require.True(t, envelope.IsError)
+	require.Equal(t, "repo_footprint_missing", envelope.Code)
+	require.Contains(t, envelope.Message, `"api"`)
+	require.Contains(t, envelope.NextAction, filepath.Join(location, ".spektacular", config.RepoConfigFileName), "the next action must name the file that was expected")
+	require.Zero(t, git.calls, "listing must never invoke git")
 }
 
 // Criterion: the same physical repo registered into two separate projects
@@ -383,8 +421,8 @@ func TestRepoList_SameRepoAcrossTwoProjectsSeesOneEditedDescription(t *testing.T
 			Repos []repoListEntry `json:"repos"`
 		}
 		require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-		require.Len(t, result.Repos, 1)
-		return result.Repos[0].Description
+		require.Len(t, result.Repos, 2)
+		return result.Repos[1].Description
 	}
 
 	require.Equal(t, "updated description", listDescription(project1))
@@ -404,14 +442,14 @@ func TestRepoList_StaleNoteFromDifferingHeads(t *testing.T) {
 	writeSpecCommandConfig(t, project,
 		"repos:\n"+
 			"  - name: member\n"+
-			"    location: ./repos/member\n")
+			"    location: ../repos/member/.spektacular\n")
 
 	// The repo's own footprint at its registered location declares the git
 	// source.
 	location := filepath.Join(project, "repos", "member")
 	require.NoError(t, os.MkdirAll(filepath.Join(location, ".spektacular"), 0o755))
 	repoCfg := config.NewDefaultRepoConfig()
-	repoCfg.Source = "https://example.com/member.git"
+	repoCfg.Source = config.GitSource("https://example.com/member.git")
 	require.NoError(t, repoCfg.ToYAMLFile(
 		filepath.Join(location, ".spektacular", config.RepoConfigFileName)))
 
@@ -430,7 +468,7 @@ func TestRepoList_StaleNoteFromDifferingHeads(t *testing.T) {
 
 	member := result.Repos[0]
 	require.Equal(t, "member", member.Name)
-	require.Equal(t, "./repos/member", member.Location, "the registered location is echoed as written")
+	require.Equal(t, filepath.Join(project, "repos", "member", ".spektacular"), member.Location, "the listed location is absolute")
 	require.Equal(t, filepath.Join(project, ".spektacular", "repos", "member"), member.Root,
 		"root is the clone of the git source, not the registered location")
 	require.True(t, member.Materialized)
@@ -454,7 +492,6 @@ func TestRepoAdd_UpsertUpdatesMetadataAndRepoConfigWithoutChangingFootprintShape
 		"description": "first description",
 		"role":        "documentation",
 		"tags":        []string{"docs"},
-		"deployment":  "static site",
 	}))
 	require.NoError(t, err)
 	beforePaths := listPaths(t, target)
@@ -465,7 +502,6 @@ func TestRepoAdd_UpsertUpdatesMetadataAndRepoConfigWithoutChangingFootprintShape
 		"description": "second description",
 		"role":        "reference",
 		"tags":        []string{"docs", "api"},
-		"deployment":  "static site v2",
 	}))
 	require.NoError(t, err)
 
@@ -476,8 +512,8 @@ func TestRepoAdd_UpsertUpdatesMetadataAndRepoConfigWithoutChangingFootprintShape
 
 	cfg, err := config.FromYAMLFile(filepath.Join(project, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Len(t, cfg.Repos, 1, "an upsert must update in place, not append a duplicate")
-	require.Equal(t, "docs", cfg.Repos[0].Name)
+	require.Len(t, cfg.Repos, 2, "an upsert must update in place, not append a duplicate")
+	require.Equal(t, "docs", cfg.Repos[1].Name)
 
 	// The footprint's file set is unchanged — same paths present, still the
 	// minimal footprint shape.
@@ -490,12 +526,11 @@ func TestRepoAdd_UpsertUpdatesMetadataAndRepoConfigWithoutChangingFootprintShape
 	require.Equal(t, "second description", targetCfg.Description)
 	require.Equal(t, "reference", targetCfg.Role)
 	require.Equal(t, []string{"docs", "api"}, targetCfg.Tags)
-	require.Equal(t, "static site v2", targetCfg.Deployment)
 }
 
 // Criterion 3: registering a repository with no descriptive metadata
 // supplied leaves an already-described repository's own configuration
-// unchanged — a re-add that omits description/role/tags/deployment must not
+// unchanged — a re-add that omits description/role/tags must not
 // blank out metadata written by an earlier, fuller registration.
 func TestRepoAdd_ReAddWithNoMetadataLeavesRepoConfigUnchanged(t *testing.T) {
 	repoProject(t)
@@ -507,7 +542,6 @@ func TestRepoAdd_ReAddWithNoMetadataLeavesRepoConfigUnchanged(t *testing.T) {
 		"description": "the documentation repo",
 		"role":        "documentation",
 		"tags":        []string{"docs", "markdown"},
-		"deployment":  "static site on the CDN",
 	}))
 	require.NoError(t, err)
 
@@ -524,7 +558,6 @@ func TestRepoAdd_ReAddWithNoMetadataLeavesRepoConfigUnchanged(t *testing.T) {
 	require.Equal(t, "the documentation repo", targetCfg.Description, "an omitted description must not blank out an existing one")
 	require.Equal(t, "documentation", targetCfg.Role)
 	require.Equal(t, []string{"docs", "markdown"}, targetCfg.Tags)
-	require.Equal(t, "static site on the CDN", targetCfg.Deployment)
 }
 
 // Phase 1.4 criterion 2: `repo add` with no location is rejected at input
@@ -548,7 +581,7 @@ func TestRepoAdd_MissingLocationErrors(t *testing.T) {
 
 	cfg, err := config.FromYAMLFile(filepath.Join(project, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Empty(t, cfg.Repos, "a rejected add must not register anything")
+	require.Len(t, cfg.Repos, 1, "a rejected add must not register anything beyond the project itself")
 }
 
 // Phase 1.4 criterion 2: the removed registry key "address" is rejected as
@@ -573,7 +606,7 @@ func TestRepoAdd_AddressKeyRejectedWithSourceHint(t *testing.T) {
 
 	cfg, err := config.FromYAMLFile(filepath.Join(project, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Empty(t, cfg.Repos, "a rejected add must not register anything")
+	require.Len(t, cfg.Repos, 1, "a rejected add must not register anything beyond the project itself")
 	require.NoDirExists(t, filepath.Join(project, "x"), "a rejected add must not create the location")
 }
 
@@ -603,7 +636,7 @@ func TestRepoAdd_SchemaDocumentsInputAndOutput(t *testing.T) {
 	var schema commandSchema
 	require.NoError(t, json.Unmarshal([]byte(stdout), &schema))
 	require.NotNil(t, schema.Input)
-	for _, field := range []string{"name", "location", "source", "description", "role", "tags", "dependencies", "deployment"} {
+	for _, field := range []string{"name", "location", "source", "description", "role", "tags", "dependencies"} {
 		require.Contains(t, schema.Input.Properties, field)
 	}
 	for _, field := range []string{"address", "local"} {
@@ -694,9 +727,9 @@ func TestRepoList_MaterializedNoMetadataReturnsMetadataNote(t *testing.T) {
 		Repos []repoListEntry `json:"repos"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	require.Len(t, result.Repos, 1)
-	require.NotEmpty(t, result.Repos[0].MetadataNote, "a materialized repo with no descriptive metadata must carry a metadata_note")
-	require.Contains(t, result.Repos[0].MetadataNote, "docs")
+	require.Len(t, result.Repos, 2)
+	require.NotEmpty(t, result.Repos[1].MetadataNote, "a materialized repo with no descriptive metadata must carry a metadata_note")
+	require.Contains(t, result.Repos[1].MetadataNote, "docs")
 }
 
 // `repo list` reports no metadata_note for a materialized repo whose own
@@ -720,8 +753,8 @@ func TestRepoList_MaterializedWithMetadataReturnsNoMetadataNote(t *testing.T) {
 		Repos []repoListEntry `json:"repos"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	require.Len(t, result.Repos, 1)
-	require.Empty(t, result.Repos[0].MetadataNote, "a materialized repo with descriptive metadata must carry no metadata_note")
+	require.Len(t, result.Repos, 2)
+	require.Empty(t, result.Repos[1].MetadataNote, "a materialized repo with descriptive metadata must carry no metadata_note")
 }
 
 // `repo list` reports no metadata_note for a repo whose registered location
@@ -734,14 +767,17 @@ func TestRepoList_UnmaterializedReturnsNoMetadataNote(t *testing.T) {
 	git := &stubGit{}
 	swapRepoGit(t, git)
 
-	cfgPath := filepath.Join(project, ".spektacular", "config.yaml")
-	cfg, err := config.FromYAMLFile(cfgPath)
-	require.NoError(t, err)
-	cfg.Repos = append(cfg.Repos, config.RepoEntry{
-		Name:     "absent",
-		Location: "./absent",
-	})
-	require.NoError(t, cfg.ToYAMLFile(cfgPath))
+	writeSpecCommandConfig(t, project,
+		"repos:\n"+
+			"  - name: api\n"+
+			"    location: ../repos/api/.spektacular\n")
+	location := filepath.Join(project, "repos", "api")
+	require.NoError(t, os.MkdirAll(filepath.Join(location, ".spektacular"), 0o755))
+	repoCfg := config.NewDefaultRepoConfig()
+	repoCfg.Source = config.GitSource("https://example.com/api.git")
+	repoCfg.Description = "the API service"
+	require.NoError(t, repoCfg.ToYAMLFile(
+		filepath.Join(location, ".spektacular", config.RepoConfigFileName)))
 
 	stdout, _, err := runRepo(t, "list")
 	require.NoError(t, err)
@@ -752,8 +788,8 @@ func TestRepoList_UnmaterializedReturnsNoMetadataNote(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	require.Len(t, result.Repos, 1)
 	require.False(t, result.Repos[0].Materialized)
-	require.Empty(t, result.Repos[0].MetadataNote, "a repo not on disk must carry no metadata_note")
-	require.Zero(t, git.calls, "listing must never invoke git or clone the absent repo")
+	require.Empty(t, result.Repos[0].MetadataNote, "a described repo whose git source is not cloned yet must carry no metadata_note")
+	require.Zero(t, git.calls, "listing must never invoke git or clone the uncloned repo")
 }
 
 // Phase 1.4 criterion 1: `repo add` with a relative location that does not
@@ -775,7 +811,7 @@ func TestRepoAdd_FileSourceWrittenToRepoYAMLAndKeptOnReAdd(t *testing.T) {
 
 	stdout, _, err := runRepo(t, "add", "--data", repoAddJSON(t, map[string]any{
 		"name":     "api",
-		"location": "./repos/api",
+		"location": "../repos/api",
 		"source":   "file://" + code,
 	}))
 	require.NoError(t, err)
@@ -789,25 +825,25 @@ func TestRepoAdd_FileSourceWrittenToRepoYAMLAndKeptOnReAdd(t *testing.T) {
 	repoYAML := filepath.Join(location, ".spektacular", "repo.yaml")
 	raw, err := os.ReadFile(repoYAML)
 	require.NoError(t, err)
-	require.Contains(t, string(raw), "source: file://"+code+"\n")
+	require.Contains(t, string(raw), "source:\n    provider: file\n    config:\n        location: "+code+"\n")
 
 	// The registry carries the relative location as written.
 	cfg, err := config.FromYAMLFile(filepath.Join(project, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Len(t, cfg.Repos, 1)
-	require.Equal(t, "./repos/api", cfg.Repos[0].Location)
+	require.Len(t, cfg.Repos, 2)
+	require.Equal(t, filepath.Join("../repos/api", ".spektacular"), cfg.Repos[1].Location)
 
 	// A re-add without a source, carrying only a new description, keeps the
 	// stored source and records the description.
 	_, _, err = runRepo(t, "add", "--data", repoAddJSON(t, map[string]any{
 		"name":        "api",
-		"location":    "./repos/api",
+		"location":    "../repos/api",
 		"description": "the API service",
 	}))
 	require.NoError(t, err)
 	raw, err = os.ReadFile(repoYAML)
 	require.NoError(t, err)
-	require.Contains(t, string(raw), "source: file://"+code+"\n", "an add without source must leave the stored source alone")
+	require.Contains(t, string(raw), "source:\n    provider: file\n    config:\n        location: "+code+"\n", "an add without source must leave the stored source alone")
 	require.Contains(t, string(raw), "description: the API service\n")
 
 	// The code directory is untouched throughout and gained no footprint.
@@ -827,7 +863,7 @@ func TestRepoAdd_GitSourceClonesIntoProjectReposFolderOnce(t *testing.T) {
 
 	_, _, err := runRepo(t, "add", "--data", repoAddJSON(t, map[string]any{
 		"name":     "api",
-		"location": "./repos/api",
+		"location": "../repos/api",
 		"source":   "https://example.com/api.git",
 	}))
 	require.NoError(t, err)
@@ -847,11 +883,11 @@ func TestRepoAdd_GitSourceClonesIntoProjectReposFolderOnce(t *testing.T) {
 		Repos []repoListEntry `json:"repos"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &listed))
-	require.Len(t, listed.Repos, 1)
-	require.Equal(t, "api", listed.Repos[0].Name)
-	require.Equal(t, "./repos/api", listed.Repos[0].Location)
-	require.Equal(t, clone, listed.Repos[0].Root, "the listed root is the clone of the git source")
-	require.True(t, listed.Repos[0].Materialized)
+	require.Len(t, listed.Repos, 2)
+	require.Equal(t, "api", listed.Repos[1].Name)
+	require.Equal(t, filepath.Join(project, "repos", "api", ".spektacular"), listed.Repos[1].Location)
+	require.Equal(t, clone, listed.Repos[1].Root, "the listed root is the clone of the git source")
+	require.True(t, listed.Repos[1].Materialized)
 	require.Empty(t, listed.Repos[0].StaleNote, "matching heads carry no stale note")
 	require.Len(t, git.clones, 1, "listing must not clone again")
 }
@@ -886,12 +922,14 @@ func TestRepoList_RootIsResolvedFileSource(t *testing.T) {
 			writeSpecCommandConfig(t, project,
 				"repos:\n"+
 					"  - name: api\n"+
-					"    location: ./repos/api\n")
+					"    location: ../repos/api/.spektacular\n")
 
 			location := filepath.Join(project, "repos", "api")
 			require.NoError(t, os.MkdirAll(filepath.Join(location, ".spektacular"), 0o755))
 			repoCfg := config.NewDefaultRepoConfig()
-			repoCfg.Source = tc.source(project, code)
+			src, err := config.SourceFromInput(tc.source(project, code))
+			require.NoError(t, err)
+			repoCfg.Source = src
 			repoCfg.Description = "the API service"
 			require.NoError(t, repoCfg.ToYAMLFile(
 				filepath.Join(location, ".spektacular", config.RepoConfigFileName)))
@@ -906,7 +944,7 @@ func TestRepoList_RootIsResolvedFileSource(t *testing.T) {
 
 			api := listed.Repos[0]
 			require.Equal(t, "api", api.Name)
-			require.Equal(t, "./repos/api", api.Location)
+			require.Equal(t, filepath.Join(project, "repos", "api", ".spektacular"), api.Location)
 			require.Equal(t, code, api.Root, "root must be the resolved source directory")
 			require.True(t, filepath.IsAbs(api.Root))
 			require.False(t, api.Materialized, "a file source is not a project-managed clone")
@@ -928,12 +966,12 @@ func TestRepoList_UnclonedGitSourceReportsNoRootWithoutCloning(t *testing.T) {
 	writeSpecCommandConfig(t, project,
 		"repos:\n"+
 			"  - name: api\n"+
-			"    location: ./repos/api\n")
+			"    location: ../repos/api/.spektacular\n")
 
 	location := filepath.Join(project, "repos", "api")
 	require.NoError(t, os.MkdirAll(filepath.Join(location, ".spektacular"), 0o755))
 	repoCfg := config.NewDefaultRepoConfig()
-	repoCfg.Source = "https://example.com/api.git"
+	repoCfg.Source = config.GitSource("https://example.com/api.git")
 	repoCfg.Description = "the API service"
 	require.NoError(t, repoCfg.ToYAMLFile(
 		filepath.Join(location, ".spektacular", config.RepoConfigFileName)))
@@ -948,7 +986,7 @@ func TestRepoList_UnclonedGitSourceReportsNoRootWithoutCloning(t *testing.T) {
 
 	api := listed.Repos[0]
 	require.Equal(t, "api", api.Name)
-	require.Equal(t, "./repos/api", api.Location)
+	require.Equal(t, filepath.Join(project, "repos", "api", ".spektacular"), api.Location)
 	require.Equal(t, "", api.Root, "an uncloned git source has no root yet")
 	require.False(t, api.Materialized)
 	require.Equal(t, "the API service", api.Description)
@@ -967,7 +1005,7 @@ func TestRepoList_NoSourceRootIsLocation(t *testing.T) {
 	writeSpecCommandConfig(t, project,
 		"repos:\n"+
 			"  - name: api\n"+
-			"    location: ./repos/api\n")
+			"    location: ../repos/api/.spektacular\n")
 
 	location := filepath.Join(project, "repos", "api")
 	require.NoError(t, os.MkdirAll(filepath.Join(location, ".spektacular"), 0o755))
@@ -981,8 +1019,60 @@ func TestRepoList_NoSourceRootIsLocation(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &listed))
 	require.Len(t, listed.Repos, 1)
-	require.Equal(t, "./repos/api", listed.Repos[0].Location)
-	require.Equal(t, location, listed.Repos[0].Root, "with no source the root is the location itself")
+	footprint := filepath.Join(location, ".spektacular")
+	require.Equal(t, footprint, listed.Repos[0].Location)
+	require.Equal(t, footprint, listed.Repos[0].Root, "with no source the root is the location itself")
 	require.False(t, listed.Repos[0].Materialized)
 	require.Zero(t, git.calls)
+}
+
+// `repo list` reports the provider each repo declares for its own source, so
+// the field says how the code at `root` was reached: `file` for a directory,
+// `git` for a clone, and nothing at all for a repo that declares no source
+// and is therefore its own footprint folder.
+func TestRepoList_ProviderIsTheRepoSourceProvider(t *testing.T) {
+	project := repoProject(t)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+
+	writeSpecCommandConfig(t, project,
+		"repos:\n"+
+			"  - name: filed\n"+
+			"    location: ../repos/filed/.spektacular\n"+
+			"  - name: cloned\n"+
+			"    location: ../repos/cloned/.spektacular\n"+
+			"  - name: bare\n"+
+			"    location: ../repos/bare/.spektacular\n")
+
+	write := func(name string, source config.RepoSourceConfig) {
+		t.Helper()
+		dir := filepath.Join(project, "repos", name, ".spektacular")
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		cfg := config.NewDefaultRepoConfig()
+		cfg.Source = source
+		require.NoError(t, cfg.ToYAMLFile(filepath.Join(dir, config.RepoConfigFileName)))
+	}
+	write("filed", config.FileSource(".."))
+	write("cloned", config.GitSource("https://example.com/cloned.git"))
+	write("bare", config.RepoSourceConfig{})
+
+	stdout, _, err := runRepo(t, "list")
+	require.NoError(t, err)
+
+	var listed struct {
+		Repos []repoListEntry `json:"repos"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &listed))
+	require.Len(t, listed.Repos, 3)
+
+	require.Equal(t, "filed", listed.Repos[0].Name)
+	require.Equal(t, "file", listed.Repos[0].Provider, "a file source reports the file provider")
+
+	require.Equal(t, "cloned", listed.Repos[1].Name)
+	require.Equal(t, "git", listed.Repos[1].Provider, "a git source reports the git provider")
+
+	require.Equal(t, "bare", listed.Repos[2].Name)
+	require.Empty(t, listed.Repos[2].Provider, "a repo declaring no source reports no provider")
+
+	require.Zero(t, git.calls, "listing must never invoke git")
 }

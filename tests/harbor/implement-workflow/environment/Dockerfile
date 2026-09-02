@@ -33,7 +33,8 @@ COPY state.json /app/.spektacular/state.json
 # --- Separate member repo: footprint under the project, code elsewhere ------
 #
 # The "docs" member repository keeps its Spektacular files in the project
-# folder at /app/repos/docs/.spektacular/ (the registry's `location`), while
+# folder at /app/repos/docs/.spektacular/ (the registry's `location`, which
+# names the folder holding repo.yaml), while
 # its code lives at /opt/docs-repo, declared by `source: file:///opt/docs-repo`
 # in its repo.yaml. The code checkout carries NO .spektacular/ directory and
 # must stay that way: any repo-routed changelog write

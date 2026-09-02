@@ -211,9 +211,9 @@ func TestChangelogFileWriteRepo_RoutesToMemberStoreWithProvenance(t *testing.T) 
 	require.NoError(t, rootCmd.Execute())
 
 	// The entry sits in the member repo's own changelog directory (the
-	// footprint's default, .spektacular/changelog), namespaced by the
+	// footprint's default, changelog), namespaced by the
 	// PROJECT's name — not in the central store.
-	entryPath := filepath.Join(memberDir, ".spektacular", "changelog", "testproj", "000001_feat.md")
+	entryPath := filepath.Join(memberDir, "changelog", "testproj", "000001_feat.md")
 	require.FileExists(t, entryPath)
 	require.NoFileExists(t, filepath.Join(projectDir, "docs", "changelog", "testproj", "000001_feat.md"),
 		"a repo-routed write must not also land in the central store")
@@ -258,7 +258,7 @@ func TestChangelogFileReadRepo_ReturnsMemberEntry(t *testing.T) {
 // offers the `repo add` repair, and writes nothing.
 func TestChangelogFileWriteRepo_MissingFootprintErrorsWithRepairOffer(t *testing.T) {
 	_, memberDir := memberRepoProject(t)
-	require.NoError(t, os.Remove(filepath.Join(memberDir, ".spektacular", "repo.yaml")))
+	require.NoError(t, os.Remove(filepath.Join(memberDir, "repo.yaml")))
 
 	srcPath := filepath.Join(t.TempDir(), "staged.md")
 	require.NoError(t, os.WriteFile(srcPath, []byte("body"), 0o644))
@@ -273,7 +273,7 @@ func TestChangelogFileWriteRepo_MissingFootprintErrorsWithRepairOffer(t *testing
 	require.Equal(t, "repo_footprint", er.Code)
 	require.Contains(t, er.NextAction, "repo add")
 
-	require.NoFileExists(t, filepath.Join(memberDir, ".spektacular", "changelog", "testproj", "000001_feat.md"),
+	require.NoFileExists(t, filepath.Join(memberDir, "changelog", "testproj", "000001_feat.md"),
 		"a footprint failure must not create the entry")
 }
 
@@ -310,7 +310,7 @@ func TestChangelogFileWriteRepo_TwoProjectsUseSeparateNamespaceFolders(t *testin
 	// Both entries coexist under their own project-named folders, each with
 	// its own project's content and provenance.
 	for _, p := range projects {
-		content, err := os.ReadFile(filepath.Join(memberDir, ".spektacular", "changelog", p.name, "000001_feat.md"))
+		content, err := os.ReadFile(filepath.Join(memberDir, "changelog", p.name, "000001_feat.md"))
 		require.NoError(t, err)
 		meta, gotBody, err := metadata.Split(content)
 		require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestChangelogFileWriteRepo_RewriteStampsProvenanceAndPreservesCreatedDate(t
 		Status:      metadata.StatusInProgress,
 	}, []byte("original derived body"))
 	require.NoError(t, err)
-	entryPath := filepath.Join(memberDir, ".spektacular", "changelog", "testproj", "000001_feat.md")
+	entryPath := filepath.Join(memberDir, "changelog", "testproj", "000001_feat.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(entryPath), 0o755))
 	require.NoError(t, os.WriteFile(entryPath, seeded, 0o644))
 
@@ -466,7 +466,7 @@ func TestChangelogFileWriteRepo_MemberWithFileSourceWritesAtLocationNotSource(t 
 			"  - name: testproj\n"+
 			"    location: \".\"\n"+
 			"  - name: api\n"+
-			"    location: ./repos/api\n")
+			"    location: ../repos/api/.spektacular\n")
 	codeBefore := snapshotDir(t, code)
 
 	srcPath := filepath.Join(t.TempDir(), "staged.md")

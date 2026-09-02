@@ -92,13 +92,9 @@ func (s *Set) Present(name string) bool {
 }
 
 // locationRoot returns the entry's registered location as an absolute path,
-// joining a relative value to the project root.
+// resolving a relative value from the folder holding config.yaml.
 func (s *Set) locationRoot(e config.RepoEntry) string {
-	root := e.Location
-	if !filepath.IsAbs(root) {
-		root = filepath.Join(s.projectRoot, root)
-	}
-	return root
+	return e.ResolvedLocation(s.projectRoot)
 }
 
 // cloneDir returns where a git source for the named repo is materialized.
@@ -139,11 +135,11 @@ func (s *Set) LocalSource(name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	cfg, err := config.RepoConfigFromYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName))
+	cfg, err := config.RepoConfigFromYAMLFile(filepath.Join(root, config.RepoConfigFileName))
 	if err != nil {
 		return root, true
 	}
-	kind, v, err := cfg.ParseSource(filepath.Join(root, ".spektacular"))
+	kind, v, err := cfg.ParseSource(root)
 	if err != nil {
 		return root, true
 	}
@@ -173,7 +169,7 @@ func (s *Set) DescriptiveMetadata(name string) (config.RepoConfig, bool) {
 	if !ok {
 		return config.RepoConfig{}, false
 	}
-	cfg, err := config.RepoConfigFromYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName))
+	cfg, err := config.RepoConfigFromYAMLFile(filepath.Join(root, config.RepoConfigFileName))
 	if err != nil {
 		return config.RepoConfig{}, false
 	}
@@ -210,25 +206,55 @@ func (s *Set) ResolveAll() ([]ResolvedRepo, error) {
 	return resolved, nil
 }
 
-func (s *Set) resolve(e config.RepoEntry) (ResolvedRepo, error) {
+// Footprint loads the named repo's own configuration from its footprint,
+// requiring the registered location to exist on disk and the repo.yaml
+// inside it to be present and valid. It returns the same errors Resolve
+// does for those conditions — never a silent "absent" — but never clones
+// or runs git, so side-effect-free callers like listing can use it to
+// surface a misregistered repo instead of hiding it.
+func (s *Set) Footprint(name string) (config.RepoConfig, error) {
+	for _, e := range s.entries {
+		if e.Name != name {
+			continue
+		}
+		r, err := s.locate(e)
+		if err != nil {
+			return config.RepoConfig{}, err
+		}
+		return s.loadFootprint(r)
+	}
+	return config.RepoConfig{}, fmt.Errorf("repo %q is not registered in this project", name)
+}
+
+// locate checks the entry's registered location exists on disk and returns
+// the unresolved repo rooted there. A relative location is resolved from
+// the project root, and the error for a missing one says so, naming both
+// the registered value and the absolute path it resolved to.
+func (s *Set) locate(e config.RepoEntry) (ResolvedRepo, error) {
 	if e.Location == "" {
 		return ResolvedRepo{}, output.NewError("config_invalid", fmt.Sprintf("repo %q has no location", e.Name)).
 			WithNextAction(fmt.Sprintf("set repos[].location for %q to the folder holding its .spektacular/ directory", e.Name))
 	}
 	root := s.locationRoot(e)
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		return ResolvedRepo{}, output.NewError("repo_location_missing", fmt.Sprintf("repo %q: location %s does not exist", e.Name, root)).
+		return ResolvedRepo{}, output.NewError("repo_location_missing", fmt.Sprintf("repo %q: location %q resolves to %s, which does not exist (a relative location is resolved from the folder holding config.yaml, %s)", e.Name, e.Location, root, config.ProjectConfigDir(s.projectRoot))).
 			WithResource(root).
-			WithNextAction(fmt.Sprintf("create %s (or correct repos[].location for %q) and run 'repo add' to scaffold its footprint", root, e.Name))
+			WithNextAction(fmt.Sprintf("correct repos[].location for %q, or create %s and run 'repo add' to scaffold its footprint", e.Name, root))
 	}
+	return ResolvedRepo{Name: e.Name, Root: root, Source: root, Entry: e}, nil
+}
 
-	r := ResolvedRepo{Name: e.Name, Root: root, Source: root, Entry: e}
+func (s *Set) resolve(e config.RepoEntry) (ResolvedRepo, error) {
+	r, err := s.locate(e)
+	if err != nil {
+		return ResolvedRepo{}, err
+	}
 	cfg, err := s.loadFootprint(r)
 	if err != nil {
 		return r, err
 	}
 
-	kind, v, err := cfg.ParseSource(filepath.Join(root, ".spektacular"))
+	kind, v, err := cfg.ParseSource(r.Root)
 	if err != nil {
 		return ResolvedRepo{}, fmt.Errorf("repo %q: %w", e.Name, err)
 	}
@@ -275,9 +301,9 @@ func (s *Set) staleNote(root, address string) string {
 // parseable, valid .spektacular/repo.yaml under its root — returning the
 // parsed config, or a *FootprintError when it is missing or broken.
 func (s *Set) loadFootprint(r ResolvedRepo) (config.RepoConfig, error) {
-	path := filepath.Join(r.Root, ".spektacular", config.RepoConfigFileName)
+	path := filepath.Join(r.Root, config.RepoConfigFileName)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return config.RepoConfig{}, &FootprintError{Repo: r.Name, Root: r.Root, Err: fmt.Errorf("missing %s", filepath.Join(".spektacular", config.RepoConfigFileName))}
+		return config.RepoConfig{}, &FootprintError{Repo: r.Name, Root: r.Root, Err: fmt.Errorf("missing %s", config.RepoConfigFileName)}
 	}
 	cfg, err := config.RepoConfigFromYAMLFile(path)
 	if err != nil {

@@ -135,8 +135,8 @@ func TestRenderedWorkflowSkillsCarryCrossRepoNotes(t *testing.T) {
 			"the rendered skill must not leak the {{command}} placeholder")
 		// Plan 000046: research happens in each repo's source, never in the
 		// directory the agent is running in.
-		require.Contains(t, body, "in each repo's source that the instructions list",
-			"spek-plan must direct research into each repo's listed source")
+		require.Contains(t, body, "in the `root` reported for each",
+			"spek-plan must direct research into the root repo list reports for each repo")
 		require.NotContains(t, body, "running in",
 			"spek-plan must not use the running directory as a stand-in for a repo")
 	})
@@ -148,10 +148,10 @@ func TestRenderedWorkflowSkillsCarryCrossRepoNotes(t *testing.T) {
 		// derived changelog entries follow each affected repo.
 		require.Contains(t, body, "Cross-repo implementation",
 			"spek-implement must carry the cross-repo implementation note")
-		require.Contains(t, body, "attributed repo's source",
-			"spek-implement must direct work into the attributed repo's source")
-		require.Contains(t, body, "reports it as `root`",
-			"spek-implement must say repo list reports the source as root")
+		require.Contains(t, body, "attributed repo's code",
+			"spek-implement must direct work into the attributed repo's code")
+		require.Contains(t, body, "reports where it lives as `root`",
+			"spek-implement must say repo list reports where the code lives as root")
 		require.NotContains(t, body, "resolved root",
 			"spek-implement must not describe the working directory as a resolved root")
 		require.Contains(t, body, "one derived entry per affected repo",

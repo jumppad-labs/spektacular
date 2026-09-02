@@ -47,6 +47,14 @@ const (
 	// configured. It is resolved relative to the project root, like the
 	// knowledge location.
 	DefaultChangelogDir = ".spektacular/changelog"
+
+	// DefaultRepoKnowledgeLocation and DefaultRepoChangelogDir are the
+	// repo-scoped defaults written into a repo.yaml. Every relative path in
+	// that file is resolved from the folder holding it, so these are bare
+	// folder names beside repo.yaml — not project-root paths.
+	DefaultRepoKnowledgeLocation = "knowledge"
+	DefaultRepoChangelogDir      = "changelog"
+
 	// DefaultKnowledgeScope is the scope of the synthesised default knowledge source.
 	DefaultKnowledgeScope = "project"
 	// DefaultKnowledgeLocation is the project-relative location of the
@@ -124,12 +132,13 @@ type FileKnowledgeConfig struct {
 // files, and project-scoped dependencies — deliberately provider-agnostic
 // siblings of the provider block, mirroring how knowledge sources keep scope
 // outside their provider config. A repo's descriptive metadata (description,
-// role, tags, deployment) and the location of its code (RepoConfig.Source)
+// role, tags) and the location of its code (RepoConfig.Source)
 // live in the repo's own configuration, not here, so they are never
 // duplicated across the projects that register it.
 //
 // Location is the folder holding the repo's .spektacular/ directory, absolute
-// or relative to the project root, and is required. Local is the older name
+// or relative to the folder holding config.yaml (so the project's own root
+// is `..`), and is required. Local is the older name
 // for the same setting: it is accepted on load, folded into Location, and
 // never written back. The former address key is no longer accepted; a repo's
 // git origin belongs in its repo.yaml as source.
@@ -145,6 +154,25 @@ type RepoEntry struct {
 // GitRepoConfig is the git-provider configuration for a repos entry. It is
 // empty in this release and reserved for provider-specific settings.
 type GitRepoConfig struct{}
+
+// ProjectConfigDir returns the folder holding the project's config.yaml:
+// <projectRoot>/.spektacular. Relative paths written in config.yaml are
+// resolved from this folder — from the file that declares them — so
+// `..` is the project's own root and `../repos/<name>` a sibling folder.
+func ProjectConfigDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".spektacular")
+}
+
+// ResolvedLocation returns the entry's location as an absolute path. An
+// absolute location is returned cleaned; a relative one is resolved from the
+// folder holding config.yaml (see ProjectConfigDir), never from the process
+// working directory or the project root.
+func (e RepoEntry) ResolvedLocation(projectRoot string) string {
+	if filepath.IsAbs(e.Location) {
+		return filepath.Clean(e.Location)
+	}
+	return filepath.Join(ProjectConfigDir(projectRoot), e.Location)
+}
 
 // Config is the top-level project configuration. It carries the project's
 // identity, agent behaviour, and the central spec/plan/changelog storage.
@@ -334,6 +362,10 @@ func (c Config) Validate() error {
 // validateRepos checks every registry entry for a slug-safe unique name, a
 // usable location, and a supported provider.
 func validateRepos(repos []RepoEntry) error {
+	if len(repos) == 0 {
+		return output.NewError("config_invalid", "no repos are registered in config.yaml; a project must register at least one repo").
+			WithNextAction("run 'init' to register this project's own repo, or add a repos entry with a name and location")
+	}
 	seen := make(map[string]bool, len(repos))
 	for i, r := range repos {
 		if err := validateSlug(fmt.Sprintf("repos[%d].name", i), r.Name); err != nil {

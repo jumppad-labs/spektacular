@@ -4,14 +4,17 @@ tags:
     - go
     - auth
     - jwt
-deployment: container
+source:
+    provider: file
+    config:
+        location: ..
 knowledge:
     sources:
         - scope: project
           provider: file
           config:
-            location: .spektacular/knowledge
+            location: knowledge
 changelog:
     provider: file
     config:
-        directory: .spektacular/changelog
+        directory: changelog

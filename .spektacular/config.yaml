@@ -1,6 +1,6 @@
 name: spektacular
 command: go run .
-agent: bob
+agent: claude
 spec_trigger_threshold: moderate
 debug:
     enabled: true
@@ -21,4 +21,4 @@ repos:
     - name: spektacular
       location: .
     - name: docs
-      location: ../spektacular-website
+      location: ../../spektacular-website/.spektacular

@@ -570,102 +570,21 @@ func TestWriteStep_CommitsOwnDocument(t *testing.T) {
 
 // --- Phase 4.2: workflows and skills go cross-repo ---
 
-// TestDiscoveryAndArchitectureStepsRenderRepoRoster asserts each registered
-// repo's identity metadata is embedded directly in the rendered discovery and
-// architecture instructions — the agent starts already knowing the codebases
-// the project spans, without running any command first.
-func TestDiscoveryAndArchitectureStepsRenderRepoRoster(t *testing.T) {
-	// The roster reaches workflow data as it would after a state.json JSON
-	// round-trip: a []any of map[string]any entries, matching the shape the
-	// command layer's repoRoster projection deserializes back to.
-	repos := []any{
-		map[string]any{
-			"name":        "billing-api",
-			"description": "the payments backend",
-			"role":        "backend",
-			"tags":        "go, api",
-			"deployment":  "kubernetes",
-			"source":      "/srv/code/billing-api",
-		},
-		map[string]any{
-			"name":        "docs-site",
-			"description": "the user documentation",
-			"role":        "documentation",
-			"tags":        "docs",
-			"deployment":  "static-site",
-			"source":      "",
-		},
-	}
-
-	steps := map[string]workflow.StepCallback{
+// The discovery and architecture steps carry no roster of their own: each
+// sends the agent to `repo list`, which reports the registry as it stands
+// right now rather than as some earlier command recorded it.
+func TestDiscoveryAndArchitectureStepsSendTheAgentToRepoList(t *testing.T) {
+	for name, cb := range map[string]workflow.StepCallback{
 		"discovery":    discovery(),
 		"architecture": architecture(),
-	}
-	for name, cb := range steps {
+	} {
 		t.Run(name, func(t *testing.T) {
-			out := renderStepWithData(t, cb, map[string]any{"name": "test", "repos": repos})
+			out := renderStep(t, cb)
 
-			// Criterion 1: both repos' name, description, and role appear in
-			// the rendered instruction without the agent running any command.
-			require.Contains(t, out, "billing-api", "%s must render the first repo's name", name)
-			require.Contains(t, out, "the payments backend", "%s must render the first repo's description", name)
-			require.Contains(t, out, "role: backend", "%s must render the first repo's role", name)
-			require.Contains(t, out, "docs-site", "%s must render the second repo's name", name)
-			require.Contains(t, out, "the user documentation", "%s must render the second repo's description", name)
-			require.Contains(t, out, "role: documentation", "%s must render the second repo's role", name)
-
-			// Phase 3.2 (plan 000046) criterion 2: each repo's source renders on
-			// its roster line, and a repo whose code is not on disk gets the
-			// repo-list pointer instead.
-			require.Contains(t, out, "source: `/srv/code/billing-api`", "%s must render the first repo's source", name)
-			require.Contains(t, out, "code not on disk yet; run `spektacular repo list`", "%s must point at repo list for a repo without a source on disk", name)
-			require.NotContains(t, out, "directory you are running in", "%s must not use the running directory as a stand-in", name)
-
-			// Criterion 1: a populated roster leaves no mustache artifacts and
-			// suppresses the empty-registry fallback line.
-			require.NotContains(t, out, "{{#repos}}", "%s must not leak an unrendered section open tag", name)
-			require.NotContains(t, out, "{{/repos}}", "%s must not leak an unrendered section close tag", name)
-			require.NotContains(t, out, "No repos are registered", "%s must not render the fallback when repos exist", name)
-		})
-	}
-}
-
-// TestDiscoveryAndArchitectureStepsRenderEmptyRegistryFallback asserts the
-// roster block degrades cleanly when the project registers no repos: the
-// inverted-section fallback line renders and no mustache artifacts remain —
-// both when the command layer set an empty roster (the empty-registry case)
-// and when the "repos" key is absent from workflow data entirely.
-func TestDiscoveryAndArchitectureStepsRenderEmptyRegistryFallback(t *testing.T) {
-	cases := []struct {
-		step     string
-		cb       workflow.StepCallback
-		fallback string
-	}{
-		{"discovery", discovery(), "No repos are registered in this project's configuration; this is a project of one repo. Run `spektacular repo list` for its source."},
-		{"architecture", architecture(), "No repos are registered in this project's configuration; this is a project of one repo, and all work targets it. Run `spektacular repo list` for its source."},
-	}
-	variants := map[string]func() map[string]any{
-		// The command layer sets "repos" on every invocation — an empty slice
-		// when the registry is empty.
-		"empty roster": func() map[string]any { return map[string]any{"name": "test", "repos": []any{}} },
-		// Absent key: repoRosterExtra returns nil extras and the template's
-		// inverted section still renders the fallback.
-		"absent key": func() map[string]any { return map[string]any{"name": "test"} },
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.step, func(t *testing.T) {
-			for variant, values := range variants {
-				t.Run(variant, func(t *testing.T) {
-					out := renderStepWithData(t, tc.cb, values())
-
-					// Criterion 1: the fallback line renders with no artifacts.
-					require.Contains(t, out, tc.fallback, "%s must render the empty-registry fallback line", tc.step)
-					require.NotContains(t, out, "{{#repos}}", "%s must not leak an unrendered section open tag", tc.step)
-					require.NotContains(t, out, "{{^repos}}", "%s must not leak an unrendered inverted-section tag", tc.step)
-					require.NotContains(t, out, "{{/repos}}", "%s must not leak an unrendered section close tag", tc.step)
-				})
-			}
+			require.Contains(t, out, "repo list", "%s must send the agent to `repo list`", name)
+			require.Contains(t, out, "`root`", "%s must name the root that repo list reports", name)
+			require.NotContains(t, out, "## Repos", "%s must not point at a Repos section", name)
+			require.NotContains(t, out, "{{", "%s must leave no unrendered mustache", name)
 		})
 	}
 }

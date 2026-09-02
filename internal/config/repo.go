@@ -30,13 +30,12 @@ const RepoConfigFileName = "repo.yaml"
 // Spektacular clones into the project's working folder on first use. When
 // Source is unset the code and the Spektacular files are colocated.
 type RepoConfig struct {
-	Description string          `yaml:"description,omitempty"`
-	Role        string          `yaml:"role,omitempty"`
-	Tags        []string        `yaml:"tags,omitempty"`
-	Deployment  string          `yaml:"deployment,omitempty"`
-	Source      string          `yaml:"source,omitempty"`
-	Knowledge   KnowledgeConfig `yaml:"knowledge"`
-	Changelog   ChangelogConfig `yaml:"changelog"`
+	Description string           `yaml:"description,omitempty"`
+	Role        string           `yaml:"role,omitempty"`
+	Tags        []string         `yaml:"tags,omitempty"`
+	Source      RepoSourceConfig `yaml:"source,omitempty"`
+	Knowledge   KnowledgeConfig  `yaml:"knowledge"`
+	Changelog   ChangelogConfig  `yaml:"changelog"`
 }
 
 // NewDefaultRepoConfig returns a RepoConfig populated with default values:
@@ -49,7 +48,7 @@ func NewDefaultRepoConfig() RepoConfig {
 					Scope:    DefaultKnowledgeScope,
 					Provider: ProviderFile,
 					Config: FileKnowledgeConfig{
-						Location: DefaultKnowledgeLocation,
+						Location: DefaultRepoKnowledgeLocation,
 					},
 				},
 			},
@@ -57,7 +56,7 @@ func NewDefaultRepoConfig() RepoConfig {
 		Changelog: ChangelogConfig{
 			Provider: ProviderFile,
 			Config: FileChangelogConfig{
-				Directory: DefaultChangelogDir,
+				Directory: DefaultRepoChangelogDir,
 			},
 		},
 	}
@@ -94,21 +93,99 @@ func (c RepoConfig) Validate() error {
 // WithDefaults returns a RepoConfig whose knowledge section is guaranteed to
 // carry at least one source: if none are configured it synthesises the repo's
 // own store under repoRoot, mirroring KnowledgeConfig.WithDefaults.
+// WithDefaults fills in the repo's own knowledge sources when it declares
+// none. repoRoot is the folder holding repo.yaml, which every relative path
+// in that file is resolved from.
 func (c RepoConfig) WithDefaults(repoRoot string) RepoConfig {
-	c.Knowledge = c.Knowledge.WithDefaults(repoRoot)
+	if len(c.Knowledge.Sources) == 0 {
+		c.Knowledge = KnowledgeConfig{
+			Sources: []SourceConfig{
+				{
+					Scope:    DefaultKnowledgeScope,
+					Provider: ProviderFile,
+					Config: FileKnowledgeConfig{
+						Location: filepath.Join(repoRoot, DefaultRepoKnowledgeLocation),
+					},
+				},
+			},
+		}
+	}
 	return c
 }
 
-// SourceKind classifies a RepoConfig's Source value.
+// DefaultRepoSource is the source a scaffolded repo.yaml declares. The
+// scaffolder writes repo.yaml into a .spektacular folder inside the repo's
+// code, so the code is that folder's parent.
+var DefaultRepoSource = RepoSourceConfig{
+	Provider: ProviderFile,
+	Config:   RepoSourceLocation{Location: ".."},
+}
+
+// RepoSourceConfig declares where a repo's code lives, in the provider block
+// shape every other section of these files uses: a provider naming the kind
+// of location, and a config carrying it.
+//
+//	source:
+//	  provider: file
+//	  config:
+//	    location: ..
+//
+// An unset source means the code is the folder holding repo.yaml.
+type RepoSourceConfig struct {
+	Provider string             `yaml:"provider,omitempty"`
+	Config   RepoSourceLocation `yaml:"config,omitempty"`
+}
+
+// FileSource and GitSource build a source block for a directory on disk and
+// for a git location to clone.
+func FileSource(location string) RepoSourceConfig {
+	return RepoSourceConfig{Provider: ProviderFile, Config: RepoSourceLocation{Location: location}}
+}
+
+func GitSource(location string) RepoSourceConfig {
+	return RepoSourceConfig{Provider: ProviderGit, Config: RepoSourceLocation{Location: location}}
+}
+
+// RepoSourceLocation carries a source's location: a directory for the file
+// provider, resolved from the folder holding repo.yaml when relative, or a
+// git location for the git provider.
+type RepoSourceLocation struct {
+	Location string `yaml:"location,omitempty"`
+}
+
+// IsZero reports whether no source is declared, so an unset source is
+// omitted from a marshalled repo.yaml rather than written as an empty block.
+func (c RepoSourceConfig) IsZero() bool {
+	return c.Provider == "" && c.Config.Location == ""
+}
+
+// UnmarshalYAML accepts the provider block and rejects the older scalar form
+// (`source: file://..`) with an error naming the shape that replaced it,
+// rather than silently ignoring a value the repo depends on.
+func (c *RepoSourceConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		provider, location := ProviderFile, value.Value
+		if kind := classifyLegacySource(location); kind == SourceGit {
+			provider = ProviderGit
+		} else {
+			location = strings.TrimPrefix(location, fileSourceScheme)
+		}
+		return fmt.Errorf("source must be a provider block, not a plain value: replace `source: %s` with\n\nsource:\n  provider: %s\n  config:\n    location: %s\n", value.Value, provider, location)
+	}
+	type plain RepoSourceConfig
+	return value.Decode((*plain)(c))
+}
+
+// SourceKind classifies a repo's declared source.
 type SourceKind int
 
 const (
-	// SourceNone means Source is unset: the code is colocated with the
-	// repo's Spektacular files.
+	// SourceNone means no source is declared: the code is the folder
+	// holding repo.yaml.
 	SourceNone SourceKind = iota
-	// SourceFile means Source is a directory on disk.
+	// SourceFile means the source is a directory on disk.
 	SourceFile
-	// SourceGit means Source is a git location to clone.
+	// SourceGit means the source is a git location to clone.
 	SourceGit
 )
 
@@ -126,7 +203,7 @@ func (k SourceKind) String() string {
 
 const fileSourceScheme = "file://"
 
-// gitSourceSchemes are the URL schemes that mark a Source as a git location.
+// gitSourceSchemes are the URL schemes that mark a location as a git one.
 var gitSourceSchemes = []string{"git://", "ssh://", "http://", "https://", "git+"}
 
 // scpStyleSource matches git's scp-style remote form, user@host:path.
@@ -135,37 +212,74 @@ var scpStyleSource = regexp.MustCompile(`^[^/@:]+@[^/:]+:`)
 // explicitScheme matches a leading URL scheme such as "s3://".
 var explicitScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*://`)
 
-// ParseSource classifies Source and resolves it. For a file source it returns
-// the absolute directory, anchoring a relative value at configDir (the
-// directory holding repo.yaml) and stripping a file:// prefix; for a git
-// source it returns the value unchanged. It returns SourceNone and an empty
-// value when Source is unset. Environment variables are already expanded by
-// the loader, so none are expanded here. A value with a scheme that is neither
-// file:// nor a git transport is an error.
+// ParseSource classifies the declared source and resolves it. For the file
+// provider it returns the absolute directory, anchoring a relative location
+// at configDir (the folder holding repo.yaml); for the git provider it
+// returns the location unchanged. It returns SourceNone and an empty value
+// when no source is declared. Environment variables are already expanded by
+// the loader, so none are expanded here.
 func (c RepoConfig) ParseSource(configDir string) (SourceKind, string, error) {
-	v := strings.TrimSpace(c.Source)
-	if v == "" {
+	provider := strings.TrimSpace(c.Source.Provider)
+	location := strings.TrimSpace(c.Source.Config.Location)
+
+	if provider == "" && location == "" {
 		return SourceNone, "", nil
 	}
-
-	if strings.HasPrefix(v, fileSourceScheme) {
-		return SourceFile, resolveFileSource(strings.TrimPrefix(v, fileSourceScheme), configDir), nil
+	if provider == "" {
+		return SourceNone, "", fmt.Errorf("source declares a location but no provider: set source.provider to %q or %q", ProviderFile, ProviderGit)
+	}
+	if location == "" {
+		return SourceNone, "", fmt.Errorf("source declares provider %q but no location: set source.config.location", provider)
 	}
 
+	switch provider {
+	case ProviderFile:
+		return SourceFile, resolveFileSource(strings.TrimPrefix(location, fileSourceScheme), configDir), nil
+	case ProviderGit:
+		return SourceGit, location, nil
+	default:
+		return SourceNone, "", fmt.Errorf("unsupported source provider %q: use %q or %q", provider, ProviderFile, ProviderGit)
+	}
+}
+
+// classifyLegacySource guesses whether a bare location names a git remote or
+// a directory. It backs the migration error above and the `repo add` input,
+// where a source is still given as a single convenient value.
+func classifyLegacySource(v string) SourceKind {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return SourceNone
+	}
+	if strings.HasPrefix(v, fileSourceScheme) {
+		return SourceFile
+	}
 	for _, scheme := range gitSourceSchemes {
 		if strings.HasPrefix(v, scheme) {
-			return SourceGit, v, nil
+			return SourceGit
 		}
 	}
 	if scpStyleSource.MatchString(v) {
-		return SourceGit, v, nil
+		return SourceGit
 	}
+	return SourceFile
+}
 
-	if m := explicitScheme.FindString(v); m != "" {
-		return SourceNone, "", fmt.Errorf("unsupported source scheme %q in %q: use a file:// path, a plain path, or a git location (git://, ssh://, https://, or user@host:path)", strings.TrimSuffix(m, "://"), v)
+// SourceFromInput turns the single `source` value a `repo add` payload
+// carries into the provider block stored in repo.yaml, so the command line
+// stays terse while the file keeps the same shape as every other section.
+func SourceFromInput(v string) (RepoSourceConfig, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return RepoSourceConfig{}, nil
 	}
-
-	return SourceFile, resolveFileSource(v, configDir), nil
+	kind := classifyLegacySource(v)
+	if kind == SourceFile {
+		if m := explicitScheme.FindString(v); m != "" && !strings.HasPrefix(v, fileSourceScheme) {
+			return RepoSourceConfig{}, fmt.Errorf("unsupported source scheme %q in %q: use a file:// path, a plain path, or a git location (git://, ssh://, https://, or user@host:path)", strings.TrimSuffix(m, "://"), v)
+		}
+		return RepoSourceConfig{Provider: ProviderFile, Config: RepoSourceLocation{Location: strings.TrimPrefix(v, fileSourceScheme)}}, nil
+	}
+	return RepoSourceConfig{Provider: ProviderGit, Config: RepoSourceLocation{Location: v}}, nil
 }
 
 // resolveFileSource turns a file source into an absolute, cleaned directory

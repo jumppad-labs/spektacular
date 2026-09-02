@@ -420,7 +420,6 @@ func TestExecuteMigration(t *testing.T) {
 			cfg.Description = "Test project"
 			cfg.Role = "application"
 			cfg.Tags = []string{"test"}
-			cfg.Deployment = "manual"
 
 			err := executeMigration(dataDir, &cfg)
 
@@ -447,7 +446,6 @@ func TestScanProjectMetadata(t *testing.T) {
 		wantDescription string
 		wantRole        string
 		wantTags        []string
-		wantDeployment  string
 	}{
 		{
 			name: "extracts description from README H1 title",
@@ -458,7 +456,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "My Awesome Project",
 			wantRole:        "application",
 			wantTags:        []string{"general"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "extracts description from README first paragraph",
@@ -469,7 +466,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "This is the first paragraph.",
 			wantRole:        "application",
 			wantTags:        []string{"general"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "detects Go project via go.mod",
@@ -480,7 +476,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "A Spektacular project",
 			wantRole:        "application",
 			wantTags:        []string{"go"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "detects Node.js project via package.json",
@@ -491,29 +486,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "A Spektacular project",
 			wantRole:        "application",
 			wantTags:        []string{"nodejs"},
-			wantDeployment:  "manual",
-		},
-		{
-			name: "infers docker deployment from Dockerfile",
-			setupFiles: func(t *testing.T, dir string) {
-				dockerfile := "FROM golang:1.21\nCOPY . .\nRUN go build\n"
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644))
-			},
-			wantDescription: "A Spektacular project",
-			wantRole:        "application",
-			wantTags:        []string{"general"},
-			wantDeployment:  "docker",
-		},
-		{
-			name: "infers make deployment from Makefile",
-			setupFiles: func(t *testing.T, dir string) {
-				makefile := "build:\n\tgo build\n"
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), []byte(makefile), 0o644))
-			},
-			wantDescription: "A Spektacular project",
-			wantRole:        "application",
-			wantTags:        []string{"general"},
-			wantDeployment:  "make",
 		},
 		{
 			name: "provides defaults when all heuristics fail",
@@ -523,7 +495,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "A Spektacular project",
 			wantRole:        "application",
 			wantTags:        []string{"general"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "combines multiple heuristics",
@@ -538,7 +509,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "Spektacular CLI Tool",
 			wantRole:        "application",
 			wantTags:        []string{"go"},
-			wantDeployment:  "docker",
 		},
 	}
 
@@ -553,7 +523,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			require.Equal(t, tt.wantDescription, cfg.Description)
 			require.Equal(t, tt.wantRole, cfg.Role)
 			require.Equal(t, tt.wantTags, cfg.Tags)
-			require.Equal(t, tt.wantDeployment, cfg.Deployment)
 		})
 	}
 }

@@ -694,36 +694,14 @@ func TestImplementFinished_TolerantOfMissingTestPlan(t *testing.T) {
 	require.False(t, st.Exists(testPlanPath), "finished() must not create test-plan.md when it was missing")
 }
 
-// --- Phase 3.1: repo roster with each repo's source in the code-touching steps ---
+// --- where each repo's code lives, in the code-touching steps ---
 
-// rosterRepos is the hand-maintained roster the Phase 3.1 render tests inject
-// as the workflow's "repos" data: one repo whose code is on disk and one whose
-// git source has not been cloned (empty source).
-var rosterRepos = []any{
-	map[string]any{
-		"name":        "billing-api",
-		"description": "the payments backend",
-		"role":        "backend",
-		"tags":        "go, api",
-		"deployment":  "kubernetes",
-		"source":      "/srv/code/billing-api",
-	},
-	map[string]any{
-		"name":        "docs-site",
-		"description": "the user documentation",
-		"role":        "documentation",
-		"tags":        "docs",
-		"deployment":  "static-site",
-		"source":      "",
-	},
-}
-
-// rosterSteps are the two implement callbacks whose templates render the
-// repo roster: read_plan, which opens the workflow with the "Where the code
-// lives" preamble, and update_feature_changelog, which attributes changes to
-// repos. The other code-touching steps (analyze, implement, test, verify)
-// rely on the agent carrying the roster forward from read_plan.
-func rosterSteps() map[string]workflow.StepCallback {
+// repoListSteps are the two implement callbacks whose templates must send the
+// agent to `repo list`: read_plan, which opens the workflow with the "Where
+// the code lives" preamble, and update_feature_changelog, which attributes
+// changes to repos. The other code-touching steps (analyze, implement, test,
+// verify) rely on the agent carrying that forward from read_plan.
+func repoListSteps() map[string]workflow.StepCallback {
 	return map[string]workflow.StepCallback{
 		"read_plan":                readPlan(),
 		"update_feature_changelog": updateFeatureChangelog(),
@@ -731,7 +709,7 @@ func rosterSteps() map[string]workflow.StepCallback {
 }
 
 // laterCodeTouchingSteps are the code-touching steps after read_plan that
-// must not repeat the roster or its preamble.
+// must not repeat the preamble.
 func laterCodeTouchingSteps() map[string]workflow.StepCallback {
 	return map[string]workflow.StepCallback{
 		"analyze":     analyze(),
@@ -742,54 +720,31 @@ func laterCodeTouchingSteps() map[string]workflow.StepCallback {
 	}
 }
 
-// Phase 3.1 criterion 3: each roster step renders every registered repo by
-// name with its resolved source, and read_plan falls back to the "code not on
-// disk yet" notice for a repo whose source is empty.
-func TestRosterStepsRenderEachRepoWithSource(t *testing.T) {
-	for name, cb := range rosterSteps() {
-		t.Run(name, func(t *testing.T) {
-			out := renderStepWithData(t, cb, map[string]any{"name": "test", "repos": rosterRepos})
-			require.Contains(t, out, "**billing-api**", "%s must list billing-api", name)
-			require.Contains(t, out, "source: `/srv/code/billing-api`", "%s must render billing-api's source", name)
-			require.Contains(t, out, "**docs-site**", "%s must list docs-site", name)
-			require.NotContains(t, out, "{{", "%s must leave no unrendered mustache", name)
-		})
-	}
-
-	out := renderStepWithData(t, readPlan(), map[string]any{"name": "test", "repos": rosterRepos})
-	require.Contains(t, out, "code not on disk yet", "read_plan must fall back for a repo with no source")
-	require.Contains(t, out, "spektacular repo list", "read_plan fallback must direct the agent to repo list")
-}
-
-// Phase 3.1 criterion 3: when the workflow carries no "repos" data at all,
-// each roster step renders the no-repos fallback instead of an empty list,
-// with no unrendered mustache left behind.
-func TestRosterStepsRenderNoReposFallback(t *testing.T) {
-	for name, cb := range rosterSteps() {
+// No implement step carries a roster. The steps that need to know where a
+// repo's code lives send the agent to `repo list`, which reports the registry
+// as it stands right now — on a fresh run and on a resume alike.
+func TestRepoListStepsSendTheAgentToRepoList(t *testing.T) {
+	for name, cb := range repoListSteps() {
 		t.Run(name, func(t *testing.T) {
 			out := renderStep(t, cb)
-			require.Contains(t, out, "No repos are registered", "%s must render the no-repos fallback", name)
-			require.NotContains(t, out, "code not on disk yet", "%s must not render a per-repo fallback with no repos", name)
+			require.Contains(t, out, "repo list", "%s must send the agent to `repo list`", name)
+			require.Contains(t, out, "`root`", "%s must name the root that repo list reports", name)
+			require.NotContains(t, out, "## Repos", "%s must not point at a Repos section", name)
 			require.NotContains(t, out, "{{", "%s must leave no unrendered mustache", name)
 		})
 	}
 }
 
-// Phase 3.1 criterion 3: the "Where the code lives" preamble is rendered once,
-// by read_plan, and scoped to the whole workflow; the later code-touching
-// steps and update_plan render neither the preamble nor any repo even when
-// the workflow data carries a roster.
 func TestWhereTheCodeLivesPreambleRenderedOnceByReadPlan(t *testing.T) {
-	out := renderStepWithData(t, readPlan(), map[string]any{"name": "test", "repos": rosterRepos})
+	out := renderStepWithData(t, readPlan(), map[string]any{"name": "test"})
 	require.Contains(t, out, "Where the code lives", "read_plan must open with the code-location preamble")
-	require.Contains(t, out, "For the rest of this workflow", "read_plan must scope the preamble to the whole workflow")
+	require.Contains(t, out, "the rest of this workflow", "read_plan must scope the preamble to the whole workflow")
 
 	for name, cb := range laterCodeTouchingSteps() {
 		t.Run(name, func(t *testing.T) {
-			out := renderStepWithData(t, cb, map[string]any{"name": "test", "repos": rosterRepos})
+			out := renderStepWithData(t, cb, map[string]any{"name": "test"})
 			require.NotContains(t, out, "Where the code lives", "%s must not repeat the code-location preamble", name)
-			require.NotContains(t, out, "billing-api", "%s must not render the roster", name)
-			require.NotContains(t, out, "No repos are registered", "%s must not render the no-repos fallback", name)
+			require.NotContains(t, out, "repo list", "%s must not repeat the repo list direction", name)
 		})
 	}
 }

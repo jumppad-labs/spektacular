@@ -20,18 +20,17 @@ From the spec, take the Overview/Requirements — the "why it matters" framing f
 
 ### Step 2: Identify affected repos
 
-Discover the registered repos:
+The registered repos, with each one's source (where its code lives), are listed in the `## Repos` section at the top of `.spektacular/context.md`.
 
-```
-{{config.command}} repo list
-```
+
+If a repo you changed is missing from that roster, or you need its materialization state, run `{{config.command}} repo list`.
 
 From the plan's `{{changelog_section_name}}` section, collect every path in the phase entries' **Files changed** lists and match each to a repo:
 
-- Paths carrying a `<repo-name>: ` prefix belong to that named repo.
-- Paths with no prefix belong to the project's colocated repo (the one that shares this project's working tree).
+- Paths carrying a `<repo-name>: ` prefix belong to that named repo; a prefix is required whenever more than one repo is registered.
+- Paths with no prefix belong to the only registered repo.
 
-A repo with no changed files is not affected and gets no repo-level record. **Every** affected repo — including the colocated one — gets its own repo-level record; there is no "the project-level already covers it" carve-out.
+A repo with no changed files is not affected and gets no repo-level record. **Every** affected repo — including the colocated one, the project's own repo — gets its own repo-level record; there is no "the project-level already covers it" carve-out.
 
 ### Step 3: Write the project-level record
 
@@ -52,11 +51,12 @@ Confirm the write with `{{config.command}} changelog file read {{plan_name}}.md`
 
 ### Step 4: Write one record per affected repo
 
-For **each** affected repo identified in Step 2, including the colocated repo, author a repo-scoped record covering only that repo's changes:
+For **each** affected repo identified in Step 2, including the project's own repo, author a repo-scoped record covering only that repo's changes. This record is the repo's release note: it is the only changelog written into that repo, so it must open with something a user can read cold:
 
+- **User-facing summary first** — open the body with a 2-4 sentence summary of what this change delivers in this repo, written for a reader who has never seen the plan. No file paths, no internal package names, no implementation detail; describe the behaviour change users of this repo will experience.
 - **What changed in this repo** — grounded in the phase entries' Files-changed and What-was-done items that touched this repo. Include only that repo's changes.
 - **Why** — the same framing from the spec, tightened to why *this repo* got the change.
-- A human-readable reference line at the top of the body naming the project and the spec/plan identifier — e.g. `> Derived from project <project> (<source>), spec/plan {{plan_name}}. See the project-level record for the full feature.`
+- A human-readable reference line directly under the summary naming the project and the spec/plan identifier — e.g. `> Derived from project <project> (<source>), spec/plan {{plan_name}}. See the project-level record for the full feature.`
 
 Stage each record with the `Write` tool at `.spektacular/tmp/changelog_<repo>.md`, then commit it and remove the scratch file:
 

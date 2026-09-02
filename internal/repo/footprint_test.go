@@ -116,3 +116,26 @@ func TestEnsureFootprint_ExistingConfigCustomLocationDrivesScaffolding(t *testin
 	require.NoDirExists(t, filepath.Join(root, ".spektacular", "knowledge"),
 		"the defaults' location must not be scaffolded when the existing config names another")
 }
+
+// Phase 1.3 criterion 3: EnsureFootprint on a root whose repo.yaml declares
+// a source scaffolds the knowledge tree under the root — the repo's own
+// Spektacular files stay with repo.yaml — and creates nothing under the
+// source directory.
+func TestEnsureFootprint_SourceDeclaredScaffoldsUnderRoot(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "lib")
+	code := filepath.Join(base, "code")
+	require.NoError(t, os.MkdirAll(code, 0o755))
+	writeSourceFootprint(t, root, code)
+
+	status, err := EnsureFootprint(root, config.NewDefaultRepoConfig())
+	require.NoError(t, err)
+	require.Equal(t, FootprintRepaired, status, "topping up the missing knowledge tree is a repair")
+
+	require.FileExists(t, filepath.Join(root, ".spektacular", "knowledge", "conventions", "README.md"))
+	require.NoDirExists(t, filepath.Join(code, ".spektacular"), "nothing may be scaffolded under the source")
+
+	loaded, err := config.RepoConfigFromYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName))
+	require.NoError(t, err)
+	require.Equal(t, code, loaded.Source, "the declared source must survive the repair")
+}

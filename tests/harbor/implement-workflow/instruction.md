@@ -11,7 +11,10 @@ The project is called `auth-service` and has two member repositories
 registered in `.spektacular/config.yaml`:
 
 - `auth` — colocated at `.` (the project's own tree, `/app`)
-- `docs` — external, at `/opt/docs-repo`
+- `docs` — kept separately: its Spektacular files (`repo.yaml`, knowledge,
+  changelog) live under the project at `/app/repos/docs/.spektacular/`,
+  and its code lives at `/opt/docs-repo`, declared by `source` in its
+  `repo.yaml`. Nothing Spektacular writes may land in `/opt/docs-repo`.
 
 The plan `20260101000000-jwt-auth` implemented a JWT authentication
 surface: two phases touched the auth repo (paths with no repo prefix
@@ -95,13 +98,14 @@ implementation to run against here.
 
 ## After completion
 
-Copy the project's `.spektacular` directory AND the external repo's
-`.spektacular` directory to `/logs/artifacts/` so the verifier can
-inspect both:
+Copy the project's `.spektacular` directory, the docs repo's
+`.spektacular` directory, and the docs repo's code checkout to
+`/logs/artifacts/` so the verifier can inspect all three:
 
 ```bash
 cp -r /app/.spektacular /logs/artifacts/spektacular
-cp -r /opt/docs-repo/.spektacular /logs/artifacts/docs-repo-spektacular
+cp -r /app/repos/docs/.spektacular /logs/artifacts/docs-repo-spektacular
+cp -r /opt/docs-repo /logs/artifacts/docs-repo-source
 ```
 
 ### Success criteria
@@ -116,9 +120,12 @@ cp -r /opt/docs-repo/.spektacular /logs/artifacts/docs-repo-spektacular
 - The **auth** (colocated) repo-level changelog record exists at
   `/app/.spektacular/changelog/auth-service/20260101000000-jwt-auth.md`
   — under the `auth-service/` project subfolder.
-- The **docs** (external) repo-level changelog record exists at
-  `/opt/docs-repo/.spektacular/changelog/auth-service/20260101000000-jwt-auth.md`
-  — inside the external repo's own changelog store, also under the
-  `auth-service/` project subfolder.
+- The **docs** (separate) repo-level changelog record exists at
+  `/app/repos/docs/.spektacular/changelog/auth-service/20260101000000-jwt-auth.md`
+  — inside the docs repo's own changelog store under the project folder,
+  also under the `auth-service/` project subfolder.
+- The docs repo's code at `/opt/docs-repo` contains no `.spektacular/`
+  directory and no `CHANGELOG.md`; no `CHANGELOG.md` exists under `/app`
+  either. Only the three records above are written.
 - No changelog record was written by the built-in `Write` or `Edit`
   tools — every commit went through `spektacular changelog file write`.

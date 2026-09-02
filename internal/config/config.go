@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"gopkg.in/yaml.v3"
 )
 
@@ -119,16 +120,22 @@ type FileKnowledgeConfig struct {
 }
 
 // RepoEntry is a single member repo in the project's registry. It carries
-// membership only — identity, location, and project-scoped dependencies —
-// deliberately provider-agnostic siblings of the provider block, mirroring
-// how knowledge sources keep scope outside their provider config. A repo's
-// descriptive metadata (description, role, tags, deployment) lives in the
-// repo's own configuration, not here, so it is never duplicated across the
-// projects that register it. At least one of Address/Local is required;
-// when both are set, Local wins and Address serves as provenance metadata.
+// membership only — identity, the folder holding the repo's own Spektacular
+// files, and project-scoped dependencies — deliberately provider-agnostic
+// siblings of the provider block, mirroring how knowledge sources keep scope
+// outside their provider config. A repo's descriptive metadata (description,
+// role, tags, deployment) and the location of its code (RepoConfig.Source)
+// live in the repo's own configuration, not here, so they are never
+// duplicated across the projects that register it.
+//
+// Location is the folder holding the repo's .spektacular/ directory, absolute
+// or relative to the project root, and is required. Local is the older name
+// for the same setting: it is accepted on load, folded into Location, and
+// never written back. The former address key is no longer accepted; a repo's
+// git origin belongs in its repo.yaml as source.
 type RepoEntry struct {
 	Name         string        `yaml:"name"`
-	Address      string        `yaml:"address,omitempty"`
+	Location     string        `yaml:"location,omitempty"`
 	Local        string        `yaml:"local,omitempty"`
 	Dependencies []string      `yaml:"dependencies,omitempty"`
 	Provider     string        `yaml:"provider,omitempty"`
@@ -144,6 +151,10 @@ type GitRepoConfig struct{}
 // The knowledge section lists only project-owned sources (team or global
 // shares, for example); each repo's own knowledge sources are declared in
 // that repo's RepoConfig instead.
+//
+// Source is the project's git address, recorded in changelog provenance
+// only. It is not a code location: where a repo's code lives is declared by
+// RepoConfig.Source in that repo's repo.yaml.
 type Config struct {
 	Name                 string          `yaml:"name"`
 	Source               string          `yaml:"source,omitempty"`
@@ -219,7 +230,46 @@ func ParseYAMLFile(path string) (Config, error) {
 	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 		return Config{}, fmt.Errorf("parsing config file %s: %w", path, err)
 	}
+	if err := rejectLegacyRepoAddress(expanded, path); err != nil {
+		return Config{}, err
+	}
+	for i := range cfg.Repos {
+		cfg.Repos[i] = cfg.Repos[i].foldLocationAlias()
+	}
 	return cfg, nil
+}
+
+// rejectLegacyRepoAddress fails a config whose registry still carries the
+// removed address key. The value is not lost, only relocated: the error
+// names the repo and the exact source line to add to its repo.yaml. The raw
+// document is scanned because RepoEntry no longer has a field the key could
+// land in.
+func rejectLegacyRepoAddress(raw, path string) error {
+	var shape struct {
+		Repos []map[string]any `yaml:"repos"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &shape); err != nil {
+		return nil // the typed unmarshal already accepted the document
+	}
+	for i, r := range shape.Repos {
+		addr, ok := r["address"]
+		if !ok {
+			continue
+		}
+		name, _ := r["name"].(string)
+		location, _ := r["location"].(string)
+		if location == "" {
+			location, _ = r["local"].(string)
+		}
+		if location == "" {
+			location = "<location>"
+		}
+		return output.NewError("config_invalid",
+			fmt.Sprintf("%s: repo %q uses the removed 'address' key; a repo's git origin now belongs in its own repo.yaml as 'source'", path, name)).
+			WithResource(path).
+			WithNextAction(fmt.Sprintf("remove repos[%d].address from %s and set 'source: %v' in %s/.spektacular/repo.yaml", i, path, addr, location))
+	}
+	return nil
 }
 
 // slugPattern matches slug/filesystem-safe identifiers: lowercase letters,
@@ -293,8 +343,9 @@ func validateRepos(repos []RepoEntry) error {
 			return fmt.Errorf("repos: name %q is configured more than once", r.Name)
 		}
 		seen[r.Name] = true
-		if r.Address == "" && r.Local == "" {
-			return fmt.Errorf("repo %q: at least one of address or local is required", r.Name)
+		if r.Location == "" && r.Local == "" {
+			return output.NewError("config_invalid", fmt.Sprintf("repo %q has no location", r.Name)).
+				WithNextAction(fmt.Sprintf("set repos[%d].location to the folder holding %s's .spektacular/ directory", i, r.Name))
 		}
 		switch r.Provider {
 		case "", ProviderGit:
@@ -306,11 +357,24 @@ func validateRepos(repos []RepoEntry) error {
 }
 
 // WithDefaults returns the entry with its provider defaulted to git when
-// unset, mirroring how absent config sections resolve to defaults at load.
+// unset, mirroring how absent config sections resolve to defaults at load,
+// and with the deprecated local alias folded into Location.
 func (r RepoEntry) WithDefaults() RepoEntry {
+	r = r.foldLocationAlias()
 	if r.Provider == "" {
 		r.Provider = ProviderGit
 	}
+	return r
+}
+
+// foldLocationAlias moves a value given under the older local key into
+// Location and clears Local, so the alias is honoured on load and the
+// current key is the only one ever written back.
+func (r RepoEntry) foldLocationAlias() RepoEntry {
+	if r.Location == "" && r.Local != "" {
+		r.Location = r.Local
+	}
+	r.Local = ""
 	return r
 }
 

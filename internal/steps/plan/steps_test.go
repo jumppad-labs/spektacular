@@ -585,6 +585,7 @@ func TestDiscoveryAndArchitectureStepsRenderRepoRoster(t *testing.T) {
 			"role":        "backend",
 			"tags":        "go, api",
 			"deployment":  "kubernetes",
+			"source":      "/srv/code/billing-api",
 		},
 		map[string]any{
 			"name":        "docs-site",
@@ -592,6 +593,7 @@ func TestDiscoveryAndArchitectureStepsRenderRepoRoster(t *testing.T) {
 			"role":        "documentation",
 			"tags":        "docs",
 			"deployment":  "static-site",
+			"source":      "",
 		},
 	}
 
@@ -611,6 +613,13 @@ func TestDiscoveryAndArchitectureStepsRenderRepoRoster(t *testing.T) {
 			require.Contains(t, out, "docs-site", "%s must render the second repo's name", name)
 			require.Contains(t, out, "the user documentation", "%s must render the second repo's description", name)
 			require.Contains(t, out, "role: documentation", "%s must render the second repo's role", name)
+
+			// Phase 3.2 (plan 000046) criterion 2: each repo's source renders on
+			// its roster line, and a repo whose code is not on disk gets the
+			// repo-list pointer instead.
+			require.Contains(t, out, "source: `/srv/code/billing-api`", "%s must render the first repo's source", name)
+			require.Contains(t, out, "code not on disk yet; run `spektacular repo list`", "%s must point at repo list for a repo without a source on disk", name)
+			require.NotContains(t, out, "directory you are running in", "%s must not use the running directory as a stand-in", name)
 
 			// Criterion 1: a populated roster leaves no mustache artifacts and
 			// suppresses the empty-registry fallback line.
@@ -632,8 +641,8 @@ func TestDiscoveryAndArchitectureStepsRenderEmptyRegistryFallback(t *testing.T) 
 		cb       workflow.StepCallback
 		fallback string
 	}{
-		{"discovery", discovery(), "No repos are registered in this project's configuration; research the colocated repo."},
-		{"architecture", architecture(), "No repos are registered in this project's configuration; all work targets the colocated repo."},
+		{"discovery", discovery(), "No repos are registered in this project's configuration; this is a project of one repo. Run `spektacular repo list` for its source."},
+		{"architecture", architecture(), "No repos are registered in this project's configuration; this is a project of one repo, and all work targets it. Run `spektacular repo list` for its source."},
 	}
 	variants := map[string]func() map[string]any{
 		// The command layer sets "repos" on every invocation — an empty slice

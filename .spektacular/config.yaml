@@ -19,7 +19,6 @@ changelog:
         directory: .spektacular/changelog
 repos:
     - name: spektacular
-      local: .
+      location: .
     - name: docs
-      address: git@github.com:jumppad-labs/spektacular-website.git
-      local: ../spektacular-website
+      location: ../spektacular-website

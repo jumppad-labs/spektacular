@@ -500,7 +500,7 @@ func seedKnowledgeFile(t *testing.T, loc, name, content string) {
 }
 
 // memberRegistryProject lays out a temp project whose config registers the
-// colocated repo (named "testproj", local ".") plus one member repo (named
+// colocated repo (named "testproj", location ".") plus one member repo (named
 // "member", at a sibling temp dir carrying a default repo.yaml), and declares
 // a project-owned "team" source. Both repos' default project-scope knowledge
 // stores exist but are empty; the caller seeds entries. It chdirs into the
@@ -524,9 +524,9 @@ func memberRegistryProject(t *testing.T) (root, member, teamLoc string) {
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    local: \".\"\n"+
+			"    location: \".\"\n"+
 			"  - name: member\n"+
-			"    local: "+member+"\n"+
+			"    location: "+member+"\n"+
 			"knowledge:\n"+
 			"  sources:\n"+
 			"    - scope: team\n"+
@@ -551,9 +551,9 @@ func memberWithoutFootprintProject(t *testing.T) (root, member string) {
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    local: \".\"\n"+
+			"    location: \".\"\n"+
 			"  - name: member\n"+
-			"    local: "+member+"\n")
+			"    location: "+member+"\n")
 
 	return root, member
 }
@@ -689,10 +689,10 @@ func TestKnowledgeSources_MemberInvalidFootprintErrorsWithRepairOffer(t *testing
 	require.Contains(t, envelope.NextAction, "repo add")
 }
 
-// An address-only registry entry that is not materialized locally is skipped
-// by knowledge commands — they succeed with the remaining sources, never
-// error, and never clone.
-func TestKnowledgeSources_SkipsUnmaterializedAddressOnlyRepo(t *testing.T) {
+// A registry entry whose location is not on disk is skipped by knowledge
+// commands — they succeed with the remaining sources, never error, and never
+// clone.
+func TestKnowledgeSources_SkipsAbsentRepo(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	git := &stubGit{}
@@ -702,9 +702,9 @@ func TestKnowledgeSources_SkipsUnmaterializedAddressOnlyRepo(t *testing.T) {
 	writeSpecCommandConfig(t, root,
 		"repos:\n"+
 			"  - name: testproj\n"+
-			"    local: \".\"\n"+
+			"    location: \".\"\n"+
 			"  - name: ghost\n"+
-			"    address: https://example.invalid/ghost.git\n")
+			"    location: ./ghost\n")
 
 	stdout, _, err := runKnowledge(t, "sources")
 	require.NoError(t, err)
@@ -715,7 +715,7 @@ func TestKnowledgeSources_SkipsUnmaterializedAddressOnlyRepo(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	require.Equal(t, []knowledgeSource{
 		{Scope: "project", Provider: "file", Location: filepath.Join(root, ".spektacular", "knowledge"), Repo: "testproj"},
-	}, result.Sources, "the unmaterialized repo contributes no source")
+	}, result.Sources, "the absent repo contributes no source")
 
 	require.Zero(t, git.calls, "knowledge aggregation must never invoke git")
 	require.NoDirExists(t, filepath.Join(root, ".spektacular", repo.MaterializeDirName, "ghost"))
@@ -790,4 +790,123 @@ func TestKnowledgeAlwaysApplied_SchemaDeclaresEntriesArray(t *testing.T) {
 	require.NotNil(t, schema.Output)
 	require.Contains(t, schema.Output.Properties, "entries")
 	require.Equal(t, "array", schema.Output.Properties["entries"].Type)
+}
+
+// sourcedMemberProject lays out a temp project (chdir'd into) registering
+// the colocated repo "testproj" at "." plus a member "api" at ./repos/api
+// whose footprint — rendered via the production install path — declares
+// `source: file://<code>`, where code is a separate temp dir holding a
+// source file and its own (foreign) .spektacular/knowledge entry. It returns
+// the project root, the member's location, and the code dir.
+func sourcedMemberProject(t *testing.T) (root, location, code string) {
+	t.Helper()
+	root = t.TempDir()
+	code = t.TempDir()
+	t.Chdir(root)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
+	writeSpecCommandConfig(t, root,
+		"repos:\n"+
+			"  - name: testproj\n"+
+			"    location: \".\"\n"+
+			"  - name: api\n"+
+			"    location: ./repos/api\n")
+
+	location = filepath.Join(root, "repos", "api")
+	_, err := repo.EnsureFootprint(location, config.NewDefaultRepoConfig())
+	require.NoError(t, err)
+	rcPath := filepath.Join(location, ".spektacular", config.RepoConfigFileName)
+	rc, err := config.RepoConfigFromYAMLFile(rcPath)
+	require.NoError(t, err)
+	rc.Source = "file://" + code
+	require.NoError(t, rc.ToYAMLFile(rcPath))
+
+	require.NoError(t, os.WriteFile(filepath.Join(code, "main.go"), []byte("package main\n"), 0o644))
+	seedKnowledgeFile(t, filepath.Join(code, ".spektacular", "knowledge"),
+		"learnings/foreign.md", "the lighthouse note lives in the code dir\n")
+
+	return root, location, code
+}
+
+// Phase 1.4 criterion 4: knowledge aggregation for a member whose repo.yaml
+// declares a file source reads the member's knowledge from its LOCATION —
+// <root>/repos/api/.spektacular/knowledge — never from anything under the
+// code directory the source points at. The code dir carries a decoy entry
+// that must not surface, and no git runs.
+func TestKnowledge_MemberWithFileSourceAggregatesFromLocationNotSource(t *testing.T) {
+	root, location, code := sourcedMemberProject(t)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+	seedKnowledgeFile(t, filepath.Join(location, ".spektacular", "knowledge"),
+		"learnings/api-note.md", "the lighthouse note lives at the location\n")
+	codeBefore := snapshotDir(t, code)
+
+	stdout, _, err := runKnowledge(t, "sources")
+	require.NoError(t, err)
+	var sources struct {
+		Sources []knowledgeSource `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &sources))
+	require.Equal(t, []knowledgeSource{
+		{Scope: "project", Provider: "file", Location: filepath.Join(root, ".spektacular", "knowledge"), Repo: "testproj"},
+		{Scope: "project", Provider: "file", Location: filepath.Join(root, "repos", "api", ".spektacular", "knowledge"), Repo: "api"},
+	}, sources.Sources, "the member's source is its location's knowledge store, not the code dir's")
+
+	stdout, _, err = runKnowledge(t, "search", "lighthouse")
+	require.NoError(t, err)
+	var search struct {
+		Hits []knowledgeHit `json:"hits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &search))
+	require.Equal(t, []knowledgeHit{
+		{
+			Scope:    "project",
+			Path:     "learnings/api-note.md",
+			Title:    "learnings/api-note.md",
+			Excerpts: []string{"the lighthouse note lives at the location"},
+			Score:    1,
+		},
+	}, search.Hits, "the decoy entry under the code dir must never surface")
+
+	require.Zero(t, git.calls, "knowledge aggregation must never invoke git")
+	require.Equal(t, codeBefore, snapshotDir(t, code), "the code dir must be untouched")
+}
+
+// Phase 1.4 criterion 5: the colocated project repo (location ".") whose own
+// repo.yaml declares `source: file://<elsewhere>` still has its knowledge
+// keyed on the project root: aggregation reads the footprint at the location
+// (the project root itself), so the source directory — which has no
+// .spektacular at all — never triggers the member repo_footprint error, and
+// the project's knowledge store is reported as the repo's source.
+func TestKnowledgeSources_ColocatedRepoWithFileSourceKeyedOnProjectRoot(t *testing.T) {
+	root := t.TempDir()
+	elsewhere := t.TempDir()
+	t.Chdir(root)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".spektacular", "knowledge"), 0o755))
+	writeSpecCommandConfig(t, root,
+		"repos:\n"+
+			"  - name: testproj\n"+
+			"    location: \".\"\n")
+	rc := config.NewDefaultRepoConfig()
+	rc.Source = "file://" + elsewhere
+	require.NoError(t, rc.ToYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName)))
+	elsewhereBefore := snapshotDir(t, elsewhere)
+
+	stdout, _, err := runKnowledge(t, "sources")
+	require.NoError(t, err, "a source dir without a footprint must not be treated as a broken member")
+
+	var result struct {
+		Sources []knowledgeSource `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.Equal(t, []knowledgeSource{
+		{Scope: "project", Provider: "file", Location: filepath.Join(root, ".spektacular", "knowledge"), Repo: "testproj"},
+	}, result.Sources)
+
+	require.Zero(t, git.calls)
+	require.Equal(t, elsewhereBefore, snapshotDir(t, elsewhere))
+	require.NoDirExists(t, filepath.Join(elsewhere, ".spektacular"))
 }

@@ -4,6 +4,7 @@ tags:
     - documentation
     - markdown
 deployment: static-site
+source: file:///opt/docs-repo
 knowledge:
     sources:
         - scope: project

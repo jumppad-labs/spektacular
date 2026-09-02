@@ -6,20 +6,32 @@ import (
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/output"
 )
 
-// MaterializeDirName is the project-relative folder clones land in:
-// .spektacular/repos/<repo-name>/. Project init gitignores it so a
-// materialized repo can never enter the project's git history.
+// MaterializeDirName is the project-relative folder that clones of git
+// sources land in: .spektacular/repos/<repo-name>/. Project init gitignores
+// it so a materialized clone can never enter the project's git history.
 const MaterializeDirName = "repos"
 
-// ResolvedRepo is a registered repo resolved to a usable local directory —
-// the only access handle the registry hands out.
+// ResolvedRepo is a registered repo resolved to its two locations — the only
+// access handle the registry hands out.
+//
+// Root is the directory holding the repo's .spektacular/ folder: repo.yaml,
+// the knowledge store, and the changelog live under it, so every consumer
+// of the repo's own Spektacular files (footprint repair, descriptive
+// metadata, knowledge aggregation, the repo-routed changelog store,
+// registration write-back) reads Root. Source is the directory holding the
+// repo's code: the file source declared in repo.yaml, the clone of a git
+// source, or Root itself when no source is declared. Consumers of the code
+// (listing, git operations, the roster, and the instructions that send an
+// agent into a repo) read Source.
 type ResolvedRepo struct {
 	Name         string
-	Root         string // absolute local directory
+	Root         string // absolute directory holding .spektacular/
+	Source       string // absolute directory holding the code
 	Entry        config.RepoEntry
-	Materialized bool   // true when Root is a project-managed clone
+	Materialized bool   // true when Source is a project-managed clone of a git source
 	StaleNote    string // non-empty ⇒ warn-only behind-remote (or check-failed) notice
 }
 
@@ -71,49 +83,88 @@ func (s *Set) Entries() []config.RepoEntry {
 	return out
 }
 
-// Present reports whether the named repo is already on disk — its local
-// path exists, or a materialized clone exists — without resolving it and
-// without ever invoking git. Callers that must stay side-effect-free (like
-// listing) use this to avoid triggering a clone.
+// Present reports whether the named repo's location is already on disk —
+// without resolving it and without ever invoking git. Callers that must
+// stay side-effect-free (like listing) use this to avoid triggering a clone.
 func (s *Set) Present(name string) bool {
 	_, ok := s.LocalRoot(name)
 	return ok
 }
 
-// LocalRoot returns the named repo's on-disk root — its local path when that
-// exists, otherwise its materialized clone when that exists — without
-// resolving it and without ever invoking git. The second return is false
-// when the repo is not on disk (or not registered).
+// locationRoot returns the entry's registered location as an absolute path,
+// joining a relative value to the project root.
+func (s *Set) locationRoot(e config.RepoEntry) string {
+	root := e.Location
+	if !filepath.IsAbs(root) {
+		root = filepath.Join(s.projectRoot, root)
+	}
+	return root
+}
+
+// cloneDir returns where a git source for the named repo is materialized.
+func (s *Set) cloneDir(name string) string {
+	return filepath.Join(s.projectRoot, ".spektacular", MaterializeDirName, name)
+}
+
+// LocalRoot returns the named repo's on-disk root — its registered location
+// when that directory exists — without resolving it and without ever
+// invoking git. The second return is false when the location is not on disk
+// (or the repo is not registered).
 func (s *Set) LocalRoot(name string) (string, bool) {
 	for _, e := range s.entries {
 		if e.Name != name {
 			continue
 		}
-		if e.Local != "" {
-			root := e.Local
-			if !filepath.IsAbs(root) {
-				root = filepath.Join(s.projectRoot, root)
-			}
-			if info, err := os.Stat(root); err == nil && info.IsDir() {
-				return root, true
-			}
+		if e.Location == "" {
+			return "", false
 		}
-		if e.Address != "" {
-			clone := filepath.Join(s.projectRoot, ".spektacular", MaterializeDirName, e.Name)
-			if info, err := os.Stat(clone); err == nil && info.IsDir() {
-				return clone, true
-			}
+		root := s.locationRoot(e)
+		if info, err := os.Stat(root); err == nil && info.IsDir() {
+			return root, true
 		}
 		return "", false
 	}
 	return "", false
 }
 
+// LocalSource mirrors LocalRoot for the repo's code: the file source its
+// repo.yaml declares, the clone of its git source when that clone exists,
+// or the root when no source is declared — resolved without ever invoking
+// git. The second return is false when the repo is not on disk, or when its
+// git source has not been cloned yet. A missing, unreadable, or invalid
+// repo.yaml falls back to the root, mirroring DescriptiveMetadata's
+// tolerance.
+func (s *Set) LocalSource(name string) (string, bool) {
+	root, ok := s.LocalRoot(name)
+	if !ok {
+		return "", false
+	}
+	cfg, err := config.RepoConfigFromYAMLFile(filepath.Join(root, ".spektacular", config.RepoConfigFileName))
+	if err != nil {
+		return root, true
+	}
+	kind, v, err := cfg.ParseSource(filepath.Join(root, ".spektacular"))
+	if err != nil {
+		return root, true
+	}
+	switch kind {
+	case config.SourceFile:
+		return v, true
+	case config.SourceGit:
+		clone := s.cloneDir(name)
+		if info, err := os.Stat(clone); err == nil && info.IsDir() {
+			return clone, true
+		}
+		return "", false
+	}
+	return root, true
+}
+
 // DescriptiveMetadata returns the named repo's own descriptive metadata —
 // what it says about itself in its own repo.yaml — if the repo is on disk
 // and its config is readable. It never clones or fetches: an unmaterialized
 // repo, or one whose repo.yaml is missing or unreadable, reports absent
-// rather than an error, mirroring how checkFootprint tolerates the same
+// rather than an error, mirroring how loadFootprint tolerates the same
 // conditions for its own purposes. This is the single place that decides
 // how a repo's descriptive metadata is read, so every caller that surfaces
 // it (repo listing, the plan workflow's repo roster) sees the same view.
@@ -129,12 +180,13 @@ func (s *Set) DescriptiveMetadata(name string) (config.RepoConfig, bool) {
 	return cfg, true
 }
 
-// Resolve resolves the named repo to a local directory: its local path when
-// set and present, otherwise a clone of its address materialized into the
-// project's working folder — only when absent, never fetched or pulled.
-// After resolution the repo's footprint is validated; a missing or broken
-// footprint returns a *FootprintError carrying a repair offer, never a
-// silent continuation.
+// Resolve resolves the named repo to its two locations: the root is its
+// registered location, which must exist; the source is what its repo.yaml
+// declares — a file source used as-is, or a git source cloned into the
+// project's working folder only when absent, never fetched or pulled — and
+// the root itself when nothing is declared. The repo's footprint is
+// validated on the way; a missing or broken footprint returns a
+// *FootprintError carrying a repair offer, never a silent continuation.
 func (s *Set) Resolve(name string) (ResolvedRepo, error) {
 	for _, e := range s.entries {
 		if e.Name == name {
@@ -159,46 +211,48 @@ func (s *Set) ResolveAll() ([]ResolvedRepo, error) {
 }
 
 func (s *Set) resolve(e config.RepoEntry) (ResolvedRepo, error) {
-	// Local wins when set and present; git is never invoked for it.
-	if e.Local != "" {
-		root := e.Local
-		if !filepath.IsAbs(root) {
-			root = filepath.Join(s.projectRoot, root)
-		}
-		if info, err := os.Stat(root); err == nil && info.IsDir() {
-			r := ResolvedRepo{Name: e.Name, Root: root, Entry: e}
-			return r, s.checkFootprint(r)
-		}
-		if e.Address == "" {
-			return ResolvedRepo{}, fmt.Errorf("repo %q: local path %s does not exist and no address is configured to clone from", e.Name, root)
-		}
+	if e.Location == "" {
+		return ResolvedRepo{}, output.NewError("config_invalid", fmt.Sprintf("repo %q has no location", e.Name)).
+			WithNextAction(fmt.Sprintf("set repos[].location for %q to the folder holding its .spektacular/ directory", e.Name))
+	}
+	root := s.locationRoot(e)
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		return ResolvedRepo{}, output.NewError("repo_location_missing", fmt.Sprintf("repo %q: location %s does not exist", e.Name, root)).
+			WithResource(root).
+			WithNextAction(fmt.Sprintf("create %s (or correct repos[].location for %q) and run 'repo add' to scaffold its footprint", root, e.Name))
 	}
 
-	if e.Address == "" {
-		return ResolvedRepo{}, fmt.Errorf("repo %q: no usable local path and no address configured", e.Name)
+	r := ResolvedRepo{Name: e.Name, Root: root, Source: root, Entry: e}
+	cfg, err := s.loadFootprint(r)
+	if err != nil {
+		return r, err
 	}
 
-	// Materialize by cloning into the project's working folder — only when
-	// the clone is absent. An existing clone is reused as-is; keeping it
-	// current is the user's responsibility.
-	root := filepath.Join(s.projectRoot, ".spektacular", MaterializeDirName, e.Name)
-	if _, err := os.Stat(root); os.IsNotExist(err) {
-		if err := s.git.Clone(e.Address, root); err != nil {
-			return ResolvedRepo{}, fmt.Errorf("repo %q: cloning %s: %w", e.Name, e.Address, err)
+	kind, v, err := cfg.ParseSource(filepath.Join(root, ".spektacular"))
+	if err != nil {
+		return ResolvedRepo{}, fmt.Errorf("repo %q: %w", e.Name, err)
+	}
+	switch kind {
+	case config.SourceFile:
+		r.Source = v
+	case config.SourceGit:
+		// Materialize by cloning into the project's working folder — only
+		// when the clone is absent. An existing clone is reused as-is;
+		// keeping it current is the user's responsibility.
+		clone := s.cloneDir(e.Name)
+		if _, err := os.Stat(clone); os.IsNotExist(err) {
+			if err := s.git.Clone(v, clone); err != nil {
+				return ResolvedRepo{}, fmt.Errorf("repo %q: cloning %s: %w", e.Name, v, err)
+			}
 		}
+		r.Source = clone
+		r.Materialized = true
+		r.StaleNote = s.staleNote(clone, v)
 	}
-
-	r := ResolvedRepo{
-		Name:         e.Name,
-		Root:         root,
-		Entry:        e,
-		Materialized: true,
-		StaleNote:    s.staleNote(root, e.Address),
-	}
-	return r, s.checkFootprint(r)
+	return r, nil
 }
 
-// staleNote compares a materialized clone's head against its remote and
+// staleNote compares a materialized clone's head against its git source and
 // composes a warn-only notice. Every failure degrades to a notice or
 // silence — the staleness check never fails resolution, and no fetch or
 // pull ever runs.
@@ -217,16 +271,17 @@ func (s *Set) staleNote(root, address string) string {
 	return ""
 }
 
-// checkFootprint validates the resolved repo's minimal footprint — a
-// parseable, valid .spektacular/repo.yaml — returning a *FootprintError
-// when it is missing or broken.
-func (s *Set) checkFootprint(r ResolvedRepo) error {
+// loadFootprint validates the resolved repo's minimal footprint — a
+// parseable, valid .spektacular/repo.yaml under its root — returning the
+// parsed config, or a *FootprintError when it is missing or broken.
+func (s *Set) loadFootprint(r ResolvedRepo) (config.RepoConfig, error) {
 	path := filepath.Join(r.Root, ".spektacular", config.RepoConfigFileName)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return &FootprintError{Repo: r.Name, Root: r.Root, Err: fmt.Errorf("missing %s", filepath.Join(".spektacular", config.RepoConfigFileName))}
+		return config.RepoConfig{}, &FootprintError{Repo: r.Name, Root: r.Root, Err: fmt.Errorf("missing %s", filepath.Join(".spektacular", config.RepoConfigFileName))}
 	}
-	if _, err := config.RepoConfigFromYAMLFile(path); err != nil {
-		return &FootprintError{Repo: r.Name, Root: r.Root, Err: err}
+	cfg, err := config.RepoConfigFromYAMLFile(path)
+	if err != nil {
+		return config.RepoConfig{}, &FootprintError{Repo: r.Name, Root: r.Root, Err: err}
 	}
-	return nil
+	return cfg, nil
 }

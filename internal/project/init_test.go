@@ -387,7 +387,22 @@ func TestInit_SeedsColocatedRepoInRegistry(t *testing.T) {
 
 	cfg, err := config.FromYAMLFile(filepath.Join(dir, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
-	require.Equal(t, []config.RepoEntry{{Name: "my-project", Local: "."}}, cfg.Repos)
+	require.Equal(t, []config.RepoEntry{{Name: "my-project", Location: "."}}, cfg.Repos)
+}
+
+// Phase 1.2 criterion 4: a freshly initialized project's config.yaml
+// registers the colocated repo under the location key — never the
+// deprecated local alias or the removed address key.
+func TestInit_WritesLocationKeyForColocatedRepo(t *testing.T) {
+	dir := t.TempDir()
+	mustInit(t, dir, "my-project", false)
+
+	raw, err := os.ReadFile(filepath.Join(dir, ".spektacular", "config.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(raw), "repos:\n")
+	require.Contains(t, string(raw), "location: .")
+	require.NotContains(t, string(raw), "local:")
+	require.NotContains(t, string(raw), "address:")
 }
 
 // Criterion 3: re-running init on a config that already has registry entries
@@ -400,8 +415,8 @@ func TestInit_ExistingReposLeftUnchanged(t *testing.T) {
 	cfg := config.NewDefault()
 	cfg.Name = "testproj"
 	cfg.Repos = []config.RepoEntry{
-		{Name: "api", Address: "github.com/example/api", Local: "./api"},
-		{Name: "db", Local: "./db"},
+		{Name: "api", Location: "./api"},
+		{Name: "db", Location: "./db"},
 	}
 	require.NoError(t, cfg.ToYAMLFile(filepath.Join(spektacularDir, "config.yaml")))
 
@@ -429,7 +444,7 @@ func TestInit_SeedsReposIntoOlderConfigWithoutRegistry(t *testing.T) {
 
 	cfg, err := config.FromYAMLFile(filepath.Join(spektacularDir, "config.yaml"))
 	require.NoError(t, err)
-	require.Equal(t, []config.RepoEntry{{Name: "legacy-proj", Local: "."}}, cfg.Repos,
+	require.Equal(t, []config.RepoEntry{{Name: "legacy-proj", Location: "."}}, cfg.Repos,
 		"the colocated repo should be seeded into an older config's empty registry")
 	require.Equal(t, "docs/specs", cfg.Spec.Config.Directory, "existing settings must survive the seeding")
 }
@@ -462,7 +477,7 @@ func TestInit_ExistingRepoConfigLeftUntouched(t *testing.T) {
 }
 
 // A fresh project has no pre-existing repo.yaml, so the auto-seeded
-// colocated repo (Local: ".") ends up with no descriptive metadata. Init
+// colocated repo (Location: ".") ends up with no descriptive metadata. Init
 // must surface a notice naming it, warn-only, alongside the footprint
 // creation.
 func TestInit_ColocatedRepoNoMetadata_ReturnsNotice(t *testing.T) {

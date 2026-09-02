@@ -14,7 +14,7 @@ The sub-agent should:
 
 1. Read the current phase's acceptance criteria from `{{plan_path}}`.
 2. Map each criterion to a concrete verification command (typically `make test`, `make lint`, or a phase-specific command listed in `{{context_path}}` or `thoughts/notes/commands.md`).
-3. Run each command, capture exit codes and a short excerpt of any failures.
+3. Run each command from the source of the repo the phase's work landed in, capture exit codes and a short excerpt of any failures.
 4. Return a **concise pass/fail summary** — one line per command, no full test output. If everything passes, a single "all green" line is enough.
 
 ### STOP-on-mismatch

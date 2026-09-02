@@ -38,7 +38,7 @@ This includes the edits the implement workflow makes to `plan.md` — ticking ph
 
 # How to start
 
-> **Cross-repo implementation.** When the plan attributes work to registered member repos, carry each part of the work out in its attributed repo's resolved root (`{{command}} repo list` reports resolved paths), and follow the workflow's changelog instructions to write the central record plus one derived entry per affected repo via `{{command}} changelog file write ... --repo <name>`.
+> **Cross-repo implementation.** When the plan attributes work to registered member repos, carry each part of the work out in its attributed repo's source (the `## Repos` section at the top of `.spektacular/context.md` lists it; `{{command}} repo list` reports it as `root`), and follow the workflow's changelog instructions to write the central record plus one derived entry per affected repo via `{{command}} changelog file write ... --repo <name>`.
 
 Ask the user which plan to implement before proceeding. To enumerate the available plans, run `{{command}} plan file list` — the CLI's list is the source of truth for what counts as a plan. **Do not** use `ls`, `find`, or the `Read` tool against `.spektacular/plans/` to discover plans; those bypass Spektacular's configured plan directory and may show entries the CLI does not consider valid. You don't need to look for an in-progress workflow yourself — the CLI detects and reports one for you (see below).
 
@@ -55,7 +55,7 @@ Start the implement workflow by running:
 **First check the report's `kind`.** If it is **not** `implement`, a *different* workflow (a spec or plan run) is in progress — you cannot resume it from the implement skill, and the CLI will refuse to. Do **not** run an `implement goto`. Instead follow the report's `instruction`: tell the user a `<kind>` workflow is in progress and let them choose — continue it with that workflow's skill (`{{command}} <kind> goto`), or discard it and start the implement run with `{{command}} implement new --force`. Only proceed with the steps below when the report's `kind` is `implement`.
 
 1. Ask the user whether to **resume** the in-progress implement run or **start a new one**. (The report's `instruction` field restates both options.)
-2. **To resume**, first read `.spektacular/context.md` — the git-tracked working-context file the previous session left behind — to recover its learnings and the answers you gave to the user's questions, then run the resume command using the report's `current_step`:
+2. **To resume**, first read `.spektacular/context.md` — the git-tracked working-context file the previous session left behind — to recover its learnings and the answers you gave to the user's questions., then run the resume command using the report's `current_step`:
 
    ```
    {{command}} implement goto --data '{"step":"<current_step>"}'

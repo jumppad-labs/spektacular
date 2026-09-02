@@ -55,7 +55,7 @@ func Init(projectPath, name string, force bool) ([]string, error) {
 	// repo as the first registry entry when none are registered yet.
 	reposSeeded := false
 	if len(cfg.Repos) == 0 {
-		cfg.Repos = []config.RepoEntry{{Name: cfg.Name, Local: "."}}
+		cfg.Repos = []config.RepoEntry{{Name: cfg.Name, Location: "."}}
 		reposSeeded = true
 	}
 

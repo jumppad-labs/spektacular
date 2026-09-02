@@ -2,8 +2,9 @@
 
 The environment pre-seeds a multi-repo project (`auth-service`) whose plan
 implementation is complete: two phases touched the colocated `auth` repo,
-one phase touched the external `docs` repo, all phases are checked off,
-and the workflow state is positioned at `test_plan`. The driving agent
+one phase touched the separate `docs` repo (Spektacular files under the
+project at /app/repos/docs, code at /opt/docs-repo via a file source), all
+phases are checked off, and the workflow state is positioned at `test_plan`. The driving agent
 runs `/spek:implement` from that point through `finished`.
 
 This verifier is intentionally narrow. It exists to catch the class of
@@ -34,8 +35,11 @@ import pytest
 
 PROJECT_DIR = Path("/app")
 PROJECT_SPEK_DIR = PROJECT_DIR / ".spektacular"
-DOCS_REPO_DIR = Path("/opt/docs-repo")
-DOCS_REPO_SPEK_DIR = DOCS_REPO_DIR / ".spektacular"
+# The docs repo's Spektacular files live under the project (its registry
+# `location`); its code lives elsewhere (its repo.yaml `source`). Nothing
+# Spektacular writes may land in the source.
+DOCS_REPO_SPEK_DIR = PROJECT_DIR / "repos" / "docs" / ".spektacular"
+EXTERNAL_REPO_SOURCE = Path("/opt/docs-repo")
 
 TRANSCRIPT = Path("/logs/agent/claude-code.txt")
 
@@ -59,7 +63,6 @@ EXPECTED_STEP_ORDER = (
     "verify",
     "update_plan",
     "update_changelog",
-    "update_repo_changelog",
     "test_plan",
     "update_feature_changelog",
     "reconcile_spec",
@@ -82,9 +85,9 @@ COLOCATED_REPO_CHANGELOG_PATH = (
     PROJECT_SPEK_DIR / "changelog" / PROJECT_NAME / f"{PLAN_NAME}.md"
 )
 
-# External repo-level: inside the external repo's own changelog store,
-# namespaced by `<project>/` so multiple projects sharing this repo do
-# not collide.
+# External repo-level: inside the docs repo's own changelog store — which
+# sits under the project folder, not in the code checkout — namespaced by
+# `<project>/` so multiple projects sharing this repo do not collide.
 EXTERNAL_REPO_CHANGELOG_PATH = (
     DOCS_REPO_SPEK_DIR / "changelog" / PROJECT_NAME / f"{PLAN_NAME}.md"
 )
@@ -364,3 +367,32 @@ def test_external_repo_changelog_was_committed_via_cli(tool_calls):
         f"The external `{EXTERNAL_REPO_NAME}` repo's per-repo record MUST be "
         f"committed through the CLI with --repo {EXTERNAL_REPO_NAME}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Layer 5: a repo whose Spektacular files live apart from its code gets
+# nothing written into the code. This is plan 000046's success metric — a
+# clean `git status` in the code repository apart from intended code changes.
+# ---------------------------------------------------------------------------
+
+
+def test_separate_repo_source_has_no_spektacular_dir():
+    assert EXTERNAL_REPO_SOURCE.is_dir(), f"{EXTERNAL_REPO_SOURCE} must exist as the docs repo's code"
+    assert not (EXTERNAL_REPO_SOURCE / ".spektacular").exists(), (
+        f"{EXTERNAL_REPO_SOURCE}/.spektacular was created — the docs repo's Spektacular "
+        f"files belong under its registered location {DOCS_REPO_SPEK_DIR}, never in its source"
+    )
+
+
+def test_no_changelog_md_written_anywhere():
+    offenders = [
+        str(p)
+        for root in (EXTERNAL_REPO_SOURCE, PROJECT_DIR)
+        for p in root.rglob("CHANGELOG.md")
+    ]
+    assert not offenders, (
+        f"a root CHANGELOG.md was written: {offenders}. The implement workflow writes "
+        "exactly one project record and one record per affected repo, each at the "
+        "location its configuration declares, and no other changelog file"
+    )
+

@@ -182,7 +182,7 @@ func aggregateKnowledgeSources(cfg config.Config, projectRoot string) ([]config.
 		// A project written before the registry existed (or a minimal
 		// hand-written config) is still a project of one: treat the
 		// colocated repo as implicitly registered.
-		entries = []config.RepoEntry{{Name: cfg.Name, Local: "."}}
+		entries = []config.RepoEntry{{Name: cfg.Name, Location: "."}}
 	}
 
 	regCfg := cfg

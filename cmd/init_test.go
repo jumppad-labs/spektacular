@@ -293,8 +293,8 @@ func TestInit_RepairsBrokenMemberFootprint(t *testing.T) {
 
 	// Register the sibling member repo; repo add creates its footprint.
 	_, _, err := runRepo(t, "add", "--data", repoAddJSON(t, map[string]any{
-		"name":  "member",
-		"local": member,
+		"name":     "member",
+		"location": member,
 	}))
 	require.NoError(t, err)
 	memberRepoConfig := filepath.Join(member, ".spektacular", config.RepoConfigFileName)
@@ -318,10 +318,10 @@ func TestInit_RepairsBrokenMemberFootprint(t *testing.T) {
 	require.Equal(t, beforeMember, snapshotDir(t, member), "a healthy re-init must not change the member repo")
 }
 
-// initProjectWithAddressOnlyRepo initialises a claude project in a temp dir,
-// hand-registers an address-only repo named "ghost" that is not on disk, and
-// returns the project root, leaving the working directory inside it.
-func initProjectWithAddressOnlyRepo(t *testing.T) string {
+// initProjectWithAbsentRepo initialises a claude project in a temp dir,
+// hand-registers a repo named "ghost" whose location ./ghost is not on disk,
+// and returns the project root, leaving the working directory inside it.
+func initProjectWithAbsentRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -330,25 +330,26 @@ func initProjectWithAddressOnlyRepo(t *testing.T) string {
 	rootCmd.SetArgs([]string{"init", "claude"})
 	require.NoError(t, rootCmd.Execute())
 
-	// Register directly in the config: going through `repo add` would
-	// materialize the repo by cloning, and these tests need an entry that is
+	// Register directly in the config: going through `repo add` would fail
+	// on the missing location, and these tests need an entry that is
 	// registered but not on disk.
 	cfgPath := filepath.Join(dir, ".spektacular", "config.yaml")
 	cfg, err := config.FromYAMLFile(cfgPath)
 	require.NoError(t, err)
 	cfg.Repos = append(cfg.Repos, config.RepoEntry{
-		Name:    "ghost",
-		Address: "https://example.invalid/ghost.git",
+		Name:     "ghost",
+		Location: "./ghost",
 	})
 	require.NoError(t, cfg.ToYAMLFile(cfgPath))
 
 	return dir
 }
 
-// Init notices: re-running init over a registry containing an address-only,
-// unmaterialized repo prints a Notice naming that repo instead of failing.
+// Init notices: re-running init over a registry containing a repo whose
+// location is not on disk prints a Notice naming that repo instead of
+// failing.
 func TestInit_NoticesUnmaterializedRepo(t *testing.T) {
-	initProjectWithAddressOnlyRepo(t)
+	initProjectWithAbsentRepo(t)
 
 	out, _ := setupImplementCmd(t)
 	rootCmd.SetArgs([]string{"init", "claude"})
@@ -358,14 +359,15 @@ func TestInit_NoticesUnmaterializedRepo(t *testing.T) {
 	require.Contains(t, out.String(), `"ghost"`, "the notice must name the skipped repo")
 }
 
-// Cascade never clones: init with an address-only, unmaterialized registry
-// entry does not create a materialized clone for it.
+// Cascade never creates: init with a registry entry whose location is not
+// on disk neither creates that location nor materializes a clone for it.
 func TestInit_CascadeNeverClonesUnmaterializedRepo(t *testing.T) {
-	dir := initProjectWithAddressOnlyRepo(t)
+	dir := initProjectWithAbsentRepo(t)
 
 	rootCmd.SetArgs([]string{"init", "claude"})
 	require.NoError(t, rootCmd.Execute())
 
+	require.NoDirExists(t, filepath.Join(dir, "ghost"), "init must not create an absent repo's location")
 	require.NoDirExists(t, filepath.Join(dir, ".spektacular", repo.MaterializeDirName, "ghost"))
 }
 
@@ -400,4 +402,41 @@ func TestInit_NameFlagOverridesStoredName(t *testing.T) {
 	cfg, err := config.FromYAMLFile(filepath.Join(dir, ".spektacular", "config.yaml"))
 	require.NoError(t, err)
 	require.Equal(t, "second-name", cfg.Name)
+}
+
+// Phase 1.4 criterion 5: re-running init over a colocated project whose own
+// repo.yaml declares `source: file://<elsewhere>` keeps that source line,
+// leaves the source directory byte-identical, and footprints nothing there
+// — init cascades over registered locations only, never over sources.
+func TestInit_RerunLeavesColocatedFileSourceUntouched(t *testing.T) {
+	project := t.TempDir()
+	elsewhere := t.TempDir()
+	t.Chdir(project)
+	resetInitFlags(t)
+	require.NoError(t, os.WriteFile(filepath.Join(elsewhere, "main.go"), []byte("package main\n"), 0o644))
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	// Declare the source in the colocated repo's own config after the first
+	// init, as a user would.
+	rcPath := filepath.Join(project, ".spektacular", config.RepoConfigFileName)
+	rc, err := config.RepoConfigFromYAMLFile(rcPath)
+	require.NoError(t, err)
+	rc.Source = "file://" + elsewhere
+	require.NoError(t, rc.ToYAMLFile(rcPath))
+
+	beforeElsewhere := snapshotDir(t, elsewhere)
+	beforeProject := snapshotDir(t, project)
+
+	rootCmd.SetArgs([]string{"init", "claude"})
+	require.NoError(t, rootCmd.Execute())
+
+	require.Equal(t, beforeElsewhere, snapshotDir(t, elsewhere), "re-init must not touch the source dir")
+	require.NoDirExists(t, filepath.Join(elsewhere, ".spektacular"), "re-init must not footprint the source dir")
+	require.Equal(t, beforeProject, snapshotDir(t, project), "a healthy re-init must not change the project")
+
+	raw, err := os.ReadFile(rcPath)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), "source: file://"+elsewhere+"\n", "re-init must keep the declared source")
 }

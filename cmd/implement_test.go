@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -161,7 +162,6 @@ func TestImplementGoto_UpdateFeatureChangelogInstructsChangelogWrite(t *testing.
 		"verify",
 		"update_plan",
 		"update_changelog",
-		"update_repo_changelog",
 		"test_plan",
 		"update_feature_changelog",
 	}
@@ -201,7 +201,7 @@ func TestImplementStatus_ReportsUncheckedPhases(t *testing.T) {
 	// Fixture has 2 unchecked phases (1.1, 1.2) and 1 checked (1.3).
 	require.EqualValues(t, 2, status["unchecked_phases"])
 	require.Equal(t, "fixture", status["plan_name"])
-	require.EqualValues(t, 13, status["total_steps"])
+	require.EqualValues(t, 12, status["total_steps"])
 }
 
 func TestImplementSteps_ListsAllSteps(t *testing.T) {
@@ -216,7 +216,7 @@ func TestImplementSteps_ListsAllSteps(t *testing.T) {
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	steps := result["steps"].([]any)
-	require.Len(t, steps, 13)
+	require.Len(t, steps, 12)
 	expected := []string{
 		"new",
 		"read_plan",
@@ -226,7 +226,6 @@ func TestImplementSteps_ListsAllSteps(t *testing.T) {
 		"verify",
 		"update_plan",
 		"update_changelog",
-		"update_repo_changelog",
 		"test_plan",
 		"update_feature_changelog",
 		"reconcile_spec",
@@ -282,9 +281,10 @@ func TestImplementGoto_SchemaOutput(t *testing.T) {
 	rootCmd.SetArgs([]string{"implement", "goto", "--schema"})
 	require.NoError(t, rootCmd.Execute())
 	require.Contains(t, stdout.String(), `"step"`)
-	// The enum should list all ten step names.
+	// The enum should list every step name and none of the removed ones.
 	require.Contains(t, stdout.String(), "read_plan")
-	require.Contains(t, stdout.String(), "update_repo_changelog")
+	require.Contains(t, stdout.String(), "test_plan")
+	require.NotContains(t, stdout.String(), "update_repo_changelog")
 }
 
 func TestImplementStatus_SchemaOutput(t *testing.T) {
@@ -299,4 +299,76 @@ func TestImplementSteps_SchemaOutput(t *testing.T) {
 	rootCmd.SetArgs([]string{"implement", "steps", "--schema"})
 	require.NoError(t, rootCmd.Execute())
 	require.Contains(t, stdout.String(), `"steps"`)
+}
+
+// Phase 3.1 criterion 2: `implement new` and `implement goto` each persist
+// the repo roster into state.json's data.repos with every entry's resolved
+// source — the absolute project directory for the colocated repo, and an
+// empty string for a member whose git source has not been cloned — and
+// neither command clones (or runs any git at all) to find out.
+func TestImplementNewAndGoto_PersistRepoRosterWithSourceWithoutCloning(t *testing.T) {
+	resetImplementCommandFlags(t) // the schema/data flags persist on rootCmd across tests
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dataDir := filepath.Join(dir, ".spektacular")
+	writeSpecCommandConfig(t, dir,
+		"repos:\n"+
+			"  - name: core\n"+
+			"    location: .\n"+
+			"  - name: api\n"+
+			"    location: ./repos/api\n")
+	writeFixturePlan(t, dataDir, "fixture")
+
+	// The colocated repo's footprint declares no source, so its code is the
+	// project directory itself.
+	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(
+		filepath.Join(dataDir, config.RepoConfigFileName)))
+
+	// The member's footprint at its registered location declares a git
+	// source that has never been cloned.
+	apiLocation := filepath.Join(dir, "repos", "api")
+	require.NoError(t, os.MkdirAll(filepath.Join(apiLocation, ".spektacular"), 0o755))
+	apiCfg := config.NewDefaultRepoConfig()
+	apiCfg.Source = "https://example.com/api.git"
+	require.NoError(t, apiCfg.ToYAMLFile(
+		filepath.Join(apiLocation, ".spektacular", config.RepoConfigFileName)))
+
+	git := &stubGit{}
+	swapRepoGit(t, git)
+
+	assertRoster := func(after string) {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+		require.NoError(t, err, "state.json must exist after %s", after)
+		var st workflow.State
+		require.NoError(t, json.Unmarshal(raw, &st))
+
+		repos, ok := st.Data["repos"].([]any)
+		require.True(t, ok, "data.repos must be a list after %s", after)
+		require.Len(t, repos, 2, "data.repos must carry every registered repo after %s", after)
+
+		core, ok := repos[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "core", core["name"])
+		require.Equal(t, dir, core["source"], "the colocated repo's source must be the absolute project dir after %s", after)
+
+		api, ok := repos[1].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "api", api["name"])
+		require.Equal(t, "", api["source"], "an uncloned git source must carry an empty source after %s", after)
+
+		require.Empty(t, git.clones, "%s must not clone", after)
+		require.Zero(t, git.calls, "%s must not run git at all", after)
+		require.NoDirExists(t, filepath.Join(dataDir, "repos", "api"), "%s must leave no clone on disk", after)
+	}
+
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"implement", "new", "--data", `{"name":"fixture"}`})
+	require.NoError(t, rootCmd.Execute())
+	assertRoster("implement new")
+
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"implement", "goto", "--data", `{"step":"read_plan"}`})
+	require.NoError(t, rootCmd.Execute())
+	assertRoster("implement goto")
 }

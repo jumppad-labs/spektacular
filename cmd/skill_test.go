@@ -55,6 +55,40 @@ func TestSkillManageRepos_IsRetrievable(t *testing.T) {
 		"manage-repos must state Spektacular never fetches or pulls on its own")
 }
 
+// Plan 000046 Phase 4.2 criterion 2: the skill documents the registry's
+// `location`, the repo-level `source` in both its file and git forms, the
+// colocated and separate layouts, and no longer mentions the removed
+// `address` key.
+func TestSkillManageRepos_DocumentsLocationSourceAndLayouts(t *testing.T) {
+	skillProject(t)
+	instructions := fetchSkillInstructions(t, "manage-repos")
+
+	require.Contains(t, instructions, `"location":"./repos/api"`,
+		"manage-repos must show a repo add payload carrying location")
+	require.Contains(t, instructions, `"source":"file://${HOME}/code/api"`,
+		"manage-repos must show a repo add payload with a file source")
+	require.Contains(t, instructions, `"source":"git@example.com:org/docs.git"`,
+		"manage-repos must show a repo add payload with a git source")
+	require.Contains(t, instructions, "**colocated**",
+		"manage-repos must explain the colocated layout")
+	require.Contains(t, instructions, "**separate**",
+		"manage-repos must explain the separate layout")
+	require.Contains(t, instructions, "`location` is required and is created if it does not exist yet",
+		"manage-repos must say location is required and created when missing")
+	require.Contains(t, instructions, "the resolved source of its code as `root`",
+		"manage-repos must say repo list reports the source as root")
+	// The removed key may be named only to say it is gone, never as a way
+	// to register or resolve a repo.
+	require.NotContains(t, instructions, `"address":`,
+		"manage-repos must not show an address key in any payload")
+	require.NotContains(t, instructions, "only an `address`",
+		"manage-repos must not describe address-only repos")
+	require.NotContains(t, instructions, "registered only by `address`",
+		"manage-repos must not describe registration by address")
+	require.NotContains(t, instructions, "—",
+		"manage-repos prose must not contain em dashes")
+}
+
 // Criterion 4: manage-repos is a library skill served raw — its content
 // carries no command placeholder in either form.
 func TestSkillManageRepos_ServedWithoutCommandPlaceholders(t *testing.T) {
@@ -108,8 +142,8 @@ func TestSkillSpawnImplementationAgents_DirectsWorkToAttributedRepo(t *testing.T
 
 	require.Contains(t, instructions, "Work belongs in its attributed repo",
 		"the skill must open with the attributed-repo rule")
-	require.Contains(t, instructions, "carry that work out inside that repo's resolved root",
-		"attributed work must be carried out in the repo's resolved root")
+	require.Contains(t, instructions, "carry that work out inside that repo's source",
+		"attributed work must be carried out in the repo's source")
 	require.Contains(t, instructions, "repo list",
 		"resolved local paths must come from the `repo list` command")
 	require.Contains(t, instructions, "changelog derivation stay per-repo",

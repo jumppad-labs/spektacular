@@ -29,7 +29,7 @@ For the phase you just completed, append an entry with this shape:
 **Discoveries**: <anything the next phase or a future maintainer should know — a tricky API, a hidden constraint, a renamed symbol, a missed edge case>
 ```
 
-In the **Files changed** list, prefix every path that lives in a registered member repo with that repo's name (`<repo-name>: path`); paths in the project's own colocated repo carry no prefix. The final feature-changelog step derives one entry per affected repo mechanically from these prefixes, so keep them accurate.
+In the **Files changed** list, prefix every path with its repo's name (`<repo-name>: path`) whenever more than one repo is registered; an unprefixed path belongs to the only registered repo. The final feature-changelog step derives one entry per affected repo mechanically from these prefixes, so keep them accurate.
 
 For the exact format and more examples, launch a sub-agent with:
 
@@ -68,10 +68,10 @@ Re-read plan.md with `{{config.command}} plan file read {{plan_name}}/plan.md` a
 
 **If no unchecked phases remain**:
 
-- This was the last phase. Advance to `update_repo_changelog` to write the user-facing release-note summary:
+- This was the last phase. Advance to `test_plan` to write the manual test plan; the feature-changelog step that follows it writes the project record and one user-facing record per affected repo:
 
   ```
-  {{config.command}} implement goto --data '{"step":"update_repo_changelog"}'
+  {{config.command}} implement goto --data '{"step":"test_plan"}'
   ```
 
 ### STOP-on-mismatch

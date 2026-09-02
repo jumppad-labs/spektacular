@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+
+	"github.com/jumppad-labs/spektacular/internal/workingcontext"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
@@ -26,7 +29,7 @@ var repoAddCmd = &cobra.Command{
 
 var repoListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List the project's registered repos with metadata and resolved locations",
+	Short: "List the project's registered repos with metadata and the resolved root of each repo's code",
 	RunE:  runRepoList,
 }
 
@@ -38,15 +41,15 @@ var repoAddInputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
 		"name":         {Type: "string"},
-		"address":      {Type: "string"},
-		"local":        {Type: "string"},
+		"location":     {Type: "string"},
+		"source":       {Type: "string"},
 		"description":  {Type: "string"},
 		"role":         {Type: "string"},
 		"tags":         {Type: "array", Items: &schemaProp{Type: "string"}},
 		"dependencies": {Type: "array", Items: &schemaProp{Type: "string"}},
 		"deployment":   {Type: "string"},
 	},
-	Required: []string{"name"},
+	Required: []string{"name", "location"},
 }
 
 var repoAddOutputSchema = &schemaObj{
@@ -66,16 +69,15 @@ var repoListOutputSchema = &schemaObj{
 			Items: &schemaProp{
 				Type: "object",
 				Properties: map[string]*schemaProp{
-					"name":         {Type: "string"},
-					"address":      {Type: "string"},
-					"local":        {Type: "string"},
-					"root":         {Type: "string"},
-					"provider":     {Type: "string"},
-					"description":  {Type: "string"},
-					"role":         {Type: "string"},
-					"tags":         {Type: "array", Items: &schemaProp{Type: "string"}},
-					"dependencies": {Type: "array", Items: &schemaProp{Type: "string"}},
-					"deployment":   {Type: "string"},
+					"name":          {Type: "string"},
+					"location":      {Type: "string"},
+					"root":          {Type: "string"},
+					"provider":      {Type: "string"},
+					"description":   {Type: "string"},
+					"role":          {Type: "string"},
+					"tags":          {Type: "array", Items: &schemaProp{Type: "string"}},
+					"dependencies":  {Type: "array", Items: &schemaProp{Type: "string"}},
+					"deployment":    {Type: "string"},
 					"materialized":  {Type: "boolean"},
 					"stale_note":    {Type: "string"},
 					"metadata_note": {Type: "string"},
@@ -85,12 +87,14 @@ var repoListOutputSchema = &schemaObj{
 	},
 }
 
-// repoAddInput is the --data payload for repo add, mirroring RepoEntry's
-// provider-agnostic identity and metadata fields.
+// repoAddInput is the --data payload for repo add: the registry entry's
+// identity and location, plus the fields written into the repo's own
+// config — its descriptive metadata and, when given, the source its code
+// lives at.
 type repoAddInput struct {
 	Name         string   `json:"name"`
-	Address      string   `json:"address"`
-	Local        string   `json:"local"`
+	Location     string   `json:"location"`
+	Source       string   `json:"source"`
 	Description  string   `json:"description"`
 	Role         string   `json:"role"`
 	Tags         []string `json:"tags"`
@@ -101,8 +105,7 @@ type repoAddInput struct {
 // repoInfo is the list projection agents consume for cross-repo attribution.
 type repoInfo struct {
 	Name         string   `json:"name"`
-	Address      string   `json:"address,omitempty"`
-	Local        string   `json:"local,omitempty"`
+	Location     string   `json:"location,omitempty"`
 	Root         string   `json:"root"`
 	Provider     string   `json:"provider"`
 	Description  string   `json:"description,omitempty"`
@@ -132,8 +135,7 @@ func runRepoAdd(cmd *cobra.Command, _ []string) error {
 
 	entry := config.RepoEntry{
 		Name:         input.Name,
-		Address:      input.Address,
-		Local:        input.Local,
+		Location:     input.Location,
 		Dependencies: input.Dependencies,
 	}
 
@@ -174,10 +176,10 @@ func runRepoAdd(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Create or repair the target repo's minimal footprint on its resolved
-	// root. Resolution materializes an address-only repo by cloning; a
-	// footprint error from resolution is expected here — creating that
-	// footprint is this command's job.
+	// Create or repair the target repo's minimal footprint at its registered
+	// location, creating that folder when missing: the location is the
+	// project's own footprint folder for the repo, so making it exist is
+	// registration's job.
 	root, err := projectRoot()
 	if err != nil {
 		return err
@@ -186,24 +188,26 @@ func runRepoAdd(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	resolved, err := set.Resolve(entry.Name)
-	if err != nil {
-		var fpErr *repo.FootprintError
-		if !errors.As(err, &fpErr) {
-			return err
-		}
+	location := entry.Location
+	if !filepath.IsAbs(location) {
+		location = filepath.Join(root, location)
+	}
+	if err := os.MkdirAll(location, 0755); err != nil {
+		return fmt.Errorf("creating repo location %s: %w", location, err)
 	}
 
-	status, err := repo.EnsureFootprint(resolved.Root, config.NewDefaultRepoConfig())
+	status, err := repo.EnsureFootprint(location, config.NewDefaultRepoConfig())
 	if err != nil {
 		return err
 	}
 
-	// Write the input's descriptive fields into the target repo's own
-	// config, updating an already-footprinted repo rather than only a
+	// Write the input's descriptive fields and source into the target repo's
+	// own config, updating an already-footprinted repo rather than only a
 	// freshly created one. EnsureFootprint's caller-supplied config has no
 	// effect once a repo.yaml already exists, so this is a separate step.
-	repoConfigPath := filepath.Join(resolved.Root, ".spektacular", config.RepoConfigFileName)
+	// It runs before resolution so a git source given in this same add is
+	// honoured by the clone below.
+	repoConfigPath := filepath.Join(location, ".spektacular", config.RepoConfigFileName)
 	repoCfg, err := config.RepoConfigFromYAMLFile(repoConfigPath)
 	if err != nil {
 		return fmt.Errorf("reading repo config: %w", err)
@@ -221,9 +225,28 @@ func runRepoAdd(cmd *cobra.Command, _ []string) error {
 	if input.Deployment != "" {
 		updated.Deployment = input.Deployment
 	}
+	if input.Source != "" {
+		updated.Source = input.Source
+	}
 	if !repoConfigDescriptiveFieldsEqual(repoCfg, updated) {
 		if err := updated.ToYAMLFile(repoConfigPath); err != nil {
 			return fmt.Errorf("writing repo config: %w", err)
+		}
+	}
+
+	// Resolve once so a git source is materialized (cloned into the
+	// project's working folder) on registration rather than on first use.
+	if _, err := set.Resolve(entry.Name); err != nil {
+		return err
+	}
+
+	// Keep the working context's repos block current so an agent that
+	// registers a repo mid-workflow sees it without waiting for the next
+	// workflow command to regenerate the block. A project without a working
+	// context file yet gets none; the next workflow command creates it.
+	if _, statErr := os.Stat(workingcontext.Path(root)); statErr == nil {
+		if _, err := refreshRoster(cfg, root, false); err != nil {
+			return err
 		}
 	}
 
@@ -255,33 +278,21 @@ func runRepoList(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Listing is inspection and must stay side-effect-free: entries whose
-	// repo is already on disk resolve to their root (no cloning happens for
-	// them), while address-only repos not yet materialized are reported
-	// unresolved rather than triggering a clone.
+	// location is on disk resolve to their root (no cloning happens for
+	// them), while repos whose location is missing are reported unresolved
+	// rather than triggering any side effect.
 	infos := make([]repoInfo, 0, len(set.Entries()))
 	for _, e := range set.Entries() {
 		info := repoInfo{
 			Name:         e.Name,
-			Address:      e.Address,
-			Local:        e.Local,
+			Location:     e.Location,
 			Provider:     e.Provider,
 			Dependencies: e.Dependencies,
 		}
 		if set.Present(e.Name) {
-			resolved, err := set.Resolve(e.Name)
-			if err != nil {
-				var fpErr *repo.FootprintError
-				if !errors.As(err, &fpErr) {
-					return err
-				}
-				// A broken footprint doesn't hide the repo from the listing;
-				// repair is offered when the repo is actually used.
-			}
-			info.Root = resolved.Root
-			info.Materialized = resolved.Materialized
-			info.StaleNote = resolved.StaleNote
-			// Descriptive metadata comes from the repo's own config, the
-			// single source now that the registry carries membership only.
+			// Descriptive metadata comes from the repo's own config at its
+			// location, the single source now that the registry carries
+			// membership only.
 			meta, ok := set.DescriptiveMetadata(e.Name)
 			if ok {
 				info.Description = meta.Description
@@ -291,6 +302,25 @@ func runRepoList(cmd *cobra.Command, _ []string) error {
 			}
 			if !ok || repoConfigDescriptiveFieldsEmpty(meta) {
 				info.MetadataNote = fmt.Sprintf("repo %q has no descriptive metadata set; run 'repo add' with description/role/tags/deployment to describe it", e.Name)
+			}
+			// The reported root is the repo's code: its source when one is
+			// declared, otherwise the location itself. A git source that has
+			// not been cloned yet is reported unresolved rather than cloned —
+			// resolution only runs once the code is already on disk.
+			if _, ok := set.LocalSource(e.Name); ok {
+				resolved, err := set.Resolve(e.Name)
+				if err != nil {
+					var fpErr *repo.FootprintError
+					if !errors.As(err, &fpErr) {
+						return err
+					}
+					// A broken footprint doesn't hide the repo from the
+					// listing; repair is offered when the repo is actually
+					// used.
+				}
+				info.Root = resolved.Source
+				info.Materialized = resolved.Materialized
+				info.StaleNote = resolved.StaleNote
 			}
 		}
 		infos = append(infos, info)
@@ -302,9 +332,18 @@ func runRepoList(cmd *cobra.Command, _ []string) error {
 
 // repoAddData parses and validates the --data flag for repo add.
 func repoAddData(cmd *cobra.Command) (repoAddInput, error) {
+	const example = `{"name":"docs","location":"./repos/docs","source":"git@example.com:org/docs.git","description":"the documentation repo"}`
 	dataStr, _ := cmd.Flags().GetString("data")
 	if dataStr == "" {
-		return repoAddInput{}, fmt.Errorf(`--data is required (e.g. --data '{"name":"docs","address":"git@example.com:org/docs.git","description":"the documentation repo"}')`)
+		return repoAddInput{}, fmt.Errorf(`--data is required (e.g. --data '%s')`, example)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(dataStr), &raw); err != nil {
+		return repoAddInput{}, fmt.Errorf("parsing --data: %w", err)
+	}
+	if addr, ok := raw["address"]; ok {
+		return repoAddInput{}, output.NewError("invalid_data", "--data no longer accepts \"address\"; a repo's git origin is its \"source\", written into the repo's own repo.yaml").
+			WithNextAction(fmt.Sprintf(`re-run with --data '{"name":%q,"location":"<folder holding the repo's .spektacular/>","source":"%v"}'`, raw["name"], addr))
 	}
 	var input repoAddInput
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
@@ -313,6 +352,10 @@ func repoAddData(cmd *cobra.Command) (repoAddInput, error) {
 	if input.Name == "" {
 		return repoAddInput{}, fmt.Errorf(`--data must include a non-empty "name"`)
 	}
+	if input.Location == "" {
+		return repoAddInput{}, output.NewError("invalid_data", fmt.Sprintf(`--data must include a non-empty "location": the folder holding %q's .spektacular/ directory (created if missing)`, input.Name)).
+			WithNextAction(fmt.Sprintf(`re-run with --data '%s'`, example))
+	}
 	return input, nil
 }
 
@@ -320,14 +363,17 @@ func repoAddData(cmd *cobra.Command) (repoAddInput, error) {
 // field. RepoEntry carries membership only; descriptive metadata lives in
 // the repo's own config and is compared separately.
 func reposEqual(a, b config.RepoEntry) bool {
-	if a.Name != b.Name || a.Address != b.Address || a.Local != b.Local || a.Provider != b.Provider {
+	if a.Name != b.Name || a.Location != b.Location || a.Provider != b.Provider {
 		return false
 	}
 	return stringSlicesEqual(a.Dependencies, b.Dependencies)
 }
 
+// repoConfigDescriptiveFieldsEqual reports whether the fields repo add
+// writes — the descriptive metadata and the source — match, so the repo's
+// config is rewritten only when registration actually changed something.
 func repoConfigDescriptiveFieldsEqual(a, b config.RepoConfig) bool {
-	if a.Description != b.Description || a.Role != b.Role || a.Deployment != b.Deployment {
+	if a.Description != b.Description || a.Role != b.Role || a.Deployment != b.Deployment || a.Source != b.Source {
 		return false
 	}
 	return stringSlicesEqual(a.Tags, b.Tags)
@@ -335,7 +381,8 @@ func repoConfigDescriptiveFieldsEqual(a, b config.RepoConfig) bool {
 
 // repoConfigDescriptiveFieldsEmpty reports whether a repo config carries no
 // descriptive metadata at all, the case this project wants surfaced with a
-// warn-only notice so every repo ends up consistently described.
+// warn-only notice so every repo ends up consistently described. Source is
+// a location, not a description, so it does not count.
 func repoConfigDescriptiveFieldsEmpty(c config.RepoConfig) bool {
 	return c.Description == "" && c.Role == "" && c.Deployment == "" && len(c.Tags) == 0
 }

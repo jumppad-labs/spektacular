@@ -3,13 +3,13 @@ package spec
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/metadata"
 	"github.com/jumppad-labs/spektacular/internal/stepkit"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
+	"github.com/jumppad-labs/spektacular/internal/workingcontext"
 )
 
 // SpecFilePath returns the store-relative path for a spec file under the
@@ -86,22 +86,24 @@ func new() workflow.StepCallback {
 		if err := st.Write(SpecFilePath(cfg.SpecDir, name), merged); err != nil {
 			return "", err
 		}
-		
-		// Clear context.md to prepare for fresh conversation context.
-		// Use a relative path that resolves against the current working directory
+
+		// Reset context.md for fresh conversation context: drop the previous
+		// session's agent-owned content but keep the CLI-managed repos block,
+		// re-rendered from the roster the command layer put in workflow data.
+		// The relative path resolves against the current working directory
 		// (which is the project root when running `go run . spec new`).
-		contextPath := filepath.Join(".spektacular", "context.md")
-		if err := os.WriteFile(contextPath, []byte(""), 0644); err != nil {
-			return "", fmt.Errorf("clearing context.md: %w", err)
+		repos, _ := data.Get("repos")
+		if err := workingcontext.Reset(filepath.FromSlash(workingcontext.RelPath), cfg.Command, repos); err != nil {
+			return "", fmt.Errorf("resetting context.md: %w", err)
 		}
-		
+
 		return "", writeStep("new", "interview", "steps/spec/00-new.md", data, out, st, cfg, nil)
 	}
 }
 
 func interview() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("interview", "overview", "steps/spec/00b-interview.md", data, out, st, cfg, stepkit.RepoRosterExtra(data))
+		return "", writeStep("interview", "overview", "steps/spec/00b-interview.md", data, out, st, cfg, nil)
 	}
 }
 

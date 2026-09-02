@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,6 +17,15 @@ func writeFootprint(t *testing.T, root string) {
 	dir := filepath.Join(root, ".spektacular")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, config.NewDefaultRepoConfig().ToYAMLFile(filepath.Join(dir, config.RepoConfigFileName)))
+}
+
+// writeSourceFootprint creates a valid .spektacular/repo.yaml footprint under
+// root whose source is the given value (a file path or a git location).
+func writeSourceFootprint(t *testing.T, root, source string) {
+	t.Helper()
+	cfg := config.NewDefaultRepoConfig()
+	cfg.Source = source
+	writeRepoConfig(t, root, cfg)
 }
 
 // writeRepoYAML creates root/.spektacular/repo.yaml with the given raw content.
@@ -28,7 +38,8 @@ func writeRepoYAML(t *testing.T, root, content string) {
 
 // writeRepoConfig creates a valid .spektacular/repo.yaml under root carrying
 // the given RepoConfig, for tests that need to control the repo's
-// descriptive metadata rather than just have a valid, empty footprint.
+// descriptive metadata or source rather than just have a valid, empty
+// footprint.
 func writeRepoConfig(t *testing.T, root string, cfg config.RepoConfig) {
 	t.Helper()
 	dir := filepath.Join(root, ".spektacular")
@@ -47,11 +58,24 @@ func newSet(t *testing.T, projectRoot string, git GitRunner, entries ...config.R
 	return s
 }
 
+// gitSourceURL is the git location the fake-git tests declare as a source.
+const gitSourceURL = "https://example.com/member.git"
+
+// newGitSourceLocation creates a registered location — a fresh temp dir
+// holding a valid repo.yaml whose source is gitSourceURL — and returns it.
+func newGitSourceLocation(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeSourceFootprint(t, root, gitSourceURL)
+	return root
+}
+
 type cloneCall struct{ URL, Dir string }
 
 // fakeGit is a recording GitRunner. Clone materializes the target directory
-// (with a valid footprint unless omitFootprint is set) so resolution can
-// proceed past the footprint check without a real git binary.
+// so resolution can proceed without a real git binary; the repo's footprint
+// lives at its registered location, never inside the clone, so the fake
+// writes nothing else.
 type fakeGit struct {
 	t *testing.T
 
@@ -60,7 +84,6 @@ type fakeGit struct {
 	RemoteHeadCalls int
 
 	cloneErr      error
-	omitFootprint bool
 	localHead     string
 	localHeadErr  error
 	remoteHead    string
@@ -79,9 +102,6 @@ func (f *fakeGit) Clone(url, dir string) error {
 		return f.cloneErr
 	}
 	require.NoError(f.t, os.MkdirAll(dir, 0o755))
-	if !f.omitFootprint {
-		writeFootprint(f.t, dir)
-	}
 	return nil
 }
 
@@ -100,140 +120,215 @@ func (f *fakeGit) gitCalls() int {
 	return len(f.CloneCalls) + f.LocalHeadCalls + f.RemoteHeadCalls
 }
 
-// Criterion 1: a repo with a usable local path resolves to it without
-// touching git, even when an address is also set.
-func TestResolve_LocalWinsOverAddressWithoutGit(t *testing.T) {
-	localDir := t.TempDir()
-	writeFootprint(t, localDir)
+// A repo whose repo.yaml declares no source resolves with its code colocated
+// with its Spektacular files — Source equals Root — without touching git.
+func TestResolve_NoSourceResolvesToRootWithoutGit(t *testing.T) {
+	root := t.TempDir()
+	writeFootprint(t, root)
 	git := newFakeGit(t)
 
 	set := newSet(t, t.TempDir(), git, config.RepoEntry{
-		Name:    "lib",
-		Local:   localDir,
-		Address: "https://example.com/lib.git",
+		Name:     "lib",
+		Location: root,
 	})
 
 	r, err := set.Resolve("lib")
 	require.NoError(t, err)
-	require.Equal(t, localDir, r.Root)
+	require.Equal(t, root, r.Root)
+	require.Equal(t, root, r.Source)
 	require.False(t, r.Materialized)
 	require.Empty(t, r.StaleNote)
-	require.Zero(t, git.gitCalls(), "resolving a local repo must never invoke git")
+	require.Zero(t, git.gitCalls(), "resolving a repo without a source must never invoke git")
 }
 
-// Criterion 2: a repo with only an address is cloned into the project's
-// working folder on first use.
-func TestResolve_AddressOnlyClonesIntoWorkingFolder(t *testing.T) {
-	projectRoot := t.TempDir()
-	git := newFakeGit(t)
+// Phase 1.3 criterion 1: a repo whose repo.yaml declares a file source
+// resolves with Root unchanged and Source set to that directory — for an
+// absolute path, a relative path anchored at <root>/.spektacular, and a
+// file:// path — without materializing anything or invoking git. One without
+// a source resolves with Source equal to Root.
+func TestResolve_FileSourceResolvesSourceDirWithoutGit(t *testing.T) {
+	cases := []struct {
+		name   string
+		source func(base, code string) string
+	}{
+		{name: "absolute path", source: func(_, code string) string { return code }},
+		{name: "relative path", source: func(_, _ string) string { return filepath.Join("..", "..", "code") }},
+		{name: "file scheme", source: func(_, code string) string { return "file://" + code }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "lib")
+			code := filepath.Join(base, "code")
+			require.NoError(t, os.MkdirAll(code, 0o755))
+			writeSourceFootprint(t, root, tc.source(base, code))
+			git := newFakeGit(t)
 
-	set := newSet(t, projectRoot, git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
+			set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
+
+			r, err := set.Resolve("lib")
+			require.NoError(t, err)
+			require.Equal(t, root, r.Root)
+			require.Equal(t, code, r.Source)
+			require.False(t, r.Materialized)
+			require.Empty(t, r.StaleNote)
+			require.Zero(t, git.gitCalls(), "a file source must never invoke git")
+		})
+	}
+
+	t.Run("no source", func(t *testing.T) {
+		root := t.TempDir()
+		writeFootprint(t, root)
+		git := newFakeGit(t)
+
+		set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
+
+		r, err := set.Resolve("lib")
+		require.NoError(t, err)
+		require.Equal(t, root, r.Root)
+		require.Equal(t, root, r.Source)
+		require.False(t, r.Materialized)
+		require.Zero(t, git.gitCalls())
 	})
-
-	r, err := set.Resolve("member")
-	require.NoError(t, err)
-
-	wantRoot := filepath.Join(projectRoot, ".spektacular", MaterializeDirName, "member")
-	require.Equal(t, wantRoot, r.Root)
-	require.True(t, r.Materialized)
-	require.Equal(t, []cloneCall{{URL: "https://example.com/member.git", Dir: wantRoot}}, git.CloneCalls)
 }
 
-// Criterion 2: an existing clone is reused — a second Resolve makes no
-// further Clone calls.
-func TestResolve_ExistingCloneReusedWithoutCloning(t *testing.T) {
+// Phase 1.3 criterion 2: a git source declared in repo.yaml is cloned into
+// <projectRoot>/.spektacular/repos/<name> on first resolution — exactly one
+// Clone call with the URL from repo.yaml and that directory — and the clone
+// is reused on the next resolution. The result is materialized, its Source
+// is the clone, its Root stays the registered location, and a clone whose
+// head differs from its remote's carries a stale note.
+func TestResolve_GitSourceClonedOnceAndReused(t *testing.T) {
 	projectRoot := t.TempDir()
-	git := newFakeGit(t)
-
-	set := newSet(t, projectRoot, git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
-	})
-
-	_, err := set.Resolve("member")
-	require.NoError(t, err)
-	require.Len(t, git.CloneCalls, 1)
-
-	r, err := set.Resolve("member")
-	require.NoError(t, err)
-	require.True(t, r.Materialized)
-	require.Len(t, git.CloneCalls, 1, "second resolve must not clone again")
-}
-
-// Criterion 4: a materialized clone whose head differs from its remote's
-// produces a non-empty warn note while resolution still succeeds.
-func TestResolve_StaleNoteWhenHeadsDiffer(t *testing.T) {
+	root := newGitSourceLocation(t)
 	git := newFakeGit(t)
 	git.localHead = "aaa111"
 	git.remoteHead = "bbb222"
 
-	set := newSet(t, t.TempDir(), git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
-	})
+	set := newSet(t, projectRoot, git, config.RepoEntry{Name: "member", Location: root})
+
+	wantClone := filepath.Join(projectRoot, ".spektacular", "repos", "member")
 
 	r, err := set.Resolve("member")
-	require.NoError(t, err, "staleness must never fail resolution")
+	require.NoError(t, err)
+	require.Equal(t, root, r.Root)
+	require.Equal(t, wantClone, r.Source)
+	require.True(t, r.Materialized)
 	require.NotEmpty(t, r.StaleNote)
+	require.Equal(t, []cloneCall{{URL: gitSourceURL, Dir: wantClone}}, git.CloneCalls)
+
+	again, err := set.Resolve("member")
+	require.NoError(t, err)
+	require.Equal(t, root, again.Root)
+	require.Equal(t, wantClone, again.Source)
+	require.True(t, again.Materialized)
+	require.NotEmpty(t, again.StaleNote)
+	require.Len(t, git.CloneCalls, 1, "second resolve must not clone again")
 }
 
-// Criterion 4: an unreachable remote degrades to a could-not-check notice
-// while resolution still succeeds.
+// An unreachable remote degrades to a could-not-check notice while
+// resolution still succeeds.
 func TestResolve_RemoteHeadErrorDegradesToNotice(t *testing.T) {
 	git := newFakeGit(t)
 	git.remoteHeadErr = errors.New("network unreachable")
 
-	set := newSet(t, t.TempDir(), git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
-	})
+	set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "member", Location: newGitSourceLocation(t)})
 
 	r, err := set.Resolve("member")
 	require.NoError(t, err, "an unreachable remote must never fail resolution")
 	require.Contains(t, r.StaleNote, "could not check")
 }
 
-// Criterion 4: equal local and remote heads produce no stale note.
+// Equal local and remote heads produce no stale note.
 func TestResolve_EqualHeadsProduceNoStaleNote(t *testing.T) {
 	git := newFakeGit(t) // local and remote heads agree by default
 
-	set := newSet(t, t.TempDir(), git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
-	})
+	set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "member", Location: newGitSourceLocation(t)})
 
 	r, err := set.Resolve("member")
 	require.NoError(t, err)
+	require.True(t, r.Materialized)
 	require.Empty(t, r.StaleNote)
 }
 
-// Criterion 4: a LocalHead failure silences the staleness check entirely —
-// empty note, successful resolution.
+// A LocalHead failure silences the staleness check entirely — empty note,
+// successful resolution.
 func TestResolve_LocalHeadErrorSilencesStaleCheck(t *testing.T) {
 	git := newFakeGit(t)
 	git.localHeadErr = errors.New("not a git repository")
 
-	set := newSet(t, t.TempDir(), git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
-	})
+	set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "member", Location: newGitSourceLocation(t)})
 
 	r, err := set.Resolve("member")
 	require.NoError(t, err)
 	require.Empty(t, r.StaleNote)
 }
 
-// Criterion 5: a local repo directory without a .spektacular/repo.yaml
-// resolves to a *FootprintError carrying the repo name and root, while the
-// returned ResolvedRepo still has its Root populated for the repair offer.
+// A clone failure fails resolution, naming the repo and the source.
+func TestResolve_CloneErrorFailsResolution(t *testing.T) {
+	git := newFakeGit(t)
+	git.cloneErr = errors.New("authentication failed")
+
+	set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "member", Location: newGitSourceLocation(t)})
+
+	_, err := set.Resolve("member")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "member")
+	require.Contains(t, err.Error(), gitSourceURL)
+	require.Contains(t, err.Error(), "authentication failed")
+}
+
+// Phase 1.3 criterion 3: footprint validation looks for
+// <root>/.spektacular/repo.yaml at the registered location even when the
+// source points elsewhere — a valid footprint whose file source has no
+// .spektacular/ of its own resolves fine, and a location without a
+// repo.yaml is a *FootprintError rooted at the location even though a
+// source directory exists beside it.
+func TestResolve_FootprintValidatedAtRootNotSource(t *testing.T) {
+	t.Run("source without its own footprint resolves", func(t *testing.T) {
+		base := t.TempDir()
+		root := filepath.Join(base, "lib")
+		code := filepath.Join(base, "code")
+		require.NoError(t, os.MkdirAll(code, 0o755))
+		writeSourceFootprint(t, root, code)
+
+		set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{Name: "lib", Location: root})
+
+		r, err := set.Resolve("lib")
+		require.NoError(t, err)
+		require.Equal(t, root, r.Root)
+		require.Equal(t, code, r.Source)
+		require.NoDirExists(t, filepath.Join(code, ".spektacular"), "resolution must not scaffold anything under the source")
+	})
+
+	t.Run("location without repo.yaml errors at the location", func(t *testing.T) {
+		base := t.TempDir()
+		root := filepath.Join(base, "lib")
+		require.NoError(t, os.MkdirAll(root, 0o755)) // exists, but no footprint inside
+		code := filepath.Join(base, "code")
+		require.NoError(t, os.MkdirAll(code, 0o755))
+		writeFootprint(t, code) // a footprint beside the location must not be picked up
+
+		set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{Name: "lib", Location: root})
+
+		r, err := set.Resolve("lib")
+		var fe *FootprintError
+		require.ErrorAs(t, err, &fe)
+		require.Equal(t, "lib", fe.Repo)
+		require.Equal(t, root, fe.Root)
+		require.Equal(t, root, r.Root, "the resolved root must accompany the footprint error")
+	})
+}
+
+// A registered location without a .spektacular/repo.yaml resolves to a
+// *FootprintError carrying the repo name and root, while the returned
+// ResolvedRepo still has its Root populated for the repair offer.
 func TestResolve_MissingFootprintReturnsFootprintError(t *testing.T) {
-	localDir := t.TempDir() // exists, but no footprint inside
+	root := t.TempDir() // exists, but no footprint inside
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
-		Name:  "lib",
-		Local: localDir,
+		Name:     "lib",
+		Location: root,
 	})
 
 	r, err := set.Resolve("lib")
@@ -242,32 +337,48 @@ func TestResolve_MissingFootprintReturnsFootprintError(t *testing.T) {
 	var fe *FootprintError
 	require.ErrorAs(t, err, &fe)
 	require.Equal(t, "lib", fe.Repo)
-	require.Equal(t, localDir, fe.Root)
-	require.Equal(t, localDir, r.Root, "the resolved root must accompany the footprint error")
+	require.Equal(t, root, fe.Root)
+	require.Equal(t, root, r.Root, "the resolved root must accompany the footprint error")
 }
 
-// Criterion 5: an invalid repo.yaml (unsupported changelog provider) also
-// yields a *FootprintError rather than a silent continuation.
+// An invalid repo.yaml (unsupported changelog provider) also yields a
+// *FootprintError rather than a silent continuation.
 func TestResolve_InvalidFootprintReturnsFootprintError(t *testing.T) {
-	localDir := t.TempDir()
-	writeRepoYAML(t, localDir, "changelog:\n  provider: unknown\n")
+	root := t.TempDir()
+	writeRepoYAML(t, root, "changelog:\n  provider: unknown\n")
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
-		Name:  "lib",
-		Local: localDir,
+		Name:     "lib",
+		Location: root,
 	})
 
 	_, err := set.Resolve("lib")
 	var fe *FootprintError
 	require.ErrorAs(t, err, &fe)
 	require.Equal(t, "lib", fe.Repo)
-	require.Equal(t, localDir, fe.Root)
+	require.Equal(t, root, fe.Root)
+}
+
+// A repo.yaml whose source uses a scheme that is neither file:// nor a git
+// transport fails resolution naming the repo, without invoking git.
+func TestResolve_UnsupportedSourceSchemeErrors(t *testing.T) {
+	root := t.TempDir()
+	writeSourceFootprint(t, root, "s3://bucket/lib")
+	git := newFakeGit(t)
+
+	set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
+
+	_, err := set.Resolve("lib")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "lib")
+	require.Contains(t, err.Error(), "s3")
+	require.Zero(t, git.gitCalls())
 }
 
 // New fails fast on an unsupported provider, naming the repo and the provider.
 func TestNew_UnknownProviderFailsFast(t *testing.T) {
 	cfg := config.NewDefault()
-	cfg.Repos = []config.RepoEntry{{Name: "lib", Provider: "svn", Local: t.TempDir()}}
+	cfg.Repos = []config.RepoEntry{{Name: "lib", Provider: "svn", Location: t.TempDir()}}
 
 	set, err := New(cfg, t.TempDir(), newFakeGit(t))
 	require.Error(t, err)
@@ -287,12 +398,12 @@ func TestResolve_UnregisteredNameErrors(t *testing.T) {
 
 // An empty provider defaults to git and resolves fine.
 func TestNew_EmptyProviderDefaultsToGit(t *testing.T) {
-	localDir := t.TempDir()
-	writeFootprint(t, localDir)
+	root := t.TempDir()
+	writeFootprint(t, root)
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
-		Name:  "lib",
-		Local: localDir,
+		Name:     "lib",
+		Location: root,
 	})
 
 	entries := set.Entries()
@@ -301,77 +412,170 @@ func TestNew_EmptyProviderDefaultsToGit(t *testing.T) {
 
 	r, err := set.Resolve("lib")
 	require.NoError(t, err)
-	require.Equal(t, localDir, r.Root)
+	require.Equal(t, root, r.Root)
 }
 
-// A local path that does not exist, with no address to fall back on, errors
-// naming the missing path; git is never invoked.
-func TestResolve_LocalMissingWithoutAddressErrorsNamingPath(t *testing.T) {
+// The deprecated local key is folded into Location by WithDefaults, so an
+// entry built with Local alone resolves to that directory.
+func TestNew_LocalAliasFoldedIntoLocation(t *testing.T) {
+	root := t.TempDir()
+	writeFootprint(t, root)
+
+	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
+		Name:  "lib",
+		Local: root,
+	})
+
+	entries := set.Entries()
+	require.Len(t, entries, 1)
+	require.Equal(t, root, entries[0].Location)
+	require.Empty(t, entries[0].Local)
+
+	r, err := set.Resolve("lib")
+	require.NoError(t, err)
+	require.Equal(t, root, r.Root)
+}
+
+// A registered location that does not exist on disk errors with an
+// *output.ErrorResponse coded repo_location_missing whose message names the
+// missing path; git is never invoked.
+func TestResolve_LocationMissingErrorsNamingPath(t *testing.T) {
 	projectRoot := t.TempDir()
 	git := newFakeGit(t)
 
 	set := newSet(t, projectRoot, git, config.RepoEntry{
-		Name:  "lib",
-		Local: "gone",
+		Name:     "lib",
+		Location: "gone",
 	})
 
 	_, err := set.Resolve("lib")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), filepath.Join(projectRoot, "gone"))
+
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "repo_location_missing", er.Code)
+	require.Contains(t, er.Message, filepath.Join(projectRoot, "gone"))
 	require.Zero(t, git.gitCalls())
 }
 
-// A local path that does not exist falls through to the address when one is
-// configured, materializing a clone.
-func TestResolve_LocalMissingFallsThroughToAddress(t *testing.T) {
+// A relative location is joined to the project root.
+func TestResolve_RelativeLocationJoinedToProjectRoot(t *testing.T) {
 	projectRoot := t.TempDir()
-	git := newFakeGit(t)
-
-	set := newSet(t, projectRoot, git, config.RepoEntry{
-		Name:    "member",
-		Local:   "gone",
-		Address: "https://example.com/member.git",
-	})
-
-	r, err := set.Resolve("member")
-	require.NoError(t, err)
-	require.True(t, r.Materialized)
-	require.Equal(t, filepath.Join(projectRoot, ".spektacular", MaterializeDirName, "member"), r.Root)
-	require.Len(t, git.CloneCalls, 1)
-}
-
-// A relative local path is joined to the project root.
-func TestResolve_RelativeLocalJoinedToProjectRoot(t *testing.T) {
-	projectRoot := t.TempDir()
-	localDir := filepath.Join(projectRoot, "vendor", "lib")
-	require.NoError(t, os.MkdirAll(localDir, 0o755))
-	writeFootprint(t, localDir)
+	root := filepath.Join(projectRoot, "vendor", "lib")
+	require.NoError(t, os.MkdirAll(root, 0o755))
+	writeFootprint(t, root)
 
 	set := newSet(t, projectRoot, newFakeGit(t), config.RepoEntry{
-		Name:  "lib",
-		Local: filepath.Join("vendor", "lib"),
+		Name:     "lib",
+		Location: filepath.Join("vendor", "lib"),
 	})
 
 	r, err := set.Resolve("lib")
 	require.NoError(t, err)
-	require.Equal(t, localDir, r.Root)
+	require.Equal(t, root, r.Root)
+	require.Equal(t, root, r.Source)
+}
+
+// Phase 1.3 criterion 4: LocalSource reports where the repo's code is
+// without ever invoking git — the file-source directory, the clone of a git
+// source when it exists, nothing for a git source that has not been cloned,
+// and the root when no source is declared.
+func TestLocalSource_ReportsCodeDirWithoutGit(t *testing.T) {
+	t.Run("file source", func(t *testing.T) {
+		base := t.TempDir()
+		root := filepath.Join(base, "lib")
+		code := filepath.Join(base, "code")
+		require.NoError(t, os.MkdirAll(code, 0o755))
+		writeSourceFootprint(t, root, code)
+		git := newFakeGit(t)
+
+		set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
+
+		src, ok := set.LocalSource("lib")
+		require.True(t, ok)
+		require.Equal(t, code, src)
+		require.Zero(t, git.gitCalls())
+	})
+
+	t.Run("cloned git source", func(t *testing.T) {
+		projectRoot := t.TempDir()
+		root := newGitSourceLocation(t)
+		clone := filepath.Join(projectRoot, ".spektacular", "repos", "member")
+		require.NoError(t, os.MkdirAll(clone, 0o755)) // a clone left by an earlier resolution
+		git := newFakeGit(t)
+
+		set := newSet(t, projectRoot, git, config.RepoEntry{Name: "member", Location: root})
+
+		src, ok := set.LocalSource("member")
+		require.True(t, ok)
+		require.Equal(t, clone, src)
+		require.Zero(t, git.gitCalls())
+	})
+
+	t.Run("uncloned git source", func(t *testing.T) {
+		root := newGitSourceLocation(t)
+		git := newFakeGit(t)
+
+		set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "member", Location: root})
+
+		src, ok := set.LocalSource("member")
+		require.False(t, ok)
+		require.Empty(t, src)
+		require.Zero(t, git.gitCalls(), "LocalSource must never clone")
+		require.True(t, set.Present("member"), "the location itself is on disk")
+	})
+
+	t.Run("no source", func(t *testing.T) {
+		root := t.TempDir()
+		writeFootprint(t, root)
+		git := newFakeGit(t)
+
+		set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
+
+		src, ok := set.LocalSource("lib")
+		require.True(t, ok)
+		require.Equal(t, root, src)
+		require.Zero(t, git.gitCalls())
+	})
+
+	t.Run("missing repo.yaml falls back to root", func(t *testing.T) {
+		root := t.TempDir() // exists, but no footprint inside
+		git := newFakeGit(t)
+
+		set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: root})
+
+		src, ok := set.LocalSource("lib")
+		require.True(t, ok)
+		require.Equal(t, root, src)
+		require.Zero(t, git.gitCalls())
+	})
+
+	t.Run("location not on disk", func(t *testing.T) {
+		git := newFakeGit(t)
+		set := newSet(t, t.TempDir(), git, config.RepoEntry{Name: "lib", Location: "gone"})
+
+		src, ok := set.LocalSource("lib")
+		require.False(t, ok)
+		require.Empty(t, src)
+		require.False(t, set.Present("lib"))
+		require.Zero(t, git.gitCalls())
+	})
 }
 
 // DescriptiveMetadata returns the named repo's own descriptive metadata when
-// the repo is materialized (on disk, local path present) and its repo.yaml
-// is readable.
-func TestDescriptiveMetadata_MaterializedAndReadableReturnsMetadata(t *testing.T) {
-	localDir := t.TempDir()
+// its registered location is on disk and its repo.yaml is readable.
+func TestDescriptiveMetadata_OnDiskAndReadableReturnsMetadata(t *testing.T) {
+	root := t.TempDir()
 	repoCfg := config.NewDefaultRepoConfig()
 	repoCfg.Description = "the documentation repo"
 	repoCfg.Role = "documentation"
 	repoCfg.Tags = []string{"docs", "markdown"}
 	repoCfg.Deployment = "static site on the CDN"
-	writeRepoConfig(t, localDir, repoCfg)
+	writeRepoConfig(t, root, repoCfg)
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
-		Name:  "docs",
-		Local: localDir,
+		Name:     "docs",
+		Location: root,
 	})
 
 	meta, ok := set.DescriptiveMetadata("docs")
@@ -382,14 +586,38 @@ func TestDescriptiveMetadata_MaterializedAndReadableReturnsMetadata(t *testing.T
 	require.Equal(t, "static site on the CDN", meta.Deployment)
 }
 
-// DescriptiveMetadata reports absent (zero value, false) for an
-// unmaterialized repo — no local path present and no clone on disk — and
-// never invokes git to find out.
-func TestDescriptiveMetadata_UnmaterializedReturnsAbsentWithoutGit(t *testing.T) {
+// DescriptiveMetadata reads repo.yaml from the registered location, not
+// from the clone of a git source: after a git-source repo has been cloned
+// (the clone carrying no repo.yaml of its own), the root's metadata is
+// still what is reported.
+func TestDescriptiveMetadata_GitSourceReadsRootNotClone(t *testing.T) {
+	projectRoot := t.TempDir()
+	root := t.TempDir()
+	repoCfg := config.NewDefaultRepoConfig()
+	repoCfg.Description = "the member repo"
+	repoCfg.Source = gitSourceURL
+	writeRepoConfig(t, root, repoCfg)
+	git := newFakeGit(t)
+
+	set := newSet(t, projectRoot, git, config.RepoEntry{Name: "member", Location: root})
+
+	_, err := set.Resolve("member")
+	require.NoError(t, err)
+	require.NoFileExists(t, filepath.Join(projectRoot, ".spektacular", "repos", "member", ".spektacular", config.RepoConfigFileName))
+
+	meta, ok := set.DescriptiveMetadata("member")
+	require.True(t, ok)
+	require.Equal(t, "the member repo", meta.Description)
+	require.Equal(t, gitSourceURL, meta.Source)
+}
+
+// DescriptiveMetadata reports absent (zero value, false) for a repo whose
+// registered location is not on disk, and never invokes git to find out.
+func TestDescriptiveMetadata_LocationMissingReturnsAbsentWithoutGit(t *testing.T) {
 	git := newFakeGit(t)
 	set := newSet(t, t.TempDir(), git, config.RepoEntry{
-		Name:    "member",
-		Address: "https://example.com/member.git",
+		Name:     "member",
+		Location: filepath.Join(t.TempDir(), "gone"),
 	})
 
 	meta, ok := set.DescriptiveMetadata("member")
@@ -398,14 +626,14 @@ func TestDescriptiveMetadata_UnmaterializedReturnsAbsentWithoutGit(t *testing.T)
 	require.Zero(t, git.gitCalls(), "DescriptiveMetadata must never clone or fetch")
 }
 
-// DescriptiveMetadata reports absent, not an error, when the repo is
-// materialized but its repo.yaml is missing.
-func TestDescriptiveMetadata_MaterializedMissingRepoYAMLReturnsAbsent(t *testing.T) {
-	localDir := t.TempDir() // exists, but no .spektacular/repo.yaml inside
+// DescriptiveMetadata reports absent, not an error, when the location is on
+// disk but its repo.yaml is missing.
+func TestDescriptiveMetadata_MissingRepoYAMLReturnsAbsent(t *testing.T) {
+	root := t.TempDir() // exists, but no .spektacular/repo.yaml inside
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
-		Name:  "lib",
-		Local: localDir,
+		Name:     "lib",
+		Location: root,
 	})
 
 	meta, ok := set.DescriptiveMetadata("lib")
@@ -413,15 +641,15 @@ func TestDescriptiveMetadata_MaterializedMissingRepoYAMLReturnsAbsent(t *testing
 	require.Equal(t, config.RepoConfig{}, meta)
 }
 
-// DescriptiveMetadata reports absent, not an error, when the repo is
-// materialized but its repo.yaml is present and corrupt/invalid.
-func TestDescriptiveMetadata_MaterializedCorruptRepoYAMLReturnsAbsent(t *testing.T) {
-	localDir := t.TempDir()
-	writeRepoYAML(t, localDir, "changelog:\n  provider: unknown\n")
+// DescriptiveMetadata reports absent, not an error, when the location is on
+// disk but its repo.yaml is present and corrupt/invalid.
+func TestDescriptiveMetadata_CorruptRepoYAMLReturnsAbsent(t *testing.T) {
+	root := t.TempDir()
+	writeRepoYAML(t, root, "changelog:\n  provider: unknown\n")
 
 	set := newSet(t, t.TempDir(), newFakeGit(t), config.RepoEntry{
-		Name:  "lib",
-		Local: localDir,
+		Name:     "lib",
+		Location: root,
 	})
 
 	meta, ok := set.DescriptiveMetadata("lib")
@@ -447,8 +675,8 @@ func TestResolveAll_ReturnsRegistryOrder(t *testing.T) {
 	writeFootprint(t, dirA)
 
 	set := newSet(t, t.TempDir(), newFakeGit(t),
-		config.RepoEntry{Name: "bravo", Local: dirB},
-		config.RepoEntry{Name: "alpha", Local: dirA},
+		config.RepoEntry{Name: "bravo", Location: dirB},
+		config.RepoEntry{Name: "alpha", Location: dirA},
 	)
 
 	resolved, err := set.ResolveAll()

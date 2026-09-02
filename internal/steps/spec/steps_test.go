@@ -516,7 +516,7 @@ func TestInterviewStepRendersRepoRoster(t *testing.T) {
 // command layer set an empty roster (the empty-registry case) and when the
 // "repos" key is absent from workflow data entirely.
 func TestInterviewStepRendersEmptyRegistryFallback(t *testing.T) {
-	const fallback = "No repos are registered in this project's configuration; the interview is scoped to the colocated repo only."
+	const fallback = "No repos are registered in this project's configuration; the interview is scoped to the project's single repo. Run `spektacular repo list` for its source."
 
 	variants := map[string]func() map[string]any{
 		// The command layer sets "repos" on every invocation — an empty slice

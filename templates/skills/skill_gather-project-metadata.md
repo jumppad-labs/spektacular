@@ -13,6 +13,8 @@ Gather the following metadata:
 
 ## Commands
 
+Run these in the source of the repo the plan targets (the `## Repos` section at the top of `.spektacular/context.md` lists each registered repo's source; `repo list` reports it as `root`), not in whatever directory you happen to be in.
+
 ```bash
 # ISO timestamp
 date -u +"%Y-%m-%dT%H:%M:%SZ"

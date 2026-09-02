@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/output"
-	"github.com/jumppad-labs/spektacular/internal/repo"
 	"github.com/jumppad-labs/spektacular/internal/steps/plan"
 	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -98,6 +97,13 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Refresh the repo roster into context.md before the resume check so a
+	// resuming agent reads the current roster back with the rest of the file.
+	roster, err := refreshRoster(cfg, root, dryRun)
+	if err != nil {
+		return err
+	}
+
 	// Check for an in-progress workflow BEFORE requiring a name — mirrors
 	// spec new so the driving agent can offer resume without first
 	// prompting the user for a spec name.
@@ -134,7 +140,7 @@ func runPlanNew(cmd *cobra.Command, _ []string) error {
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, statePath, wfCfg, store.NewSourceStore(root, "project"), out)
 	wf.SetData("name", input.Name)
-	wf.SetData("repos", repo.Roster(cfg, root, repoGit))
+	wf.SetData("repos", roster)
 
 	if err := readInputIntoWorkflow(cmd, wf); err != nil {
 		return err
@@ -203,7 +209,11 @@ func runPlanGoto(cmd *cobra.Command, _ []string) error {
 	steps := plan.Steps()
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	wf := workflow.New(steps, stateFilePath(dataDir), wfCfg, store.NewSourceStore(root, "project"), out)
-	wf.SetData("repos", repo.Roster(cfg, root, repoGit))
+	roster, err := refreshRoster(cfg, root, dryRun)
+	if err != nil {
+		return err
+	}
+	wf.SetData("repos", roster)
 
 	for k, v := range input {
 		if k != "step" {

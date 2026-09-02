@@ -43,10 +43,11 @@ func TestREADMEDescribesProjectRepoConfigurationSplit(t *testing.T) {
 }
 
 // Criterion 5: CHANGELOG.md records the 000039 project-level-capabilities
-// entry's breaking change. New entries are prepended above it by every
-// subsequent plan's update_repo_changelog step, so this only checks that
-// the 000039 section itself still carries the notice, not that it remains
-// the file's top entry.
+// entry's breaking change. The implement workflow no longer writes to this
+// file (plan 000046 removed the root release-note step), but entries were
+// prepended above 000039 before that, so this only checks that the 000039
+// section itself still carries the notice, not that it remains the file's
+// top entry.
 func TestChangelogTopSectionRecordsBreakingChange(t *testing.T) {
 	changelog := strings.TrimSpace(readRepoRootFile(t, "CHANGELOG.md"))
 

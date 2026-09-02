@@ -1,8 +1,10 @@
 // Package repo resolves a project's registered member repos to local
-// directories: a repo's configured local path when present, otherwise a
-// clone materialized into the project's working folder. Resolution hands out
-// paths, never file contents — agents and stores work directly against the
-// resolved root.
+// directories: the registered location holding a repo's Spektacular files
+// is its root, and the source its repo.yaml declares — a directory on disk,
+// or a git location cloned into the project's working folder — is where its
+// code lives, defaulting to the root. Resolution hands out paths, never file
+// contents — agents and stores work directly against the resolved
+// directories.
 package repo
 
 import (
@@ -44,7 +46,7 @@ type execGitRunner struct{}
 func (execGitRunner) run(args ...string) (string, error) {
 	bin, err := exec.LookPath("git")
 	if err != nil {
-		return "", fmt.Errorf("git is not installed or not on PATH (required to resolve repos by address): %w", err)
+		return "", fmt.Errorf("git is not installed or not on PATH (required to clone a repo's git source): %w", err)
 	}
 
 	cmd := exec.Command(bin, args...)

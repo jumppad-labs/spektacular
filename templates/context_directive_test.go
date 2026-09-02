@@ -88,7 +88,7 @@ func TestContextDirectivePresent(t *testing.T) {
 		require.NoErrorf(t, err, "walking %s", dir)
 	}
 
-	// Floor, not an exact match: spec (8) + plan (17) + implement (8) = 33
+	// Floor, not an exact match: spec (8) + plan (17) + implement (7) = 32
 	// non-terminal templates today, minus 1 exempted (steps/spec/00-new.md).
 	// Kept as a lower bound so adding a step does not break the test, while
 	// still catching a walk that finds nothing.

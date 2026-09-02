@@ -4,7 +4,7 @@ Guide for writing phase entries into a plan's inline `## Changelog` section and 
 
 ## Instructions
 
-The implement workflow's `update_changelog` step calls this skill once per phase. The first call for a given plan creates the `## Changelog` section; subsequent calls append new entries under it. At the very end, before the workflow transitions to `update_repo_changelog`, the main agent should also prepend a `### FINAL SUMMARY` block above all the per-phase entries.
+The implement workflow's `update_changelog` step calls this skill once per phase. The first call for a given plan creates the `## Changelog` section; subsequent calls append new entries under it. At the very end, before the workflow transitions to `test_plan`, the main agent should also prepend a `### FINAL SUMMARY` block above all the per-phase entries.
 
 ### Lifecycle
 
@@ -21,7 +21,7 @@ The implement workflow's `update_changelog` step calls this skill once per phase
 **Final invocation (no more unchecked phases remain):**
 
 1. After appending the last per-phase entry, prepend a `### FINAL SUMMARY` block **immediately below** the `## Changelog` heading, above all per-phase entries.
-2. The `update_repo_changelog` step will then handle the repo-level `CHANGELOG.md`.
+2. The `update_feature_changelog` step then writes the project changelog record and one derived record per affected repo, each at the location its configuration declares.
 
 ### Per-entry format
 

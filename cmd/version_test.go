@@ -304,10 +304,10 @@ func TestVersionCheck_MigrationNeeded(t *testing.T) {
 // handles missing directories gracefully.
 func TestDetectMigrationNeeded(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFiles     func(t *testing.T, dir string)
-		wantMigration  bool
-		wantErr        bool
+		name          string
+		setupFiles    func(t *testing.T, dir string)
+		wantMigration bool
+		wantErr       bool
 	}{
 		{
 			name: "legacy config without repo.yaml needs migration",

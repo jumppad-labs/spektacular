@@ -8,11 +8,9 @@ source:
     config:
         location: /opt/docs-repo
 knowledge:
-    sources:
-        - scope: project
-          provider: file
-          config:
-            location: knowledge
+    provider: file
+    config:
+        location: knowledge
 changelog:
     provider: file
     config:

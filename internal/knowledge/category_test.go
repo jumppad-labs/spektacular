@@ -38,11 +38,11 @@ func TestCategories_ContainsExactlyTheSixKnownCategories(t *testing.T) {
 func TestCategoryByName_DeclaresExpectedTiers(t *testing.T) {
 	glossary, ok := CategoryByName("glossary")
 	require.True(t, ok)
-	require.Equal(t, TierAlwaysApplied, glossary.Tier)
+	require.Equal(t, CategoryTierAlwaysApplied, glossary.Tier)
 
 	decisions, ok := CategoryByName("decisions")
 	require.True(t, ok)
-	require.Equal(t, TierLookedUp, decisions.Tier)
+	require.Equal(t, CategoryTierLookedUp, decisions.Tier)
 }
 
 // Criterion 4: AlwaysApplied returns exactly conventions then glossary, in

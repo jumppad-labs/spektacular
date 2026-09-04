@@ -21,7 +21,7 @@ else.
 The user's response falls into one of three outcomes:
 
 - **Accept** — invoke the `spek-knowledge` skill to write the entry. The
-  skill's own propose-then-confirm flow handles scope selection and the
+  skill's own propose-then-confirm flow handles tier and store selection and the
   actual write from there.
 - **Defer** ("not now", "later", "remind me at the end") — do not invoke the
   skill. Continue the task normally, and treat this as temporary: if the

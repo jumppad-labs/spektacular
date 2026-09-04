@@ -23,7 +23,8 @@ type DirEntry struct {
 // one matching document, carrying a locator and compact excerpts, never the
 // full file body.
 type Hit struct {
-	Scope    string   `json:"scope"`    // scope label of the originating store
+	Tier     string   `json:"tier"`     // addressing tier of the originating store; left empty by the store and populated by the knowledge layer
+	Name     string   `json:"name"`     // name of the originating store; left empty by the store and populated by the knowledge layer
 	Path     string   `json:"path"`     // locator, relative to the store root — pass to Read
 	Title    string   `json:"title"`    // the document's first heading, or the locator when it has none
 	Excerpts []string `json:"excerpts"` // compact excerpts, each capped at the excerpt budget
@@ -50,7 +51,8 @@ type Store interface {
 	// Exists reports whether a file or directory exists at path.
 	Exists(path string) bool
 	// Search returns hits for a free-form keyword query, scanning only this
-	// store. Hits carry the store's own scope so callers can attribute them.
+	// store. Hits are left unattributed: the store has no notion of what its
+	// caller's addressing scheme is, so filling that in is the caller's job.
 	Search(query string) ([]Hit, error)
 }
 
@@ -58,13 +60,16 @@ type Store interface {
 // All paths are resolved relative to root and must not escape it.
 type FileStore struct {
 	root  string
-	scope string
+	label string
 }
 
-// NewFileStore creates a FileStore rooted at root, labelled with scope.
-// The scope tags any hits the store produces so callers can attribute them.
-func NewFileStore(root, scope string) *FileStore {
-	return &FileStore{root: filepath.Clean(root), scope: scope}
+// NewFileStore creates a FileStore rooted at root, carrying label. The label is
+// an opaque diagnostic tag: the store never interprets it and never puts it on a
+// hit. Attributing a hit to where it came from is the caller's job, since the
+// generic store layer has no notion of what a knowledge tier or a changelog repo
+// is.
+func NewFileStore(root, label string) *FileStore {
+	return &FileStore{root: filepath.Clean(root), label: label}
 }
 
 // Root returns the absolute path to the store root directory.
@@ -72,9 +77,9 @@ func (f *FileStore) Root() string {
 	return f.root
 }
 
-// Scope returns the scope label the store was constructed with.
-func (f *FileStore) Scope() string {
-	return f.scope
+// Label returns the diagnostic label the store was constructed with.
+func (f *FileStore) Label() string {
+	return f.label
 }
 
 // abs resolves a relative path against the root, rejecting path traversal.

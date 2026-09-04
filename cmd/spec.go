@@ -43,6 +43,11 @@ type schemaObj struct {
 type commandSchema struct {
 	Input  *schemaObj `json:"input"`
 	Output *schemaObj `json:"output"`
+	// Flags describes the options a command accepts on the command line rather
+	// than as JSON input, so an interface that is not wholly expressible in
+	// --data is still discoverable. Omitted when empty, so a command family
+	// that takes no such options publishes exactly what it published before.
+	Flags map[string]*schemaProp `json:"flags,omitempty"`
 }
 
 var resultOutputSchema = &schemaObj{

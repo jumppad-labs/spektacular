@@ -8,7 +8,7 @@ In this repository, do not persist anything to your per-user, per-machine
 memory store. When you would normally write to it — a learning, convention,
 gotcha, project fact, user preference, or anything else worth remembering
 between sessions — route the write through the `spek-knowledge` skill
-instead. The skill handles scope selection, search-before-write, and
+instead. The skill handles tier and store selection, search-before-write, and
 propose-then-confirm.
 
 Outside this repository, continue using your per-user memory store as normal.

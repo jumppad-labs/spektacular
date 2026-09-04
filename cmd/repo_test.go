@@ -177,6 +177,11 @@ var minimalFootprint = []string{
 // Criterion 1: after `repo add`, the project config reflects the entry's
 // name, location, and metadata, and the target repo contains exactly its
 // config file and knowledge storage — nothing else.
+//
+// This also stands as Phase 2.1 criterion 4: collapsing repo.yaml's knowledge
+// section to a single provider block must leave the scaffolded category
+// directories and their READMEs exactly as they were, which is what the
+// hand-maintained minimalFootprint listing below pins.
 func TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint(t *testing.T) {
 	project := repoProject(t)
 	target := t.TempDir()
@@ -230,6 +235,59 @@ func TestRepoAdd_RegistersEntryAndCreatesMinimalFootprint(t *testing.T) {
 	require.Equal(t, "the documentation repo", targetCfg.Description)
 	require.Equal(t, "documentation", targetCfg.Role)
 	require.Equal(t, []string{"docs", "markdown"}, targetCfg.Tags)
+}
+
+// Phase 2.1 criterion 3: the repo.yaml `repo add` scaffolds is accepted
+// as-is — no hand edit — and the store it declares is immediately writable and
+// readable through the knowledge commands, addressed by the registry name.
+func TestRepoAdd_ScaffoldedKnowledgeStoreIsUsableWithoutEditingItsConfig(t *testing.T) {
+	project := repoProject(t)
+	target := t.TempDir()
+
+	// The project's own colocated repo joins the store set too, so give it the
+	// store its repo.yaml declares; the added repo is what this test is about.
+	require.NoError(t, os.MkdirAll(filepath.Join(project, ".spektacular", "knowledge"), 0o755))
+
+	_, _, err := runRepo(t, "add", "--data", repoAddJSON(t, map[string]any{
+		"name":     "docs",
+		"location": target,
+	}))
+	require.NoError(t, err)
+
+	// The generated config parses and validates untouched, and declares the
+	// single knowledge block at the default location.
+	scaffolded, err := config.RepoConfigFromYAMLFile(filepath.Join(target, ".spektacular", config.RepoConfigFileName))
+	require.NoError(t, err)
+	require.Equal(t, config.RepoKnowledgeConfig{
+		Provider: "file",
+		Config:   config.FileKnowledgeConfig{Location: "knowledge"},
+	}, scaffolded.Knowledge)
+
+	contentPath := filepath.Join(t.TempDir(), "payload.md")
+	require.NoError(t, os.WriteFile(contentPath, []byte("scaffolded and immediately writable\n"), 0o644))
+
+	_, _, err = runKnowledge(t, "write",
+		"--data", `{"tier":"repo","name":"docs","path":"learnings/first.md"}`,
+		"--file", contentPath)
+	require.NoError(t, err)
+
+	// The entry lands inside the scaffolded store...
+	persisted := filepath.Join(target, ".spektacular", "knowledge", "learnings", "first.md")
+	require.FileExists(t, persisted)
+
+	// ...and reads back through the same address.
+	stdout, _, err := runKnowledge(t, "read", "--data",
+		`{"tier":"repo","name":"docs","path":"learnings/first.md"}`)
+	require.NoError(t, err)
+
+	var read knowledgeAddressResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &read))
+	require.Equal(t, knowledgeAddressResult{
+		Tier:    "repo",
+		Name:    "docs",
+		Path:    "learnings/first.md",
+		Content: "scaffolded and immediately writable\n",
+	}, read)
 }
 
 // Criterion 2: re-running `repo add` for the same repo — from this project or

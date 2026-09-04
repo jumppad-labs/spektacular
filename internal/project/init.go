@@ -82,19 +82,15 @@ func Init(projectPath, name string, force bool) ([]string, error) {
 		repoConfigExisted = true
 	}
 
-	// Resolve the knowledge source location(s) from the colocated repo config
-	// so the knowledge base is scaffolded wherever that configuration points
-	// it, not at a hardcoded path. Only the repo's own project-scoped source
-	// is created by init; team and global sources are shared and expected to
-	// exist independently. Relative locations resolve against the project
-	// root as knowledge.NewSet resolves them. By default this is
-	// .spektacular/knowledge.
+	// Resolve the knowledge store location from the colocated repo config so
+	// the knowledge base is scaffolded wherever that configuration points it,
+	// not at a hardcoded path. Only the repo's own store is created by init;
+	// the project's shared stores are declared separately and expected to exist
+	// independently. Relative locations resolve against the project root as
+	// knowledge.NewSet resolves them. By default this is .spektacular/knowledge.
 	var knowledgeRoots []string
-	for _, src := range repoCfg.WithDefaults(spektacularDir).Knowledge.Sources {
-		if src.Provider != config.ProviderFile || src.Scope != config.DefaultKnowledgeScope {
-			continue
-		}
-		location := src.Config.Location
+	if kc := repoCfg.WithDefaults(spektacularDir).Knowledge; kc.Provider == config.ProviderFile {
+		location := kc.Config.Location
 		if !filepath.IsAbs(location) {
 			location = filepath.Join(projectPath, location)
 		}
@@ -109,8 +105,8 @@ func Init(projectPath, name string, force bool) ([]string, error) {
 		filepath.Join(projectPath, cfg.Spec.Config.Directory),
 	}
 
-	// Ensure the knowledge base exists under each configured project source
-	// location: the source root plus a directory for every category in the
+	// Ensure the knowledge base exists under the repo's own store location:
+	// the store root plus a directory for every category in the
 	// knowledge registry, which is the single source of truth for the category
 	// model (including the always-applied glossary and the looked-up decisions
 	// category). MkdirAll is idempotent, so this also tops up any categories a

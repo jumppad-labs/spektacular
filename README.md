@@ -92,30 +92,33 @@ Running `spektacular init <agent>` creates:
     └── decisions/           # looked-up: the reasoning behind choices
 ```
 
-Each knowledge category directory is scaffolded with a `README.md` describing what belongs in it. By default Spektacular reads `.spektacular/knowledge/` as the `project` knowledge source; additional sources at other scopes — for example a shared `team` directory or a machine-wide `global` one — can be configured under `knowledge.sources` (see [Configuration](#configuration)). See [Knowledge](#knowledge) for how it is organised and consumed.
+Each knowledge category directory is scaffolded with a `README.md` describing what belongs in it. By default Spektacular reads `.spektacular/knowledge/` as this repo's own store, addressed by the name the project registered the repo under; the project can declare additional shared stores — for example a `team` directory or a machine-wide `global` one — under `knowledge.sources` (see [Configuration](#configuration)). See [Knowledge](#knowledge) for how it is organised and consumed.
 
 ## Knowledge
 
 Knowledge is the accumulated know-how a project draws on when planning — conventions, glossary terms, architecture notes, gotchas, learnings, and decisions. It is strictly a **planning-time input**: the planning agent reads it while producing a plan, and the relevant parts are written into the plan itself. The implement workflow then consumes only the plan documents — the plan is the contract.
 
-### Six categories, two tiers
+### Six categories, two retrieval tiers
 
 Every entry belongs to exactly one of six categories, fixed by the first segment of its path. Each category has a **retrieval tier** that decides when its entries are loaded:
 
 - **Always-applied** — `conventions` (standing rules to follow) and `glossary` (shared domain and project terms). Loaded in full on every planning task, and deliberately excluded from search results so they are never surfaced twice.
 - **Looked-up** — `architecture`, `gotchas`, `learnings`, and `decisions`. The larger reference body, fetched only when a search matches, so it can grow without weighing down every task.
 
-The category model — names, tiers, and per-category boundaries — is declared once in code, so it stays consistent across directory scaffolding, search labelling, and retrieval.
+The category model — names, retrieval tiers, and per-category boundaries — is declared once in code, so it stays consistent across directory scaffolding, search labelling, and retrieval. A category's *retrieval tier* says **when** its entries are loaded; the addressing *tier* below says **which** knowledge a store holds. The two are different axes.
 
-### Scopes, search, and de-duplication
+### Tiers, search, and de-duplication
 
-A knowledge source has a **scope** label. The default project ships one scope, `project`, backed by `.spektacular/knowledge/`; you can configure additional scopes — a shared `team` directory or a machine-wide `global` one — under `knowledge.sources` (see [Configuration](#configuration)). Every read, search, and convention load fans across all configured scopes in order, and each result is tagged with the scope and category it came from.
+Knowledge lives in one of two tiers. Every registered repo contributes exactly one store, addressed by the name the project registered it under, holding knowledge about that repo's own code. The project declares any number of shared stores under `knowledge.sources`, each with its own `name`, for knowledge that belongs to no single repo (see [Configuration](#configuration)). Every read, search, and always-applied load states a tier and, optionally, the store names to narrow to; every result reports the tier and store it came from.
 
-Lookups are **consolidated and de-duplicated** across scopes: each entry carries a SHA-256 checksum over its exact bytes, and byte-identical entries appearing in more than one scope collapse to a single result. A search result looks like:
+Reading and writing name exactly one store, so they take a `tier` and a `name` alongside the path; a request that leaves either out is refused, and the refusal lists the names available in that tier. Searching, listing, conventions, and the always-applied load take `--tier <project|repo|all>` and a repeatable `--filter <name>`; omitting the narrowing covers every store the tier reaches, and no store is ever included or excluded implicitly.
+
+Lookups are **consolidated and de-duplicated** across stores: each entry carries a SHA-256 checksum over its exact bytes, and byte-identical entries appearing in more than one store collapse to a single result. A search result looks like:
 
 ```
 Hit {
-  scope     // scope label of the originating store (e.g. project, team)
+  tier      // addressing tier of the originating store (project or repo)
+  name      // name of the originating store (e.g. docs)
   path      // locator relative to the store root (e.g. gotchas/db-timeouts.md)
   title     // the document's first heading, or the locator when it has none
   excerpts  // compact matched excerpts
@@ -125,23 +128,24 @@ Hit {
 }
 ```
 
-For the full model — every category definition, the retrieval tiers, scope precedence, and the de-duplication rationale — see the [knowledge-base documentation](https://spektacular.dev/knowledge-base/).
+For the full model — every category definition, the retrieval tiers, the addressing tiers, and the de-duplication rationale — see the [knowledge-base documentation](https://spektacular.dev/knowledge-base/).
 
 ### CLI
 
-Agents (and you) reach knowledge through the `spektacular knowledge` commands rather than reading the files directly, so access stays consistent across scopes. The main subcommands:
+Agents (and you) reach knowledge through the `spektacular knowledge` commands rather than reading the files directly, so access stays consistent across stores. The main subcommands:
 
-- `knowledge search <query>` — keyword-search every scope (excluding `conventions/`), returning scope- and category-tagged hits
-- `knowledge conventions` / `knowledge always-applied` — read the always-applied entries in full
-- `knowledge categories` — list the categories and their tiers
-- `knowledge read` / `knowledge list` / `knowledge write` — read, list, and write individual entries
-- `knowledge sources` — list the configured scopes and their locations
+- `knowledge search <query>` — keyword-search the stores the request covers (excluding the always-applied categories), returning tier- and category-tagged hits; narrow with `--tier` and `--filter`
+- `knowledge conventions` / `knowledge always-applied` — read the always-applied entries in full; both take `--tier` and `--filter`
+- `knowledge categories` — list the categories and their retrieval tiers
+- `knowledge read` / `knowledge write` — read and write one addressed entry, via `--data '{"tier":"…","name":"…","path":"…"}'`
+- `knowledge list` — list entries across the stores the request covers; takes `--tier` and `--filter`
+- `knowledge sources` — list the configured stores by tier and name, with their locations
 
 Every subcommand accepts `--schema` to print its input/output JSON schema and exit.
 
 ### Capturing knowledge
 
-When research surfaces a durable learning, gotcha, or convention worth keeping, the agent **proposes** the target scope and exact content and waits for your explicit confirmation before writing — it never persists to a knowledge source unprompted. In a Spektacular-initialised repo, the `spek-knowledge` skill is the entry point for reading, contributing to, and updating the knowledge base in any session, and coding agents route what they would otherwise save to their own per-user memory into the project knowledge base instead, so captured knowledge lands in git and travels with the project.
+When research surfaces a durable learning, gotcha, or convention worth keeping, the agent **proposes** the destination — the tier, the store name, and the path — along with the exact content, and waits for your explicit confirmation before writing; it never persists to a knowledge store unprompted. In a Spektacular-initialised repo, the `spek-knowledge` skill is the entry point for reading, contributing to, and updating the knowledge base in any session, and coding agents route what they would otherwise save to their own per-user memory into the project knowledge base instead, so captured knowledge lands in git and travels with the project.
 
 ## Configuration
 
@@ -182,8 +186,8 @@ repos:
   - name: lib                       # a repo folder in this project; its code is cloned from a git source
     location: ../repos/lib
 knowledge:
-  sources:                          # optional, project-owned sources only (e.g. a team share);
-    - scope: team                   # each repo's own sources live in its repo.yaml
+  sources:                          # optional, the project's shared stores only (e.g. a team share);
+    - name: team                    # each repo declares its own store in its repo.yaml
       provider: file
       config:
         location: /shared/team-kb
@@ -201,12 +205,10 @@ source:                           # where the code is; omit when it is this fold
   provider: file                  # file or git
   config:
     location: ..                  # a path relative to this file, or a git URL for the git provider
-knowledge:
-  sources:
-    - scope: project                # the repo's own store; synthesised if the file is absent
-      provider: file
-      config:
-        location: knowledge
+knowledge:                        # the repo's single store; synthesised if the file is absent
+  provider: file                    # addressed by the name the project registered this repo under
+  config:
+    location: knowledge
 changelog:
   provider: file
   config:

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,27 +31,22 @@ const RepoConfigFileName = "repo.yaml"
 // Spektacular clones into the project's working folder on first use. When
 // Source is unset the code and the Spektacular files are colocated.
 type RepoConfig struct {
-	Description string           `yaml:"description,omitempty"`
-	Role        string           `yaml:"role,omitempty"`
-	Tags        []string         `yaml:"tags,omitempty"`
-	Source      RepoSourceConfig `yaml:"source,omitempty"`
-	Knowledge   KnowledgeConfig  `yaml:"knowledge"`
-	Changelog   ChangelogConfig  `yaml:"changelog"`
+	Description string              `yaml:"description,omitempty"`
+	Role        string              `yaml:"role,omitempty"`
+	Tags        []string            `yaml:"tags,omitempty"`
+	Source      RepoSourceConfig    `yaml:"source,omitempty"`
+	Knowledge   RepoKnowledgeConfig `yaml:"knowledge"`
+	Changelog   ChangelogConfig     `yaml:"changelog"`
 }
 
 // NewDefaultRepoConfig returns a RepoConfig populated with default values:
 // the repo's own knowledge store and a file-backed changelog.
 func NewDefaultRepoConfig() RepoConfig {
 	return RepoConfig{
-		Knowledge: KnowledgeConfig{
-			Sources: []SourceConfig{
-				{
-					Scope:    DefaultKnowledgeScope,
-					Provider: ProviderFile,
-					Config: FileKnowledgeConfig{
-						Location: DefaultRepoKnowledgeLocation,
-					},
-				},
+		Knowledge: RepoKnowledgeConfig{
+			Provider: ProviderFile,
+			Config: FileKnowledgeConfig{
+				Location: DefaultRepoKnowledgeLocation,
 			},
 		},
 		Changelog: ChangelogConfig{
@@ -76,10 +72,42 @@ func RepoConfigFromYAMLFile(path string) (RepoConfig, error) {
 	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 		return RepoConfig{}, fmt.Errorf("parsing repo config file %s: %w", path, err)
 	}
+	if err := rejectLegacyRepoKnowledgeBlock(expanded, path); err != nil {
+		return RepoConfig{}, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return RepoConfig{}, fmt.Errorf("validating repo config file %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// rejectLegacyRepoKnowledgeBlock refuses a repo config whose knowledge store is
+// still declared as a list of labelled sources. Because the typed config seeds
+// from NewDefaultRepoConfig before unmarshalling, and the superseded keys no
+// longer have a field to land in, a stale file would otherwise parse cleanly and
+// silently read and write the default store instead of the one it declares —
+// losing a custom location without any error at all. Nothing is rewritten on
+// disk, so the same file fails identically on every run until a person edits it.
+func rejectLegacyRepoKnowledgeBlock(raw, path string) error {
+	var shape struct {
+		Knowledge map[string]any `yaml:"knowledge"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &shape); err != nil {
+		return nil // the typed unmarshal already accepted the document
+	}
+	found := ""
+	switch {
+	case shape.Knowledge["sources"] != nil:
+		found = "sources"
+	case shape.Knowledge["scope"] != nil:
+		found = "scope"
+	default:
+		return nil
+	}
+	return output.NewError("config_invalid",
+		fmt.Sprintf("%s: knowledge uses the removed '%s' key; a repo declares exactly one knowledge store, as a single provider block", path, found)).
+		WithResource(path).
+		WithNextAction(fmt.Sprintf("in %s, replace the knowledge block with:\n\nknowledge:\n  provider: file\n  config:\n    location: %s\n\nthe store is addressed by the name the project registered this repo under, so it takes no name of its own", path, DefaultRepoKnowledgeLocation))
 }
 
 // Validate checks whether the repo config contains supported values.
@@ -91,22 +119,15 @@ func (c RepoConfig) Validate() error {
 }
 
 // WithDefaults returns a RepoConfig whose knowledge section is guaranteed to
-// carry at least one source: if none are configured it synthesises the repo's
-// own store under repoRoot, mirroring KnowledgeConfig.WithDefaults.
-// WithDefaults fills in the repo's own knowledge sources when it declares
-// none. repoRoot is the folder holding repo.yaml, which every relative path
-// in that file is resolved from.
+// name a store: when the repo declares none it synthesises the repo's own store
+// under repoRoot. repoRoot is the folder holding repo.yaml, which every relative
+// path in that file is resolved from.
 func (c RepoConfig) WithDefaults(repoRoot string) RepoConfig {
-	if len(c.Knowledge.Sources) == 0 {
-		c.Knowledge = KnowledgeConfig{
-			Sources: []SourceConfig{
-				{
-					Scope:    DefaultKnowledgeScope,
-					Provider: ProviderFile,
-					Config: FileKnowledgeConfig{
-						Location: filepath.Join(repoRoot, DefaultRepoKnowledgeLocation),
-					},
-				},
+	if c.Knowledge.Provider == "" {
+		c.Knowledge = RepoKnowledgeConfig{
+			Provider: ProviderFile,
+			Config: FileKnowledgeConfig{
+				Location: filepath.Join(repoRoot, DefaultRepoKnowledgeLocation),
 			},
 		}
 	}

@@ -174,48 +174,8 @@ func TestInit_NonDefaultConfig_CreatesConfiguredDirs(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "default plans dir should not be created")
 }
 
-// TestInit_CreatesProjectKnowledgeSourceOnly asserts that Init creates the
-// directory for the repo config's project-scoped knowledge source but leaves
-// team and global sources alone — those are shared and expected to exist
-// independently. The sources live in repo.yaml: the colocated repo config,
-// not the project config, is the knowledge authority for the repo.
-func TestInit_CreatesProjectKnowledgeSourceOnly(t *testing.T) {
-	dir := t.TempDir()
-	spektacularDir := filepath.Join(dir, ".spektacular")
-	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
-
-	repoCfg := config.NewDefaultRepoConfig()
-	repoCfg.Knowledge = config.KnowledgeConfig{
-		Sources: []config.SourceConfig{
-			{
-				Scope:    "project",
-				Provider: config.ProviderFile,
-				Config:   config.FileKnowledgeConfig{Location: ".spektacular/team-notes"},
-			},
-			{
-				Scope:    "team",
-				Provider: config.ProviderFile,
-				Config:   config.FileKnowledgeConfig{Location: "shared/team-kb"},
-			},
-		},
-	}
-	require.NoError(t, repoCfg.ToYAMLFile(filepath.Join(spektacularDir, config.RepoConfigFileName)))
-
-	// Force is required because .spektacular already exists.
-	mustInit(t, dir, "", true)
-
-	// The project source's configured directory is created.
-	info, err := os.Stat(filepath.Join(dir, ".spektacular", "team-notes"))
-	require.NoError(t, err, "project knowledge source directory should be created")
-	require.True(t, info.IsDir())
-
-	// The team source's directory is NOT created by init.
-	_, err = os.Stat(filepath.Join(dir, "shared", "team-kb"))
-	require.True(t, os.IsNotExist(err), "team knowledge source dir should not be created by init")
-}
-
 // TestInit_ScaffoldsCategoriesAtConfiguredLocation asserts that when the repo
-// config's knowledge source is configured at a non-default location, the
+// config's knowledge store is configured at a non-default location, the
 // knowledge base — every category directory and its README definition — is
 // scaffolded there, and not at the hardcoded .spektacular/knowledge path.
 func TestInit_ScaffoldsCategoriesAtConfiguredLocation(t *testing.T) {
@@ -224,14 +184,9 @@ func TestInit_ScaffoldsCategoriesAtConfiguredLocation(t *testing.T) {
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
 
 	repoCfg := config.NewDefaultRepoConfig()
-	repoCfg.Knowledge = config.KnowledgeConfig{
-		Sources: []config.SourceConfig{
-			{
-				Scope:    "project",
-				Provider: config.ProviderFile,
-				Config:   config.FileKnowledgeConfig{Location: ".spektacular/kb"},
-			},
-		},
+	repoCfg.Knowledge = config.RepoKnowledgeConfig{
+		Provider: config.ProviderFile,
+		Config:   config.FileKnowledgeConfig{Location: ".spektacular/kb"},
 	}
 	require.NoError(t, repoCfg.ToYAMLFile(filepath.Join(spektacularDir, config.RepoConfigFileName)))
 
@@ -285,13 +240,10 @@ func TestInit_WritesProjectAndRepoConfigsWithOwnSettings(t *testing.T) {
 	repoPath := filepath.Join(dir, ".spektacular", config.RepoConfigFileName)
 	repoCfg, err := config.RepoConfigFromYAMLFile(repoPath)
 	require.NoError(t, err)
-	require.Equal(t, []config.SourceConfig{
-		{
-			Scope:    config.DefaultKnowledgeScope,
-			Provider: config.ProviderFile,
-			Config:   config.FileKnowledgeConfig{Location: config.DefaultRepoKnowledgeLocation},
-		},
-	}, repoCfg.Knowledge.Sources)
+	require.Equal(t, config.RepoKnowledgeConfig{
+		Provider: config.ProviderFile,
+		Config:   config.FileKnowledgeConfig{Location: config.DefaultRepoKnowledgeLocation},
+	}, repoCfg.Knowledge)
 	require.Equal(t, config.ProviderFile, repoCfg.Changelog.Provider)
 	require.Equal(t, config.DefaultRepoChangelogDir, repoCfg.Changelog.Config.Directory)
 
@@ -450,15 +402,15 @@ func TestInit_SeedsReposIntoOlderConfigWithoutRegistry(t *testing.T) {
 }
 
 // TestInit_ExistingRepoConfigLeftUntouched asserts that a pre-existing
-// repo.yaml is never rewritten by init, and that its knowledge sources — not
-// the defaults — drive the scaffolding.
+// repo.yaml is never rewritten by init, and that its knowledge store — not
+// the defaults — drives the scaffolding.
 func TestInit_ExistingRepoConfigLeftUntouched(t *testing.T) {
 	dir := t.TempDir()
 	spektacularDir := filepath.Join(dir, ".spektacular")
 	require.NoError(t, os.MkdirAll(spektacularDir, 0755))
 
 	repoCfg := config.NewDefaultRepoConfig()
-	repoCfg.Knowledge.Sources[0].Config.Location = ".spektacular/custom-kb"
+	repoCfg.Knowledge.Config.Location = ".spektacular/custom-kb"
 	repoPath := filepath.Join(spektacularDir, config.RepoConfigFileName)
 	require.NoError(t, repoCfg.ToYAMLFile(repoPath))
 	before, err := os.ReadFile(repoPath)

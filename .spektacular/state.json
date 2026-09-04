@@ -15,27 +15,9 @@
     "reconcile_spec",
     "finished"
   ],
-  "created_at": "2026-09-02T12:25:22.717023073Z",
-  "updated_at": "2026-09-02T13:15:26.198538834Z",
+  "created_at": "2026-09-03T13:14:37.158329055Z",
+  "updated_at": "2026-09-04T07:17:18.797952085Z",
   "data": {
-    "name": "000046_relocatable-repo-footprint",
-    "repos": [
-      {
-        "deployment": "binary-release",
-        "description": "Agent-agnostic CLI tool for spec-driven development, providing skills and integrations for coding agents (Claude, Bob, Codex) to plan and implement work from a written spec.",
-        "name": "spektacular",
-        "role": "tool",
-        "source": "/home/nicj/code/github.com/jumppad-labs/spektacular",
-        "tags": "go, cli, spec-driven-development"
-      },
-      {
-        "deployment": "static-site",
-        "description": "Marketing and documentation site for Spektacular (spektacular.dev), built with Astro 5 and Tailwind CSS v4 — includes the configuration and workflow reference docs",
-        "name": "docs",
-        "role": "documentation",
-        "source": "/home/nicj/code/github.com/jumppad-labs/spektacular-website",
-        "tags": "docs, website, astro"
-      }
-    ]
+    "name": "000047_repo-scoped-knowledge-addressing"
   }
 }

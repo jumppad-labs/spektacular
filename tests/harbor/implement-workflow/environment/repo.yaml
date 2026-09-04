@@ -9,11 +9,9 @@ source:
     config:
         location: ..
 knowledge:
-    sources:
-        - scope: project
-          provider: file
-          config:
-            location: knowledge
+    provider: file
+    config:
+        location: knowledge
 changelog:
     provider: file
     config:

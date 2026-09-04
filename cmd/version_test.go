@@ -526,3 +526,29 @@ func TestScanProjectMetadata(t *testing.T) {
 		})
 	}
 }
+
+// Phase 2.3 criterion 6: upgrading a project from the older single-file
+// configuration must produce a repo.yaml that is accepted without further
+// correction. Writing the file is not enough — the migrator seeds it from
+// config.NewDefaultRepoConfig(), so this asserts the result actually loads
+// back through config.RepoConfigFromYAMLFile, passing the guard that refuses a
+// knowledge block in the superseded form, and that the store it declares is
+// the repo's own.
+func TestExecuteMigration_WritesRepoConfigThatLoadsWithoutCorrection(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, ".spektacular")
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("project: test\n"), 0o644))
+
+	cfg := config.NewDefaultRepoConfig()
+	cfg.Description = "Test project"
+	cfg.Role = "application"
+	cfg.Tags = []string{"test"}
+	require.NoError(t, executeMigration(dataDir, &cfg))
+
+	loaded, err := config.RepoConfigFromYAMLFile(filepath.Join(dataDir, config.RepoConfigFileName))
+	require.NoError(t, err, "a migrated repo.yaml must load without further correction")
+	require.Equal(t, "file", loaded.Knowledge.Provider)
+	require.Equal(t, "knowledge", loaded.Knowledge.Config.Location)
+	require.Equal(t, "Test project", loaded.Description)
+}

@@ -33,8 +33,9 @@ const binarySniffBytes = 8000
 // It walks the store root in process — no external tool is consulted. The
 // query is split into whitespace-separated terms, each matched as a literal,
 // case-insensitive substring; a file matches when every term occurs somewhere
-// in it, and each matching file produces exactly one scope-tagged Hit whose
-// Score is the sum of all terms' occurrence counts across the file.
+// in it, and each matching file produces exactly one Hit whose Score is the sum
+// of all terms' occurrence counts across the file. The Hit's attribution fields
+// are left empty for the caller to stamp.
 // The store is category-agnostic: it scans every directory and never excludes
 // one by name — tier-based exclusion of always-applied categories lives in the
 // knowledge layer, and .spektacular_ignore exclusion lives in the ignore-aware
@@ -87,7 +88,6 @@ func (f *FileStore) search(terms []string) ([]Hit, error) {
 			excerpts = append(excerpts, trimExcerpt(c.text))
 		}
 		hits = append(hits, Hit{
-			Scope:    f.scope,
 			Path:     rel,
 			Title:    title,
 			Excerpts: excerpts,

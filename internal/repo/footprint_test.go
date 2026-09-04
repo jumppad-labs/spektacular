@@ -103,7 +103,7 @@ func TestEnsureFootprint_ExistingConfigCustomLocationDrivesScaffolding(t *testin
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 
 	custom := config.NewDefaultRepoConfig()
-	custom.Knowledge.Sources[0].Config.Location = "kb"
+	custom.Knowledge.Config.Location = "kb"
 	require.NoError(t, custom.ToYAMLFile(filepath.Join(dir, config.RepoConfigFileName)))
 
 	status, err := EnsureFootprint(root, config.NewDefaultRepoConfig())

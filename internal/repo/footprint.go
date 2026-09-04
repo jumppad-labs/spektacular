@@ -53,11 +53,9 @@ func EnsureFootprint(root string, repoCfg config.RepoConfig) (string, error) {
 	// root plus a directory and README for every category in the registry.
 	// Only missing pieces are created, so an already-initialized repo is
 	// never disturbed.
-	for _, src := range repoCfg.WithDefaults(root).Knowledge.Sources {
-		if src.Provider != config.ProviderFile || src.Scope != config.DefaultKnowledgeScope {
-			continue
-		}
-		location := src.Config.Location
+	kc := repoCfg.WithDefaults(root).Knowledge
+	if kc.Provider == config.ProviderFile {
+		location := kc.Config.Location
 		if !filepath.IsAbs(location) {
 			location = filepath.Join(root, location)
 		}

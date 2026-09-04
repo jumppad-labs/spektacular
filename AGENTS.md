@@ -62,7 +62,7 @@ In this repository, do not persist anything to your per-user, per-machine
 memory store. When you would normally write to it — a learning, convention,
 gotcha, project fact, user preference, or anything else worth remembering
 between sessions — route the write through the `spek-knowledge` skill
-instead. The skill handles scope selection, search-before-write, and
+instead. The skill handles tier and store selection, search-before-write, and
 propose-then-confirm.
 
 Outside this repository, continue using your per-user memory store as normal.
@@ -190,7 +190,7 @@ else.
 The user's response falls into one of three outcomes:
 
 - **Accept** — invoke the `spek-knowledge` skill to write the entry. The
-  skill's own propose-then-confirm flow handles scope selection and the
+  skill's own propose-then-confirm flow handles tier and store selection and the
   actual write from there.
 - **Defer** ("not now", "later", "remind me at the end") — do not invoke the
   skill. Continue the task normally, and treat this as temporary: if the

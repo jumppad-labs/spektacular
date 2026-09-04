@@ -18,44 +18,47 @@ import (
 
 var knowledgeCmd = &cobra.Command{
 	Use:   "knowledge",
-	Short: "Search, read, list, and write across configured knowledge sources",
+	Short: "Search, read, list, and write across the configured knowledge stores",
 	RunE:  runUnknownSubcommand,
 }
 
 var knowledgeSearchCmd = &cobra.Command{
 	Use:   "search <query>",
-	Short: "Search every configured knowledge source, returning ranked, one-per-document results",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runKnowledgeSearch,
+	Short: "Search the knowledge stores a request covers, returning ranked, one-per-document results",
+	// The query is positional but --schema takes none, so the count is checked
+	// in the run function rather than here: a caller must be able to discover
+	// this command's interface without already knowing how to invoke it.
+	Args: cobra.MaximumNArgs(1),
+	RunE: runKnowledgeSearch,
 }
 
 var knowledgeReadCmd = &cobra.Command{
 	Use:   "read",
-	Short: "Read a knowledge entry from a named scope",
+	Short: "Read a knowledge entry from one addressed store",
 	RunE:  runKnowledgeRead,
 }
 
 var knowledgeListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List every knowledge entry across all configured scopes",
+	Short: "List every knowledge entry across the stores a request covers",
 	RunE:  runKnowledgeList,
 }
 
 var knowledgeWriteCmd = &cobra.Command{
 	Use:   "write",
-	Short: "Write a knowledge entry into a named scope",
+	Short: "Write a knowledge entry into one addressed store",
 	RunE:  runKnowledgeWrite,
 }
 
 var knowledgeSourcesCmd = &cobra.Command{
 	Use:   "sources",
-	Short: "List the configured knowledge scopes and their locations",
+	Short: "List the configured knowledge stores by tier and name, with their locations",
 	RunE:  runKnowledgeSources,
 }
 
 var knowledgeConventionsCmd = &cobra.Command{
 	Use:   "conventions",
-	Short: "Read every always-apply convention across all configured scopes",
+	Short: "Read every always-apply convention across the stores a request covers",
 	RunE:  runKnowledgeConventions,
 }
 
@@ -65,12 +68,47 @@ var knowledgeCategoriesCmd = &cobra.Command{
 	RunE:  runKnowledgeCategories,
 }
 
-var knowledgeAlwaysAppliedRepos []string
+// knowledgeTier and knowledgeFilter back the --tier and --filter options
+// shared by search, list, conventions and always-applied. They replace the
+// narrower --repo option, which could only name repo-tier stores and silently
+// exempted every other store from the narrowing it expressed.
+var (
+	knowledgeTier   string
+	knowledgeFilter []string
+)
 
 var knowledgeAlwaysAppliedCmd = &cobra.Command{
 	Use:   "always-applied",
-	Short: "Read every always-applied entry (conventions and glossary) across all configured scopes",
+	Short: "Read every always-applied entry (conventions and glossary) across the stores a request covers",
 	RunE:  runKnowledgeAlwaysApplied,
+}
+
+// knowledgeAddressProps are the two fields every knowledge result carries to
+// say where it came from. Declared once so no schema can describe the address
+// differently from its neighbours.
+var knowledgeAddressProps = map[string]*schemaProp{
+	"tier": {Type: "string", Enum: []string{string(knowledge.TierProject), string(knowledge.TierRepo)}},
+	"name": {Type: "string"},
+}
+
+// knowledgeItemSchema builds an array-of-objects property whose items carry the
+// address plus the given extra fields.
+func knowledgeItemSchema(extra map[string]*schemaProp) *schemaProp {
+	props := make(map[string]*schemaProp, len(knowledgeAddressProps)+len(extra))
+	for k, v := range knowledgeAddressProps {
+		props[k] = v
+	}
+	for k, v := range extra {
+		props[k] = v
+	}
+	return &schemaProp{Type: "array", Items: &schemaProp{Type: "object", Properties: props}}
+}
+
+// knowledgeNarrowingFlags describes the options the fan-out commands take on
+// the command line rather than in --data.
+var knowledgeNarrowingFlags = map[string]*schemaProp{
+	"tier":   {Type: "string", Enum: []string{string(knowledge.TierProject), string(knowledge.TierRepo), string(knowledge.TierAll)}},
+	"filter": {Type: "array", Items: &schemaProp{Type: "string"}},
 }
 
 var knowledgeSearchOutputSchema = &schemaObj{
@@ -81,7 +119,8 @@ var knowledgeSearchOutputSchema = &schemaObj{
 			Items: &schemaProp{
 				Type: "object",
 				Properties: map[string]*schemaProp{
-					"scope":    {Type: "string"},
+					"tier":     {Type: "string"},
+					"name":     {Type: "string"},
 					"path":     {Type: "string"},
 					"title":    {Type: "string"},
 					"score":    {Type: "number"},
@@ -97,33 +136,47 @@ var knowledgeSearchOutputSchema = &schemaObj{
 var knowledgeReadOutputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
-		"scope":   {Type: "string"},
+		"tier":    {Type: "string"},
+		"name":    {Type: "string"},
 		"path":    {Type: "string"},
 		"content": {Type: "string"},
 	},
 }
 
 var knowledgeListOutputSchema = &schemaObj{
-	Type:       "object",
-	Properties: map[string]*schemaProp{"entries": {Type: "array"}},
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"entries": knowledgeItemSchema(map[string]*schemaProp{"path": {Type: "string"}}),
+	},
 }
 
 var knowledgeWriteOutputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
-		"scope": {Type: "string"},
-		"path":  {Type: "string"},
+		"tier": {Type: "string"},
+		"name": {Type: "string"},
+		"path": {Type: "string"},
 	},
 }
 
 var knowledgeSourcesOutputSchema = &schemaObj{
-	Type:       "object",
-	Properties: map[string]*schemaProp{"sources": {Type: "array"}},
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"sources": knowledgeItemSchema(map[string]*schemaProp{
+			"provider": {Type: "string"},
+			"location": {Type: "string"},
+		}),
+	},
 }
 
 var knowledgeConventionsOutputSchema = &schemaObj{
-	Type:       "object",
-	Properties: map[string]*schemaProp{"conventions": {Type: "array"}},
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"conventions": knowledgeItemSchema(map[string]*schemaProp{
+			"path":    {Type: "string"},
+			"content": {Type: "string"},
+		}),
+	},
 }
 
 var knowledgeCategoriesOutputSchema = &schemaObj{
@@ -132,17 +185,24 @@ var knowledgeCategoriesOutputSchema = &schemaObj{
 }
 
 var knowledgeAlwaysAppliedOutputSchema = &schemaObj{
-	Type:       "object",
-	Properties: map[string]*schemaProp{"entries": {Type: "array"}},
-}
-
-var knowledgeScopePathInputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
-		"scope": {Type: "string"},
-		"path":  {Type: "string"},
+		"entries": knowledgeItemSchema(map[string]*schemaProp{
+			"path":     {Type: "string"},
+			"content":  {Type: "string"},
+			"category": {Type: "string"},
+		}),
 	},
-	Required: []string{"scope", "path"},
+}
+
+var knowledgeAddressInputSchema = &schemaObj{
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"tier": {Type: "string", Enum: []string{string(knowledge.TierProject), string(knowledge.TierRepo)}},
+		"name": {Type: "string"},
+		"path": {Type: "string"},
+	},
+	Required: []string{"tier", "name", "path"},
 }
 
 // newKnowledgeSet builds a knowledge.Set from the aggregated knowledge
@@ -169,14 +229,18 @@ func newKnowledgeSet() (*knowledge.Set, error) {
 	return knowledge.NewSet(cfg, cwd)
 }
 
-// aggregateKnowledgeSources builds the effective knowledge source list for
-// the project: each registered repo's declared sources (its repo.yaml, read
-// from the repo's on-disk root; registry order, so repo-declared sources
-// take precedence and the colocated repo comes first), then project-owned
-// sources declared in the project config. Repos not materialized locally
-// are skipped — their knowledge joins the set once the repo is on disk.
-// Relative source locations in a repo's config resolve against that repo's
-// root, and each source is stamped with its repo's name for attribution.
+// aggregateKnowledgeSources builds the effective knowledge store list for the
+// project: each registered repo's declared sources (its repo.yaml, read from the
+// repo's on-disk root; registry order, so the colocated repo comes first), then
+// the project's own shared sources declared in the project config. Repos not
+// materialized locally are skipped — their knowledge joins the set once the repo
+// is on disk. Relative source locations in a repo's config resolve against that
+// repo's root.
+//
+// This is where a store's identity is established: a repo's contribution is the
+// repo tier under that repo's registry name, and the project's contributions are
+// the project tier under their own declared names. Names are checked unique
+// within a tier here, which is the one place both tiers are visible at once.
 func aggregateKnowledgeSources(cfg config.Config, projectRoot string) ([]config.SourceConfig, error) {
 	set, err := repo.New(cfg, projectRoot, repoGit)
 	if err != nil {
@@ -188,6 +252,15 @@ func aggregateKnowledgeSources(cfg config.Config, projectRoot string) ([]config.
 		root, _ := set.LocalRoot(e.Name)
 		rc, err := set.Footprint(e.Name)
 		if err != nil {
+			// A footprint that is unreadable or absent is repairable by
+			// re-adding the repo, but a footprint the loader deliberately
+			// refused already carries its own remediation naming the file and
+			// the block required. Offering "repair the footprint" over the top
+			// of that would send the caller somewhere that cannot fix it.
+			var refusal *output.ErrorResponse
+			if errors.As(err, &refusal) {
+				return nil, refusal
+			}
 			var fpErr *repo.FootprintError
 			if errors.As(err, &fpErr) {
 				return nil, output.NewError(
@@ -199,27 +272,63 @@ func aggregateKnowledgeSources(cfg config.Config, projectRoot string) ([]config.
 			return nil, err
 		}
 
-		for _, src := range rc.WithDefaults(root).Knowledge.Sources {
-			src.Repo = e.Name
-			if src.Provider == config.ProviderFile && !filepath.IsAbs(src.Config.Location) {
-				src.Config.Location = filepath.Join(root, src.Config.Location)
-			}
-			sources = append(sources, src)
+		kc := rc.WithDefaults(root).Knowledge
+		src := config.SourceConfig{
+			Tier:     string(knowledge.TierRepo),
+			Name:     e.Name,
+			Provider: kc.Provider,
+			Config:   kc.Config,
 		}
+		if src.Provider == config.ProviderFile && !filepath.IsAbs(src.Config.Location) {
+			src.Config.Location = filepath.Join(root, src.Config.Location)
+		}
+		sources = append(sources, src)
 	}
 
-	return append(sources, cfg.Knowledge.Sources...), nil
+	for _, src := range cfg.Knowledge.Sources {
+		src.Tier = string(knowledge.TierProject)
+		sources = append(sources, src)
+	}
+
+	if err := requireUniqueStoreNames(sources); err != nil {
+		return nil, err
+	}
+	return sources, nil
+}
+
+// requireUniqueStoreNames rejects two stores sharing a name within one tier,
+// which would make an address ambiguous. The same name in each tier is fine:
+// a tier plus a name is the identity, not the name alone. Repo names are
+// already unique through the registry, so in practice this catches duplicate
+// shared-store names and stands as a second line of defence for the rest.
+func requireUniqueStoreNames(sources []config.SourceConfig) error {
+	seen := make(map[string]bool, len(sources))
+	for _, src := range sources {
+		key := src.Tier + ":" + src.Name
+		if seen[key] {
+			return output.NewError(
+				"knowledge_store_name_duplicate",
+				fmt.Sprintf("two knowledge stores are named %q in the %q tier", src.Name, src.Tier),
+			).WithNextAction(fmt.Sprintf("give each store in the %q tier a unique name, then re-run", src.Tier))
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 func runKnowledgeSearch(cmd *cobra.Command, args []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeSearchOutputSchema}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeSearchOutputSchema, Flags: knowledgeNarrowingFlags}, "")
+	}
+	if len(args) == 0 {
+		return output.NewError("knowledge_query_required", "search requires a query").
+			WithNextAction(`reissue with the query as a positional argument, e.g. knowledge search "database timeout" --tier repo`)
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
 		return err
 	}
-	hits, err := set.Search(args[0])
+	hits, err := set.Search(args[0], knowledgeSelector())
 	if err != nil {
 		return err
 	}
@@ -232,9 +341,9 @@ func runKnowledgeSearch(cmd *cobra.Command, args []string) error {
 
 func runKnowledgeRead(cmd *cobra.Command, _ []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: knowledgeScopePathInputSchema, Output: knowledgeReadOutputSchema}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: knowledgeAddressInputSchema, Output: knowledgeReadOutputSchema}, "")
 	}
-	input, err := knowledgeScopePathData(cmd)
+	input, err := knowledgeAddressData(cmd)
 	if err != nil {
 		return err
 	}
@@ -242,13 +351,14 @@ func runKnowledgeRead(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	content, err := set.Read(input.Scope, input.Path)
+	content, err := set.Read(input.Address(), input.Path)
 	if err != nil {
 		return err
 	}
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(map[string]any{
-		"scope":   input.Scope,
+		"tier":    input.Tier,
+		"name":    input.Name,
 		"path":    input.Path,
 		"content": string(content),
 	})
@@ -256,13 +366,13 @@ func runKnowledgeRead(cmd *cobra.Command, _ []string) error {
 
 func runKnowledgeList(cmd *cobra.Command, _ []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeListOutputSchema}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeListOutputSchema, Flags: knowledgeNarrowingFlags}, "")
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
 		return err
 	}
-	entries, err := set.List()
+	entries, err := set.List(knowledgeSelector())
 	if err != nil {
 		return err
 	}
@@ -275,13 +385,9 @@ func runKnowledgeList(cmd *cobra.Command, _ []string) error {
 
 func runKnowledgeWrite(cmd *cobra.Command, _ []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: knowledgeScopePathInputSchema, Output: knowledgeWriteOutputSchema}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: knowledgeAddressInputSchema, Output: knowledgeWriteOutputSchema}, "")
 	}
-	input, err := knowledgeScopePathData(cmd)
-	if err != nil {
-		return err
-	}
-	content, err := readKnowledgeContent(cmd)
+	input, err := knowledgeAddressData(cmd)
 	if err != nil {
 		return err
 	}
@@ -289,11 +395,15 @@ func runKnowledgeWrite(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if err := set.Write(input.Scope, input.Path, content); err != nil {
+	content, err := readKnowledgeContent(cmd)
+	if err != nil {
+		return err
+	}
+	if err := set.Write(input.Address(), input.Path, content); err != nil {
 		return err
 	}
 	out := output.New(cmd.OutOrStdout(), globalFields)
-	return out.WriteResult(map[string]any{"scope": input.Scope, "path": input.Path})
+	return out.WriteResult(map[string]any{"tier": input.Tier, "name": input.Name, "path": input.Path})
 }
 
 func runKnowledgeSources(cmd *cobra.Command, _ []string) error {
@@ -310,13 +420,13 @@ func runKnowledgeSources(cmd *cobra.Command, _ []string) error {
 
 func runKnowledgeConventions(cmd *cobra.Command, _ []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeConventionsOutputSchema}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeConventionsOutputSchema, Flags: knowledgeNarrowingFlags}, "")
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
 		return err
 	}
-	conventions, err := set.Conventions()
+	conventions, err := set.Conventions(knowledgeSelector())
 	if err != nil {
 		return err
 	}
@@ -337,13 +447,13 @@ func runKnowledgeCategories(cmd *cobra.Command, _ []string) error {
 
 func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeAlwaysAppliedOutputSchema}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeAlwaysAppliedOutputSchema, Flags: knowledgeNarrowingFlags}, "")
 	}
 	set, err := newKnowledgeSet()
 	if err != nil {
 		return err
 	}
-	entries, err := set.AlwaysAppliedEntries(knowledgeAlwaysAppliedRepos...)
+	entries, err := set.AlwaysAppliedEntries(knowledgeSelector())
 	if err != nil {
 		return err
 	}
@@ -354,25 +464,47 @@ func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
 	return out.WriteResult(map[string]any{"entries": entries})
 }
 
-// knowledgeScopePathInput is the --data payload for the read and write commands.
-type knowledgeScopePathInput struct {
-	Scope string `json:"scope"`
-	Path  string `json:"path"`
+// knowledgeSelector builds the selector the fan-out commands narrow on from
+// the --tier and --filter options. The set validates it: an unrecognised tier
+// or a filter naming a store the tier does not reach is refused there, with the
+// names available, which is information only the set holds.
+func knowledgeSelector() knowledge.Selector {
+	return knowledge.Selector{Tier: knowledge.Tier(knowledgeTier), Filter: knowledgeFilter}
 }
 
-// knowledgeScopePathData parses and validates the --data flag shared by the
-// read and write subcommands.
-func knowledgeScopePathData(cmd *cobra.Command) (knowledgeScopePathInput, error) {
+// knowledgeAddressInput is the --data payload for the read and write commands:
+// the store's address (tier and name) plus the entry's path within it.
+type knowledgeAddressInput struct {
+	Tier knowledge.Tier `json:"tier"`
+	Name string         `json:"name"`
+	Path string         `json:"path"`
+}
+
+// Address returns the store address the input names.
+func (i knowledgeAddressInput) Address() knowledge.Address {
+	return knowledge.Address{Tier: i.Tier, Name: i.Name}
+}
+
+// knowledgeAddressData parses the --data flag shared by the read and write
+// subcommands and checks the entry path. The address itself is deliberately
+// left for the knowledge set to validate: only the set knows which stores are
+// configured, so refusing here would cost the caller the list of names it needs
+// to reissue the request. Read and Write both refuse before touching a store,
+// so nothing is recorded either way.
+func knowledgeAddressData(cmd *cobra.Command) (knowledgeAddressInput, error) {
 	dataStr, _ := cmd.Flags().GetString("data")
 	if dataStr == "" {
-		return knowledgeScopePathInput{}, fmt.Errorf(`--data is required (e.g. --data '{"scope":"project","path":"learnings/x.md"}')`)
+		return knowledgeAddressInput{}, fmt.Errorf(`--data is required (e.g. --data '{"tier":"repo","name":"docs","path":"learnings/x.md"}')`)
 	}
-	var input knowledgeScopePathInput
+	var input knowledgeAddressInput
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
-		return knowledgeScopePathInput{}, fmt.Errorf("parsing --data: %w", err)
+		return knowledgeAddressInput{}, fmt.Errorf("parsing --data: %w", err)
 	}
-	if input.Scope == "" || input.Path == "" {
-		return knowledgeScopePathInput{}, fmt.Errorf(`--data must include non-empty "scope" and "path"`)
+	if input.Path == "" {
+		return knowledgeAddressInput{}, output.NewError(
+			"knowledge_path_required",
+			`--data must include a non-empty "path"`,
+		).WithNextAction(`reissue with "path" set to the entry's location within the store, e.g. "conventions/naming.md"`)
 	}
 	return input, nil
 }
@@ -398,10 +530,13 @@ func readKnowledgeContent(cmd *cobra.Command) ([]byte, error) {
 func init() {
 	knowledgeCmd.PersistentFlags().Bool("schema", false, "Print the input/output schema for this subcommand and exit")
 
-	knowledgeReadCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
-	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"scope":"project","path":"learnings/x.md"}')`)
+	knowledgeReadCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"tier":"repo","name":"docs","path":"learnings/x.md"}')`)
+	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"tier":"repo","name":"docs","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().String("file", "", "Read entry content from the file at <path> (relative to cwd); stdin is used when omitted")
-	knowledgeAlwaysAppliedCmd.Flags().StringArrayVar(&knowledgeAlwaysAppliedRepos, "repo", nil, "Limit repo-declared sources to the named registered repo(s) (repeatable); project-owned sources always load; omit to load every source")
+	for _, c := range []*cobra.Command{knowledgeSearchCmd, knowledgeListCmd, knowledgeConventionsCmd, knowledgeAlwaysAppliedCmd} {
+		c.Flags().StringVar(&knowledgeTier, "tier", string(knowledge.TierAll), `Which knowledge to cover: "project", "repo", or "all"`)
+		c.Flags().StringArrayVar(&knowledgeFilter, "filter", nil, "Narrow to the named store(s) within the tier (repeatable); omit to cover every store the tier reaches")
+	}
 
 	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd, knowledgeCategoriesCmd, knowledgeAlwaysAppliedCmd)
 }

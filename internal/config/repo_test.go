@@ -1,10 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -14,11 +16,8 @@ import (
 func TestNewDefaultRepoConfig_SeedsRepoStoreAndChangelog(t *testing.T) {
 	cfg := NewDefaultRepoConfig()
 
-	require.Len(t, cfg.Knowledge.Sources, 1)
-	src := cfg.Knowledge.Sources[0]
-	require.Equal(t, "project", src.Scope)
-	require.Equal(t, "file", src.Provider)
-	require.Equal(t, "knowledge", src.Config.Location)
+	require.Equal(t, "file", cfg.Knowledge.Provider)
+	require.Equal(t, "knowledge", cfg.Knowledge.Config.Location)
 
 	require.Equal(t, "file", cfg.Changelog.Provider)
 	require.Equal(t, "changelog", cfg.Changelog.Config.Directory)
@@ -40,9 +39,8 @@ func TestRepoConfigFromYAMLFile_LoadsWithoutProjectConfig(t *testing.T) {
 	// The configured section is honoured...
 	require.Equal(t, "docs/changelog", cfg.Changelog.Config.Directory)
 	// ...and the absent knowledge section keeps the seeded default store.
-	require.Len(t, cfg.Knowledge.Sources, 1)
-	require.Equal(t, "project", cfg.Knowledge.Sources[0].Scope)
-	require.Equal(t, "knowledge", cfg.Knowledge.Sources[0].Config.Location)
+	require.Equal(t, "file", cfg.Knowledge.Provider)
+	require.Equal(t, "knowledge", cfg.Knowledge.Config.Location)
 }
 
 // Criterion 2: a minimal repo config with no descriptive fields set (they are
@@ -67,14 +65,9 @@ func TestRepoConfig_ToYAMLFileWritesOnlyKnowledgeAndChangelog(t *testing.T) {
 // Criterion 2: a repo config round-trips through repo.yaml unchanged.
 func TestRepoConfig_ToYAMLFileRoundTrip(t *testing.T) {
 	cfg := RepoConfig{
-		Knowledge: KnowledgeConfig{
-			Sources: []SourceConfig{
-				{
-					Scope:    "project",
-					Provider: ProviderFile,
-					Config:   FileKnowledgeConfig{Location: "kb/repo"},
-				},
-			},
+		Knowledge: RepoKnowledgeConfig{
+			Provider: ProviderFile,
+			Config:   FileKnowledgeConfig{Location: "kb/repo"},
 		},
 		Changelog: ChangelogConfig{
 			Provider: ProviderFile,
@@ -99,14 +92,9 @@ func TestRepoConfig_ToYAMLFileRoundTripWithDescriptiveFields(t *testing.T) {
 		Description: "Handles order processing and fulfillment.",
 		Role:        "backend-service",
 		Tags:        []string{"go", "orders", "team-checkout"},
-		Knowledge: KnowledgeConfig{
-			Sources: []SourceConfig{
-				{
-					Scope:    "project",
-					Provider: ProviderFile,
-					Config:   FileKnowledgeConfig{Location: "kb/repo"},
-				},
-			},
+		Knowledge: RepoKnowledgeConfig{
+			Provider: ProviderFile,
+			Config:   FileKnowledgeConfig{Location: "kb/repo"},
 		},
 		Changelog: ChangelogConfig{
 			Provider: ProviderFile,
@@ -123,15 +111,13 @@ func TestRepoConfig_ToYAMLFileRoundTripWithDescriptiveFields(t *testing.T) {
 	require.Equal(t, cfg, loaded)
 }
 
-// Criterion 3: a repo knowledge source missing its required location fails
+// Criterion 3: a repo knowledge store missing its required location fails
 // RepoConfig validation with an error naming the config key.
-func TestRepoConfigFromYAMLFile_MissingSourceLocationReturnsError(t *testing.T) {
+func TestRepoConfigFromYAMLFile_MissingKnowledgeLocationReturnsError(t *testing.T) {
 	body := "knowledge:\n" +
-		"  sources:\n" +
-		"    - scope: project\n" +
-		"      provider: file\n" +
-		"      config:\n" +
-		"        location: \"\"\n"
+		"  provider: file\n" +
+		"  config:\n" +
+		"    location: \"\"\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, RepoConfigFileName)
 	require.NoError(t, os.WriteFile(path, []byte(body), 0644))
@@ -154,61 +140,68 @@ func TestRepoConfigFromYAMLFile_UnknownChangelogProviderReturnsError(t *testing.
 	require.Contains(t, err.Error(), "changelog.provider")
 }
 
-// Criterion 3: the project and repo knowledge lists validate independently at
-// their own levels — an invalid repo source fails RepoConfig validation while
-// a valid project config is unaffected, and vice versa.
+// Criterion 3: the project's source list and the repo's single store validate
+// independently at their own levels — an invalid repo store fails RepoConfig
+// validation while a valid project config is unaffected, and vice versa.
 func TestRepoConfigValidation_IndependentOfProjectConfig(t *testing.T) {
-	invalidKnowledge := KnowledgeConfig{
+	invalidRepoKnowledge := RepoKnowledgeConfig{
+		Provider: ProviderFile,
+		Config:   FileKnowledgeConfig{Location: ""},
+	}
+	validRepoKnowledge := RepoKnowledgeConfig{
+		Provider: ProviderFile,
+		Config:   FileKnowledgeConfig{Location: "/shared/team/knowledge"},
+	}
+	invalidProjectKnowledge := KnowledgeConfig{
 		Sources: []SourceConfig{
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: ""}},
+			{Name: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: ""}},
 		},
 	}
-	validKnowledge := KnowledgeConfig{
+	validProjectKnowledge := KnowledgeConfig{
 		Sources: []SourceConfig{
-			{Scope: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/shared/team/knowledge"}},
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/shared/team/knowledge"}},
 		},
 	}
 
-	// Invalid repo sources fail at the repo level; a valid project config is
+	// An invalid repo store fails at the repo level; a valid project config is
 	// unaffected.
 	repoCfg := NewDefaultRepoConfig()
-	repoCfg.Knowledge = invalidKnowledge
+	repoCfg.Knowledge = invalidRepoKnowledge
 	require.Error(t, repoCfg.Validate())
 
 	projectCfg := NewDefault()
 	projectCfg.Name = "testproj"
 	projectCfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
-	projectCfg.Knowledge = validKnowledge
+	projectCfg.Knowledge = validProjectKnowledge
 	require.NoError(t, projectCfg.Validate())
 
 	// And vice versa: invalid project sources fail at the project level while
 	// a valid repo config is unaffected.
-	projectCfg.Knowledge = invalidKnowledge
+	projectCfg.Knowledge = invalidProjectKnowledge
 	require.Error(t, projectCfg.Validate())
 
-	repoCfg.Knowledge = validKnowledge
+	repoCfg.Knowledge = validRepoKnowledge
 	require.NoError(t, repoCfg.Validate())
 }
 
-// Criterion 2: WithDefaults synthesises the repo's own store rooted at
-// repoRoot when no sources are configured.
+// Phase 2.1 criterion 2: a repo that declares no knowledge store at all still
+// resolves to its default store in the expected place — WithDefaults
+// synthesises the single file-provider block rooted at repoRoot.
 func TestRepoConfig_WithDefaultsSynthesisesRepoStore(t *testing.T) {
 	cfg := RepoConfig{}.WithDefaults("/some/repo")
 
-	require.Len(t, cfg.Knowledge.Sources, 1)
-	src := cfg.Knowledge.Sources[0]
-	require.Equal(t, DefaultKnowledgeScope, src.Scope)
-	require.Equal(t, ProviderFile, src.Provider)
-	require.Equal(t, filepath.Join("/some/repo", DefaultRepoKnowledgeLocation), src.Config.Location)
+	require.Equal(t, RepoKnowledgeConfig{
+		Provider: ProviderFile,
+		Config:   FileKnowledgeConfig{Location: filepath.Join("/some/repo", "knowledge")},
+	}, cfg.Knowledge)
 }
 
-// Criterion 2: WithDefaults leaves already-configured repo sources unchanged.
+// Criterion 2: WithDefaults leaves an already-configured repo store unchanged.
 func TestRepoConfig_WithDefaultsKeepsConfiguredSources(t *testing.T) {
 	configured := RepoConfig{
-		Knowledge: KnowledgeConfig{
-			Sources: []SourceConfig{
-				{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/elsewhere/kb"}},
-			},
+		Knowledge: RepoKnowledgeConfig{
+			Provider: ProviderFile,
+			Config:   FileKnowledgeConfig{Location: "/elsewhere/kb"},
 		},
 		Changelog: NewDefaultRepoConfig().Changelog,
 	}
@@ -223,19 +216,16 @@ func TestRepoConfigFromYAMLFile_ExpandsEnvVars(t *testing.T) {
 	t.Setenv("TEST_REPO_KB", "env/knowledge")
 
 	body := "knowledge:\n" +
-		"  sources:\n" +
-		"    - scope: project\n" +
-		"      provider: file\n" +
-		"      config:\n" +
-		"        location: \"${TEST_REPO_KB}\"\n"
+		"  provider: file\n" +
+		"  config:\n" +
+		"    location: \"${TEST_REPO_KB}\"\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, RepoConfigFileName)
 	require.NoError(t, os.WriteFile(path, []byte(body), 0644))
 
 	cfg, err := RepoConfigFromYAMLFile(path)
 	require.NoError(t, err)
-	require.Len(t, cfg.Knowledge.Sources, 1)
-	require.Equal(t, "env/knowledge", cfg.Knowledge.Sources[0].Config.Location)
+	require.Equal(t, "env/knowledge", cfg.Knowledge.Config.Location)
 }
 
 // Phase 1.1 criterion 1: a repo.yaml with no source key loads exactly as
@@ -428,14 +418,9 @@ func TestRepoConfig_ToYAMLFileRoundTripWithSource(t *testing.T) {
 	cfg := RepoConfig{
 		Description: "Handles order processing and fulfillment.",
 		Source:      GitSource("git@github.com:org/api.git"),
-		Knowledge: KnowledgeConfig{
-			Sources: []SourceConfig{
-				{
-					Scope:    "project",
-					Provider: ProviderFile,
-					Config:   FileKnowledgeConfig{Location: "kb/repo"},
-				},
-			},
+		Knowledge: RepoKnowledgeConfig{
+			Provider: ProviderFile,
+			Config:   FileKnowledgeConfig{Location: "kb/repo"},
 		},
 		Changelog: ChangelogConfig{
 			Provider: ProviderFile,
@@ -451,4 +436,138 @@ func TestRepoConfig_ToYAMLFileRoundTripWithSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cfg, loaded)
 	require.Equal(t, GitSource("git@github.com:org/api.git"), loaded.Source)
+}
+
+// Phase 2.1 criterion 1: a repo declares its knowledge store as a single
+// provider block — no name, no label, no list — shaped exactly like the
+// changelog block beside it. The expected file is written out by hand so a
+// stray `sources:` list, a scope key, or a change of indentation fails here.
+func TestRepoConfig_KnowledgeIsASingleProviderBlock(t *testing.T) {
+	cfg := NewDefaultRepoConfig()
+	cfg.Source = DefaultRepoSource
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, RepoConfigFileName)
+	require.NoError(t, cfg.ToYAMLFile(path))
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "source:\n"+
+		"    provider: file\n"+
+		"    config:\n"+
+		"        location: ..\n"+
+		"knowledge:\n"+
+		"    provider: file\n"+
+		"    config:\n"+
+		"        location: knowledge\n"+
+		"changelog:\n"+
+		"    provider: file\n"+
+		"    config:\n"+
+		"        directory: changelog\n", string(raw))
+
+	loaded, err := RepoConfigFromYAMLFile(path)
+	require.NoError(t, err)
+	require.Equal(t, cfg, loaded)
+}
+
+// Phase 2.3 criteria 1, 2, 3, 4 & 5: a repo.yaml that still declares its
+// knowledge in the superseded form is refused on load. Both shapes are covered:
+// a `sources` list — whether it carries more than one store or only one — and a
+// single block that labels itself with the removed `scope` key. Neither shape
+// has a field to land in on RepoConfig, so without the guard the file would
+// parse cleanly and silently read the seeded default store instead.
+//
+// Each case asserts the refusal is a config_invalid *output.ErrorResponse
+// naming the file and the key found, with a next action showing the required
+// single provider block; that a second load fails identically and leaves the
+// file byte-for-byte unchanged; and that the corrected form then loads.
+func TestRepoConfigFromYAMLFile_LegacyKnowledgeBlockIsRejected(t *testing.T) {
+	for name, tc := range map[string]struct {
+		yaml  string
+		found string
+	}{
+		// Criterion 4: a repo declaring more than one knowledge store.
+		"two sources": {
+			yaml: "knowledge:\n" +
+				"  sources:\n" +
+				"    - name: api\n" +
+				"      provider: file\n" +
+				"      config:\n" +
+				"        location: knowledge\n" +
+				"    - name: extra\n" +
+				"      provider: file\n" +
+				"      config:\n" +
+				"        location: other-knowledge\n",
+			found: "'sources'",
+		},
+		// Criterion 4: a single store, but still wrapped in the list form.
+		"one source in a list": {
+			yaml: "knowledge:\n" +
+				"  sources:\n" +
+				"    - name: api\n" +
+				"      provider: file\n" +
+				"      config:\n" +
+				"        location: knowledge\n",
+			found: "'sources'",
+		},
+		// Criterion 4: a single provider block that labels the store it
+		// declares, which a repo has no business doing.
+		"scope on the single block": {
+			yaml: "knowledge:\n" +
+				"  scope: repo\n" +
+				"  provider: file\n" +
+				"  config:\n" +
+				"    location: knowledge\n",
+			found: "'scope'",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, RepoConfigFileName)
+			require.NoError(t, os.WriteFile(path, []byte(tc.yaml), 0644))
+
+			// Criterion 3: the file's bytes as they stand before any load.
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			var first, second *output.ErrorResponse
+			for _, envelope := range []**output.ErrorResponse{&first, &second} {
+				_, err := RepoConfigFromYAMLFile(path)
+				require.Error(t, err)
+				require.True(t, errors.As(err, envelope), "expected an *output.ErrorResponse, got %T", err)
+			}
+
+			// Criterion 2: the message names the file and the key found.
+			require.Equal(t, "config_invalid", first.Code)
+			require.Contains(t, first.Message, path)
+			require.Contains(t, first.Message, tc.found)
+			require.Contains(t, first.Message, "exactly one knowledge store")
+			require.Equal(t, path, first.Resource)
+			// ...and the next action prints the single provider block now
+			// required, addressed by the registry name rather than its own.
+			require.Contains(t, first.NextAction, "knowledge:")
+			require.Contains(t, first.NextAction, "provider: file")
+			require.Contains(t, first.NextAction, "location: knowledge")
+			require.Contains(t, first.NextAction, "takes no name of its own")
+
+			// Criterion 3: the same failure, and the same bytes on disk.
+			require.Equal(t, first, second)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "a refused repo config must not be rewritten on disk")
+
+			// Criterion 5: the corrected single-block form loads cleanly, and
+			// the store it declares is the one that is read.
+			const corrected = "knowledge:\n" +
+				"  provider: file\n" +
+				"  config:\n" +
+				"    location: other-knowledge\n"
+			require.NoError(t, os.WriteFile(path, []byte(corrected), 0644))
+
+			cfg, err := RepoConfigFromYAMLFile(path)
+			require.NoError(t, err)
+			require.Equal(t, "file", cfg.Knowledge.Provider)
+			require.Equal(t, "other-knowledge", cfg.Knowledge.Config.Location)
+		})
+	}
 }

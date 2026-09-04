@@ -87,9 +87,9 @@ func TestRoot_ReturnsAbsolutePath(t *testing.T) {
 	require.Equal(t, filepath.Clean(dir), st.Root())
 }
 
-func TestNewFileStore_RecordsScope(t *testing.T) {
-	st := NewFileStore(t.TempDir(), "project")
-	require.Equal(t, "project", st.Scope())
+func TestNewFileStore_RecordsLabel(t *testing.T) {
+	st := NewFileStore(t.TempDir(), "project:project")
+	require.Equal(t, "project:project", st.Label())
 }
 
 var _ Store = (*FileStore)(nil)

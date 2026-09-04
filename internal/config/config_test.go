@@ -142,12 +142,12 @@ func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 	cfg.Knowledge = KnowledgeConfig{
 		Sources: []SourceConfig{
 			{
-				Scope:    "project",
+				Name:     "project",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: ".spektacular/knowledge"},
 			},
 			{
-				Scope:    "team",
+				Name:     "team",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: "/shared/team/knowledge"},
 			},
@@ -194,35 +194,6 @@ repos:
 	// The project-level knowledge list holds only project-owned sources and is
 	// empty by default; the repo's own store lives in RepoConfig.
 	require.Empty(t, cfg.Knowledge.Sources)
-}
-
-// Criterion 2: an empty knowledge config synthesises exactly one default
-// project source via WithDefaults.
-func TestKnowledgeConfig_WithDefaultsSynthesisesProjectSource(t *testing.T) {
-	knowledge := KnowledgeConfig{}.WithDefaults("/some/root")
-
-	require.Len(t, knowledge.Sources, 1)
-	src := knowledge.Sources[0]
-	require.Equal(t, DefaultKnowledgeScope, src.Scope)
-	require.Equal(t, ProviderFile, src.Provider)
-	require.Equal(t, filepath.Join("/some/root", DefaultKnowledgeLocation), src.Config.Location)
-}
-
-// Criterion 2: WithDefaults leaves an already-configured knowledge config
-// unchanged.
-func TestKnowledgeConfig_WithDefaultsKeepsConfiguredSources(t *testing.T) {
-	configured := KnowledgeConfig{
-		Sources: []SourceConfig{
-			{
-				Scope:    "team",
-				Provider: ProviderFile,
-				Config:   FileKnowledgeConfig{Location: "/shared/knowledge"},
-			},
-		},
-	}
-
-	result := configured.WithDefaults("/some/root")
-	require.Equal(t, configured, result)
 }
 
 // Criterion 3: an unknown provider is rejected with a clear validation error.
@@ -310,7 +281,7 @@ repos:
 func TestKnowledgeConfig_ValidateRejectsMissingLocation(t *testing.T) {
 	knowledge := KnowledgeConfig{
 		Sources: []SourceConfig{
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: ""}},
+			{Name: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: ""}},
 		},
 	}
 
@@ -319,18 +290,44 @@ func TestKnowledgeConfig_ValidateRejectsMissingLocation(t *testing.T) {
 	require.Contains(t, err.Error(), "config.location")
 }
 
-// Criterion 3: a duplicate knowledge scope is rejected with a clear error.
-func TestKnowledgeConfig_ValidateRejectsDuplicateScope(t *testing.T) {
+// Phase 2.2 criterion 3: two shared stores declared under the same name are
+// rejected with a structured config_invalid refusal that names the duplicate
+// and tells the author to rename one of them.
+func TestKnowledgeConfig_ValidateRejectsDuplicateName(t *testing.T) {
 	knowledge := KnowledgeConfig{
 		Sources: []SourceConfig{
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/a"}},
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/b"}},
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/a"}},
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/b"}},
 		},
 	}
 
 	err := knowledge.Validate()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "more than once")
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "config_invalid", er.Code)
+	require.Equal(t, `knowledge.sources declares the name "team" more than once`, er.Message)
+	require.NotEmpty(t, er.NextAction)
+	require.Contains(t, er.NextAction, "rename")
+}
+
+// Phase 2.2 criterion 3: a shared store declared without a name is rejected
+// the same way, naming the offending entry's position in the list.
+func TestKnowledgeConfig_ValidateRejectsMissingName(t *testing.T) {
+	knowledge := KnowledgeConfig{
+		Sources: []SourceConfig{
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/a"}},
+			{Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/b"}},
+		},
+	}
+
+	err := knowledge.Validate()
+	require.Error(t, err)
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "config_invalid", er.Code)
+	require.Equal(t, "knowledge.sources[1] declares no name", er.Message)
+	require.NotEmpty(t, er.NextAction)
 }
 
 // Criterion 1: a project config file with a missing name fails validation
@@ -647,12 +644,12 @@ func TestToYAMLFile_ProjectOwnedKnowledgeSourcesRoundTrip(t *testing.T) {
 	cfg.Knowledge = KnowledgeConfig{
 		Sources: []SourceConfig{
 			{
-				Scope:    "team",
+				Name:     "team",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: "/shared/team/knowledge"},
 			},
 			{
-				Scope:    "global",
+				Name:     "global",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: "/shared/global/knowledge"},
 			},
@@ -682,4 +679,87 @@ func TestFromYAMLFile_NoReposReturnsError(t *testing.T) {
 	require.ErrorAs(t, err, &er)
 	require.Equal(t, "config_invalid", er.Code)
 	require.Contains(t, er.Message, "no repos are registered")
+}
+
+// Phase 2.3 criteria 1, 2, 3 & 5: a project config whose shared knowledge
+// stores are still identified by the removed 'scope' key is refused on load —
+// by ParseYAMLFile and therefore FromYAMLFile — with a config_invalid error
+// naming the file and the key that was found, and a next action showing the
+// replacement block. The refusal repeats identically on a second load, the
+// file is byte-for-byte untouched by the failure, and the corrected form loads.
+func TestParseYAMLFile_LegacyKnowledgeScopeKeyIsRejected(t *testing.T) {
+	const legacy = "name: testproj\n" +
+		"repos:\n" +
+		"  - name: api\n" +
+		"    location: ./repos/api\n" +
+		"knowledge:\n" +
+		"  sources:\n" +
+		"    - scope: team\n" +
+		"      provider: file\n" +
+		"      config:\n" +
+		"        location: ./team-knowledge\n"
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(legacy), 0644))
+
+	for name, load := range map[string]func(string) (Config, error){
+		"ParseYAMLFile": ParseYAMLFile,
+		"FromYAMLFile":  FromYAMLFile,
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Criterion 3: the file's bytes as they stand before any load.
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			// Load twice: the guard must be a pure refusal, not a one-shot
+			// that repairs the file behind the caller's back.
+			var first, second *output.ErrorResponse
+			for _, envelope := range []**output.ErrorResponse{&first, &second} {
+				_, err := load(path)
+				require.Error(t, err)
+				require.True(t, errors.As(err, envelope), "expected an *output.ErrorResponse, got %T", err)
+			}
+
+			// Criterion 2: the message names the file, the offending source,
+			// and the key that was found.
+			require.Equal(t, "config_invalid", first.Code)
+			require.Contains(t, first.Message, path)
+			require.Contains(t, first.Message, "knowledge.sources[0]")
+			require.Contains(t, first.Message, "'scope'")
+			require.Equal(t, path, first.Resource)
+			// ...and the next action shows the block that is now required.
+			require.Contains(t, first.NextAction, "knowledge:")
+			require.Contains(t, first.NextAction, "sources:")
+			require.Contains(t, first.NextAction, "- name: team")
+
+			// Criterion 3: the same failure, and the same bytes on disk.
+			require.Equal(t, first, second)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "a refused config must not be rewritten on disk")
+		})
+	}
+
+	// Criterion 5: once the file is edited into the required form, the same
+	// load succeeds and the store is addressed by the name it now carries.
+	const corrected = "name: testproj\n" +
+		"repos:\n" +
+		"  - name: api\n" +
+		"    location: ./repos/api\n" +
+		"knowledge:\n" +
+		"  sources:\n" +
+		"    - name: team\n" +
+		"      provider: file\n" +
+		"      config:\n" +
+		"        location: ./team-knowledge\n"
+	require.NoError(t, os.WriteFile(path, []byte(corrected), 0644))
+
+	cfg, err := FromYAMLFile(path)
+	require.NoError(t, err)
+	require.Equal(t, []SourceConfig{{
+		Name:     "team",
+		Provider: "file",
+		Config:   FileKnowledgeConfig{Location: "./team-knowledge"},
+	}}, cfg.Knowledge.Sources)
 }

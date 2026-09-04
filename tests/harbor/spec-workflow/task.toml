@@ -8,7 +8,13 @@ category = "agent-orchestration"
 tags = ["spektacular", "spec-workflow", "multi-step", "cli"]
 
 [agent]
-timeout_sec = 600.0
+# The spec workflow runs an adaptive interview plus nine drafting steps, each
+# committed through `spektacular spec file write`. At 600s it was finishing with
+# no margin: one run was killed mid-verification, the next completed every step
+# and wrote the spec but was killed before emitting its result event. Raised to
+# give real headroom, not to mask a hang — a run that needs appreciably more than
+# this is stuck and should fail.
+timeout_sec = 900.0
 
 [verifier]
 timeout_sec = 120.0

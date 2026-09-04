@@ -459,7 +459,12 @@ class TestCrossSectionAmendment:
         never mentioned when Requirements was originally drafted."""
         sections = parse_sections(load_spec())
         content = sections.get("requirements", "").lower()
-        assert "revoc" in content, (
+        # Match the word stem, not one inflection: the agent may write
+        # "revocation", "revoke", "revoked" or "revoking" and all satisfy the
+        # scenario equally. A needle of "revoc" alone silently fails a run whose
+        # requirement is titled "revoke refresh tokens", which is a correct
+        # outcome.
+        assert re.search(r"revo[ck]", content), (
             "Requirements does not mention token revocation — the "
             "cross-section amendment triggered by the scripted Constraints "
             "rejection did not land in the Requirements working file. "

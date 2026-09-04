@@ -86,13 +86,7 @@ EXPECTED_STEP_ORDER = [
 # templates/steps/plan/ changes its skill references, this map must be
 # updated in the same commit.
 EXPECTED_SKILLS_PER_STEP = {
-    "discovery": frozenset(
-        {
-            "discover-project-commands",
-            "discover-test-patterns",
-            "spawn-planning-agents",
-        }
-    ),
+    "discovery": frozenset({"spawn-planning-agents"}),
     "phases": frozenset({"spawn-implementation-agents"}),
     "assemble": frozenset(
         {

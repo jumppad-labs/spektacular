@@ -41,73 +41,12 @@ func fetchSkillInstructions(t *testing.T, name string) string {
 	return instructions
 }
 
-// Criterion 4: `skill manage-repos` returns the repo-management skill's
-// content — registration, inspection, and the never-fetch/pull rule.
-func TestSkillManageRepos_IsRetrievable(t *testing.T) {
-	skillProject(t)
-	instructions := fetchSkillInstructions(t, "manage-repos")
-
-	require.Contains(t, instructions, "repo add",
-		"manage-repos must document the `repo add` registration command")
-	require.Contains(t, instructions, "repo list",
-		"manage-repos must document the `repo list` inspection command")
-	require.Contains(t, instructions, "never fetches or pulls",
-		"manage-repos must state Spektacular never fetches or pulls on its own")
-}
-
-// Plan 000046 Phase 4.2 criterion 2: the skill documents the registry's
-// `location`, the repo-level `source` in both its file and git forms, the
-// colocated and separate layouts, and no longer mentions the removed
-// `address` key.
-func TestSkillManageRepos_DocumentsLocationSourceAndLayouts(t *testing.T) {
-	skillProject(t)
-	instructions := fetchSkillInstructions(t, "manage-repos")
-
-	require.Contains(t, instructions, `"location":"../repos/api"`,
-		"manage-repos must show a repo add payload carrying location")
-	require.Contains(t, instructions, `"source":"file://${HOME}/code/api"`,
-		"manage-repos must show a repo add payload with a file source")
-	require.Contains(t, instructions, `"source":"git@example.com:org/docs.git"`,
-		"manage-repos must show a repo add payload with a git source")
-	require.Contains(t, instructions, "**colocated**",
-		"manage-repos must explain the colocated layout")
-	require.Contains(t, instructions, "**separate**",
-		"manage-repos must explain the separate layout")
-	require.Contains(t, instructions, "`location` is required and points at the repo's code",
-		"manage-repos must say location points at the repo's code")
-	require.Contains(t, instructions, "writes a file source pointing at `..` there",
-		"manage-repos must say add scaffolds the footprint with a source back to the code")
-	require.Contains(t, instructions, "names its code as a provider block",
-		"manage-repos must describe source as a provider block")
-	require.Contains(t, instructions, "the resolved source of its code as `root`",
-		"manage-repos must say repo list reports the source as root")
-	// The removed key may be named only to say it is gone, never as a way
-	// to register or resolve a repo.
-	require.NotContains(t, instructions, `"address":`,
-		"manage-repos must not show an address key in any payload")
-	require.NotContains(t, instructions, "only an `address`",
-		"manage-repos must not describe address-only repos")
-	require.NotContains(t, instructions, "registered only by `address`",
-		"manage-repos must not describe registration by address")
-	require.NotContains(t, instructions, "—",
-		"manage-repos prose must not contain em dashes")
-}
-
-// Criterion 4: manage-repos is a library skill served raw — its content
-// carries no command placeholder in either form.
-func TestSkillManageRepos_ServedWithoutCommandPlaceholders(t *testing.T) {
-	skillProject(t)
-	instructions := fetchSkillInstructions(t, "manage-repos")
-
-	require.NotContains(t, instructions, "{{command}}",
-		"library skills are served unrendered and must not carry the {{command}} placeholder")
-	require.NotContains(t, instructions, "{{config.command}}",
-		"library skills are served unrendered and must not carry the {{config.command}} placeholder")
-}
-
-// Criterion 4: the skill listing includes manage-repos alongside the existing
-// skills.
-func TestSkillList_IncludesManageRepos(t *testing.T) {
+// The skill listing enumerates the library skills only. `spek-manage-repos` is
+// installed into the agent's own skills directory by `init <agent>` (see
+// internal/agent/skills.go's workflowSkills), so it is deliberately absent
+// here: an installed skill served raw as well would be two copies of the same
+// content, free to drift.
+func TestSkillList_EnumeratesLibrarySkillsOnly(t *testing.T) {
 	skillProject(t)
 	stdout, stderr, code := runRootCmd(t, "skill", "list")
 	require.Equal(t, 0, code)
@@ -117,23 +56,23 @@ func TestSkillList_IncludesManageRepos(t *testing.T) {
 		Skills []string `json:"skills"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &listing))
-	require.Contains(t, listing.Skills, "manage-repos",
-		"the listing must include the repo-management skill")
 	require.Contains(t, listing.Skills, "spawn-planning-agents",
 		"the listing must still include the existing planning skill")
 	require.Contains(t, listing.Skills, "spawn-implementation-agents",
 		"the listing must still include the existing implementation skill")
+	require.NotContains(t, listing.Skills, "spek-manage-repos",
+		"spek-manage-repos is installed by init, not served as a library skill")
 }
 
-// Criterion 4: the unknown-skill error's available-skills list names
-// manage-repos, so an agent probing with a wrong name is steered to it.
-func TestSkillUnknownName_ErrorListsManageRepos(t *testing.T) {
+// An agent probing the library with a wrong name is steered to the skills the
+// library actually serves.
+func TestSkillUnknownName_ErrorListsAvailableSkills(t *testing.T) {
 	skillProject(t)
 	stdout, stderr, code := runRootCmd(t, "skill", "does-not-exist")
 	require.Equal(t, 1, code)
 	require.Empty(t, stderr)
-	require.Contains(t, stdout, "manage-repos",
-		"the unknown-skill error must list manage-repos among the available skills")
+	require.Contains(t, stdout, "spawn-planning-agents",
+		"the unknown-skill error must list the available skills")
 }
 
 // Criterion 3: the spawn-implementation-agents skill directs carrying each

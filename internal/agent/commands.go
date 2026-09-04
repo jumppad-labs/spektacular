@@ -16,10 +16,11 @@ const wrapperTemplatePath = "commands/wrapper.md"
 // workflowDescriptions supplies the human-readable description rendered into
 // each command wrapper so the agent's slash-command menu shows meaningful text.
 var workflowDescriptions = map[string]string{
-	"spek-new":       "Create a new Specification for a feature.",
-	"spek-plan":      "Create a new Plan from an approved Specification.",
-	"spek-implement": "Execute an approved Plan to implement the feature.",
-	"spek-knowledge": "Search, contribute to, or update the project's knowledge base.",
+	"spek-new":          "Create a new Specification for a feature.",
+	"spek-plan":         "Create a new Plan from an approved Specification.",
+	"spek-implement":    "Execute an approved Plan to implement the feature.",
+	"spek-knowledge":    "Search, contribute to, or update the project's knowledge base.",
+	"spek-manage-repos": "Register a new repo in the current project, inspect the registry, and repair a repo's footprint.",
 }
 
 // installCommandWrappers renders the shared command wrapper once per workflow

@@ -399,6 +399,6 @@ func stringSlicesEqual(a, b []string) bool {
 
 func init() {
 	repoCmd.PersistentFlags().Bool("schema", false, "Print the input/output schema for this subcommand and exit")
-	repoAddCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"name":"docs","address":"git@example.com:org/docs.git"}')`)
+	repoAddCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"name":"docs","location":"/path/to/docs","description":"the documentation repo"}')`)
 	repoCmd.AddCommand(repoAddCmd, repoListCmd)
 }

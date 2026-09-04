@@ -97,6 +97,9 @@ func TestInstallWorkflowSkills_WritesFourSkillFiles(t *testing.T) {
 		"skills/workflows/spek-knowledge/SKILL.md": &fstest.MapFile{
 			Data: []byte("knowledge skill: run {{command}} knowledge search\n"),
 		},
+		"skills/workflows/spek-manage-repos/SKILL.md": &fstest.MapFile{
+			Data: []byte("repos skill: run {{command}} repo list\n"),
+		},
 	})
 
 	tmp := t.TempDir()
@@ -106,7 +109,7 @@ func TestInstallWorkflowSkills_WritesFourSkillFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	skillsRoot := filepath.Join(tmp, ".claude", "skills")
-	for _, name := range []string{"spek-new", "spek-plan", "spek-implement", "spek-knowledge"} {
+	for _, name := range []string{"spek-new", "spek-plan", "spek-implement", "spek-knowledge", "spek-manage-repos"} {
 		path := filepath.Join(skillsRoot, name, "SKILL.md")
 		data, err := os.ReadFile(path)
 		require.NoError(t, err, "expected file %s to exist", path)
@@ -115,7 +118,7 @@ func TestInstallWorkflowSkills_WritesFourSkillFiles(t *testing.T) {
 		require.NotContains(t, content, "{{command}}")
 	}
 
-	// Ensure exactly four SKILL.md files were written under skillsRoot.
+	// Ensure exactly five SKILL.md files were written under skillsRoot.
 	var skillFiles []string
 	err = filepath.WalkDir(skillsRoot, func(p string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -127,7 +130,7 @@ func TestInstallWorkflowSkills_WritesFourSkillFiles(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	require.Len(t, skillFiles, 4, "expected exactly four SKILL.md files, got %v", skillFiles)
+	require.Len(t, skillFiles, 5, "expected exactly five SKILL.md files, got %v", skillFiles)
 }
 
 func TestInstallCommandWrappers_UsesFilenameFunc(t *testing.T) {
@@ -149,10 +152,11 @@ func TestInstallCommandWrappers_UsesFilenameFunc(t *testing.T) {
 
 	cmdRoot := filepath.Join(tmp, ".claude", "commands", "spek")
 	expected := map[string]string{
-		"new.md":       "spek-new",
-		"plan.md":      "spek-plan",
-		"implement.md": "spek-implement",
-		"knowledge.md": "spek-knowledge",
+		"new.md":          "spek-new",
+		"plan.md":         "spek-plan",
+		"implement.md":    "spek-implement",
+		"knowledge.md":    "spek-knowledge",
+		"manage-repos.md": "spek-manage-repos",
 	}
 	for base, skillName := range expected {
 		path := filepath.Join(cmdRoot, base)
@@ -174,7 +178,7 @@ func TestInstallCommandWrappers_UsesFilenameFunc(t *testing.T) {
 			files = append(files, e.Name())
 		}
 	}
-	require.Len(t, files, 4, "expected exactly four wrapper files, got %v", files)
+	require.Len(t, files, 5, "expected exactly five wrapper files, got %v", files)
 }
 
 // validateSkillFrontmatter reads the SKILL.md at path, parses its YAML

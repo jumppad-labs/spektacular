@@ -22,12 +22,13 @@ func TestClaudeAgent_Install(t *testing.T) {
 	err := claudeAgent{}.Install(tmp, cfg, io.Discard)
 	require.NoError(t, err)
 
-	// Exactly three SKILL.md files under .claude/skills/spek-{new,plan,implement}/.
+	// Exactly five SKILL.md files under .claude/skills/spek-{new,plan,implement}/.
 	skillAssertions := map[string]string{
-		"spek-new":       "spektacular spec new",
-		"spek-plan":      "spektacular plan new",
-		"spek-implement": "spektacular implement new",
-		"spek-knowledge": "knowledge",
+		"spek-new":          "spektacular spec new",
+		"spek-plan":         "spektacular plan new",
+		"spek-implement":    "spektacular implement new",
+		"spek-knowledge":    "knowledge",
+		"spek-manage-repos": "repo add",
 	}
 	for skill, expected := range skillAssertions {
 		skillPath := filepath.Join(tmp, ".claude", "skills", skill, "SKILL.md")

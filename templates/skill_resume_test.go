@@ -7,12 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// workflowSkills are the three driving-agent playbooks whose "How to start"
+// workflowSkills are the driving-agent playbooks whose "How to start"
 // sections must react to a resume report rather than inspecting state.json.
+// The guided add joined them once it became a CLI-owned workflow of its own.
 var workflowSkills = []string{
 	"skills/workflows/spek-new/SKILL.md",
 	"skills/workflows/spek-plan/SKILL.md",
 	"skills/workflows/spek-implement/SKILL.md",
+	"skills/workflows/spek-manage-repos/SKILL.md",
 }
 
 // TestWorkflowSkillsAreResumeAware verifies the acceptance criteria for Phase
@@ -40,13 +42,19 @@ func TestWorkflowSkillsAreResumeAware(t *testing.T) {
 		require.Truef(t, strings.Contains(body, "resume") && strings.Contains(body, "start a new"),
 			"%s must prompt the user to resume vs start a new workflow", skill)
 
-		// The spec/plan playbooks describe the per-section working files under
-		// .spektacular/work/; the implement playbook (no assembled document) must
-		// not, keeping the spec/plan-only scope honest.
-		if strings.HasSuffix(skill, "spek-implement/SKILL.md") {
+		// Only the spec and plan workflows gather content into per-section
+		// working files, so only their playbooks describe them. The implement
+		// playbook has no assembled document, and a guided add carries every
+		// answer inside the workflow itself, so neither may reference that
+		// directory. Asserting the absence keeps the spec/plan-only scope
+		// honest rather than letting the phrase drift into playbooks it does
+		// not apply to.
+		switch {
+		case strings.HasSuffix(skill, "spek-implement/SKILL.md"),
+			strings.HasSuffix(skill, "spek-manage-repos/SKILL.md"):
 			require.NotContainsf(t, body, ".spektacular/work/",
 				"%s must not reference the spec/plan per-section working-file directory", skill)
-		} else {
+		default:
 			require.Containsf(t, body, ".spektacular/work/",
 				"%s must describe the per-section working files under .spektacular/work/", skill)
 		}

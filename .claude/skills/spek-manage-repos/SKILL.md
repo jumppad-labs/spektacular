@@ -1,6 +1,6 @@
 ---
 name: spek-manage-repos
-description: Register a new repo in the current Spektacular project, inspect the registry, and repair a repo's footprint.
+description: Add a repo to the current Spektacular project through a guided conversation, inspect the registry, and repair a repo's footprint.
 ---
 
 > **Version check first.** Before running any other command, run `go run . version check`.
@@ -8,9 +8,27 @@ description: Register a new repo in the current Spektacular project, inspect the
 > - On `"mismatch"` or `"missing"`, the installed Spektacular files are out of date: relay the response's `action` message to the user, ask them to re-run `go run . init <agent>`, and wait for their decision before continuing.
 > - Never modify or re-install any installed files yourself. Refreshing the installation is always an explicit, user-initiated re-run of init.
 
+> **STOP. Read this before running any command below.**
+> A single successful CLI call, including the very first `repo new`, is **NOT** task completion. It is not a milestone to report back to the user. It is one step out of many in a workflow that you must keep driving, turn after turn, without stopping, until the CLI itself tells you the workflow is *finished*. If you find yourself about to say "successfully completed" or summarize results after calling `repo new` or `repo goto` even once, you are wrong. Go back and read the `instruction` field you just received, do what it says, and call `goto` again.
+
 # What this skill does
 
-This skill drives the `go run . repo` surface: registering a repo in the current project, inspecting what is already registered, and repairing a repo whose footprint is missing or broken. It is a static playbook, not an interactive CLI state machine, so there is no session to resume. Recognise what the user is asking for, pick the matching section below, and run the commands directly.
+This skill covers the `go run . repo` surface: adding a repo to the current project, inspecting what is already registered, and repairing a repo whose footprint is missing or broken.
+
+Adding a repo is a **multi-step interactive workflow** owned by the CLI, not a playbook you improvise from. The CLI is the state machine and you are the executor. On each turn it returns JSON containing an `instruction` field describing exactly one step. You must:
+
+1. Read the `instruction` carefully.
+2. Perform the step. Usually that means asking the user exactly one thing, or recording something without asking.
+3. When the step is complete, run the `goto` command named at the bottom of the instruction, carrying the answer you just agreed.
+4. Read the next `instruction` from the new JSON response and repeat.
+
+**This is a loop. Do not stop after the first step.** Keep looping, step then goto then next instruction then step, until a returned instruction tells you the workflow is *finished*. Only then report completion to the user.
+
+**Concretely: do not stop after `repo new`.** That command only starts the workflow and returns the *first* instruction, not a registered repo. Seeing a clean JSON response with no `error` is not a signal to stop; it is the signal to keep going.
+
+The instructions themselves tell you what to ask and what never to say. Follow them as written rather than substituting your own account of how an add works: the wording is the feature.
+
+Inspecting the registry and repairing a footprint are not workflows. They are single commands, covered further down.
 
 # When to invoke
 
@@ -32,65 +50,48 @@ A repo is **colocated** when its footprint sits inside its code, in a `.spektacu
 
 Descriptive metadata (`description`, `role`, `tags`) lives in `repo.yaml`, never in the project config. A repo's footprint carries no pointer back to any project, so one repo can belong to many projects.
 
-# Adding a repo to this project
+# Adding a repo
 
-## 1. See what is already registered
-
-```
-go run . repo list
-```
-
-Never skip this. It tells you whether the repo is already registered (in which case you are updating, not adding) and shows the shape of the existing entries.
-
-## 2. Work out the code location
-
-`location` is the folder holding the repo's **code**. `repo add` creates a `.spektacular/` folder *inside* it and registers that folder, so the registry ends up recording `<location>/.spektacular`.
-
-> **A relative `location` is anchored at the project's `.spektacular/` folder, not at the project root.** It is stored in `config.yaml` verbatim and resolved from the folder that file lives in. So a sibling of the project directory is `../../<sibling>`, not `../<sibling>`.
->
-> **Prefer an absolute path** unless the user specifically wants a portable relative one. It is unambiguous and it is what `repo list` reports back.
-
-## 3. Gather the descriptive metadata
-
-Always fill in `description`, `role`, and `tags` when the user can supply them. Planning quality depends on it: the plan workflow uses each repo's description, role, and tags to attribute requirements to the right repo. If the user cannot supply them, `repo add` returns a `metadata_note` saying so, and so does every later `repo list`.
-
-## 4. Decide whether to give a `source`
-
-Omit `source` for a colocated repo. The scaffolded `repo.yaml` already declares a file source of `..`, which is the code the footprint sits inside.
-
-Give `source` only when the footprint and the code are in different places:
-
-- a path (plain or `file://`) for a checkout already on disk;
-- a git location (`git://`, `ssh://`, `https://`, or `user@host:path`) for code Spektacular should clone.
-
-Both forms accept `${VAR}`, expanded from the environment when the file is read. Any other URL scheme is rejected.
-
-## 5. Show the payload and confirm
-
-`repo add` writes into another repository on disk, creating a `.spektacular/` folder there. Show the user the exact payload and say which folder will be created before running it, and wait for explicit confirmation.
-
-## 6. Run the command
-
-A colocated repo, which is the common case:
+Start the guided add by running:
 
 ```
-go run . repo add --data '{"name":"docs","location":"/home/me/code/docs","description":"the documentation repo","role":"documentation","tags":["docs"]}'
+go run . repo new
 ```
 
-That scaffolds `/home/me/code/docs/.spektacular/` and registers that folder.
-
-A separate repo adds a `source` naming the code. Here the `location` is a footprint folder held under the project and the code stays untouched elsewhere:
+If the user already named the repo, pass the folder its code lives in and the flow will not ask for it again:
 
 ```
-go run . repo add --data '{"name":"api","location":"../repos/api","source":"file://${HOME}/code/api","description":"the API service","role":"backend","tags":["go"]}'
-go run . repo add --data '{"name":"docs","location":"../repos/docs","source":"git@example.com:org/docs.git","description":"the documentation repo","role":"documentation","tags":["docs"]}'
+go run . repo new --data '{"location":"<the folder the repo's code is in>"}'
 ```
 
-Each of those scaffolds `<project>/.spektacular/../repos/<name>/.spektacular/` and registers that folder. Read the anchoring note in step 2 again before using a relative `location`.
+From there, follow the loop above: do what the instruction says, then run the `goto` it names to get the next one. Do not invent step names. Every instruction ends with the exact command to run next.
 
-## 7. Read the result, then verify
+**If an add was interrupted and is still in progress**, `repo new` does not start a fresh one. It returns a *resume report*: a JSON object with `"resumable": true` plus the in-progress workflow's `kind`, `name`, and `current_step`, and an `instruction` field. Nothing on disk changes. When you get one:
 
-Success is `{"registered": true, "footprint": "created"|"repaired"|"unchanged"}`, plus a `metadata_note` when the repo still has no descriptive metadata. Follow it with `go run . repo list` and check that the new entry's `root` is the code you expected.
+**First check the report's `kind`.** If it is not `repo`, a different workflow is in progress and you cannot resume it from here. Follow the report's `instruction`: tell the user which workflow is in progress and let them choose to continue it with that workflow's skill, or to discard it. Only proceed below when the report's `kind` is `repo`.
+
+1. Ask the user whether to **resume** the in-progress add or **start a new one**. The report's `instruction` restates both options.
+2. **To resume**, first read `.spektacular/context.md` with your own file tools, for the cross-cutting learnings and the answers the user gave you. Unlike a spec or a plan, an add has no per-section working files to read back: every answer already agreed travels inside the workflow itself and comes back with it. Then run the resume command using the report's `current_step`:
+
+   ```
+   go run . repo goto --data '{"step":"<current_step>"}'
+   ```
+
+3. **To start fresh**, discarding the in-progress add, re-run with `--force`:
+
+   ```
+   go run . repo new --force
+   ```
+
+Nothing is written to the user's repo or to the project until the confirmation step has been passed, so an add abandoned partway through leaves no trace to clean up.
+
+**The single-command form is still there** for a caller that already knows every detail and wants no conversation:
+
+```
+go run . repo add --data '{"name":"<name>","location":"<folder>","description":"<description>","role":"<role>","tags":["<tag>"]}'
+```
+
+Prefer the guided add when a person is involved. Use the direct form when scripting, or when every value is already known and settled.
 
 # Rules that apply to every add
 

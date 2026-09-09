@@ -16,12 +16,16 @@ import (
 // rendered directive.
 const contextDirectiveMarker = "not a copy of content already captured elsewhere"
 
-// stepDirs are the three workflows whose non-terminal step templates must all
-// carry the refresh-context directive.
+// stepDirs are the workflows whose non-terminal step templates must all
+// carry the refresh-context directive. This is an allow-list, not a
+// discovery: a workflow whose directory is missing here ships its templates
+// unchecked, so a new workflow must be added in the same change that adds
+// its templates.
 var stepDirs = []string{
 	"steps/spec",
 	"steps/plan",
 	"steps/implement",
+	"steps/repo",
 }
 
 // exemptFromContextDirective lists non-terminal templates that intentionally
@@ -88,8 +92,9 @@ func TestContextDirectivePresent(t *testing.T) {
 		require.NoErrorf(t, err, "walking %s", dir)
 	}
 
-	// Floor, not an exact match: spec (8) + plan (17) + implement (7) = 32
-	// non-terminal templates today, minus 1 exempted (steps/spec/00-new.md).
+	// Floor, not an exact match: spec (8) + plan (17) + implement (7) +
+	// repo (8) = 40 non-terminal templates today, minus 1 exempted
+	// (steps/spec/00-new.md).
 	// Kept as a lower bound so adding a step does not break the test, while
 	// still catching a walk that finds nothing.
 	require.GreaterOrEqual(t, directiveBearing, 30,

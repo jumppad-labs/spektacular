@@ -42,7 +42,15 @@ func resetRepoFlags(t *testing.T) {
 	t.Helper()
 	reset := func() {
 		require.NoError(t, repoCmd.PersistentFlags().Set("schema", "false"))
+		require.NoError(t, repoCmd.PersistentFlags().Set("dry-run", "false"))
 		require.NoError(t, repoAddCmd.Flags().Set("data", ""))
+		require.NoError(t, repoNewCmd.Flags().Set("data", ""))
+		require.NoError(t, repoNewCmd.Flags().Set("force", "false"))
+		require.NoError(t, repoNewCmd.Flags().Set("stdin", ""))
+		require.NoError(t, repoNewCmd.Flags().Set("file", ""))
+		require.NoError(t, repoGotoCmd.Flags().Set("data", ""))
+		require.NoError(t, repoGotoCmd.Flags().Set("stdin", ""))
+		require.NoError(t, repoGotoCmd.Flags().Set("file", ""))
 	}
 	reset()
 	t.Cleanup(reset)

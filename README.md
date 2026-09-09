@@ -193,7 +193,7 @@ knowledge:
         location: /shared/team-kb
 ```
 
-Each repo entry needs a slug-safe unique `name` and a `location`: the folder holding that repo's `repo.yaml` (`local` is still accepted and means the same thing). A relative location is resolved from the folder holding `config.yaml`, and nothing is appended to it, so the project's own footprint is `.` and a repo folder in the project is `../repos/<name>`. `repo add` is pointed at a repo's code: it scaffolds a `.spektacular/` inside it, writes `repo.yaml` there with a file source pointing at `..`, and registers that folder. Where the code lives is declared in the repo's own `repo.yaml` as `source`; the old `address` key is no longer read, and a config that still carries it fails to load with an error saying where the value now goes. `description`, `role`, and `tags` are optional metadata, also in `repo.yaml`, that cross-repo planning uses to attribute requirements to the right repo. Manage the registry with `spektacular repo add` and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically; a stale clone produces a warning only.
+Each repo entry needs a slug-safe unique `name` and a `location`: the folder holding that repo's `repo.yaml` (`local` is still accepted and means the same thing). A relative location is resolved from the folder holding `config.yaml`, and nothing is appended to it, so the project's own footprint is `.` and a repo folder in the project is `../repos/<name>`. A repo is normally added through a guided flow: you are asked which repo to add, and its name, description, role and tags are each proposed for you from what the repo says about itself, one question at a time, with a plain-language confirmation before anything is written. Spektacular's files go inside the repo being added unless it cannot take them or you say otherwise, in which case they live in a folder under the project and the repo is left with only its code. An add can be started and finished while a spec or plan is already in progress. A caller that already knows every detail can still register a repo in a single command with `repo add`. Where the code lives is declared in the repo's own `repo.yaml` as `source`; the old `address` key is no longer read, and a config that still carries it fails to load with an error saying where the value now goes. `description`, `role`, and `tags` are optional metadata, also in `repo.yaml`, that cross-repo planning uses to attribute requirements to the right repo. Add to the registry with `spektacular repo new`, or `spektacular repo add` when every detail is already known, and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically; a stale clone produces a warning only.
 
 ### Repo configuration (`repo.yaml`)
 
@@ -281,9 +281,11 @@ harbor run -p tests/harbor/spec-workflow -a claude-code -m claude-sonnet-4-6 -o 
 Makefile wrappers run the suites for you, building the binary and wiring up the agent-specific placeholders:
 
 ```bash
-make harbor-test-spec          # spec workflow (claude)
-make harbor-test-spec-codex    # spec workflow (codex)
-make harbor-test-plan          # plan workflow (claude)
+make harbor-test-spec            # spec workflow (claude)
+make harbor-test-spec-codex      # spec workflow (codex)
+make harbor-test-plan            # plan workflow (claude)
+make harbor-test-repo            # guided repo add, answering each question (claude)
+make harbor-test-repo-delegated  # guided repo add, handing the whole set over (claude)
 ```
 
 #### Test results
@@ -307,6 +309,18 @@ tests/harbor/jobs/<timestamp>/
 |---|---|
 | `tests/harbor/spec-workflow` | Full spec creation workflow, end to end |
 | `tests/harbor/plan-workflow` | Full plan generation workflow, end to end |
+| `tests/harbor/repo-workflow` | Guided repo add, checked against the agent's own transcript |
+
+The repo-workflow suite is the one whose assertions are about the conversation rather than the
+files: that only the repo itself is asked for cold, that every later question carries a proposed
+value, that the questions arrive one per exchange, and that none of Spektacular's internal
+vocabulary reaches the user. Its rules are themselves checked by
+`tests/harbor/repo-workflow/tests/test_verifier_selfcheck.py`, which runs locally under plain
+pytest with no container and proves each rule fails on a transcript that breaks it:
+
+```bash
+python3 -m pytest tests/harbor/repo-workflow/tests/test_verifier_selfcheck.py
+```
 
 ## Building from Source
 

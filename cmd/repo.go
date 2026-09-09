@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/repo"
+	reposteps "github.com/jumppad-labs/spektacular/internal/steps/repo"
+	"github.com/jumppad-labs/spektacular/internal/store"
+	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +31,18 @@ var repoListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List the project's registered repos with metadata and the resolved root of each repo's code",
 	RunE:  runRepoList,
+}
+
+var repoNewCmd = &cobra.Command{
+	Use:   "new",
+	Short: "Start a guided add that registers a repo by proposing its details",
+	RunE:  runRepoNew,
+}
+
+var repoGotoCmd = &cobra.Command{
+	Use:   "goto",
+	Short: "Advance a guided add to a named step",
+	RunE:  runRepoGoto,
 }
 
 // repoGit is the GitRunner the repo commands resolve with; a variable so
@@ -55,6 +69,19 @@ var repoAddOutputSchema = &schemaObj{
 		"registered":    {Type: "boolean"},
 		"footprint":     {Type: "string", Enum: []string{repo.FootprintCreated, repo.FootprintRepaired, repo.FootprintUnchanged}},
 		"metadata_note": {Type: "string"},
+	},
+}
+
+// repoWorkflowOutputSchema is the shape both guided add subcommands return:
+// the step just rendered, the repo being added, and the instruction to carry
+// out. It mirrors the spec and plan workflows' result schema.
+var repoWorkflowOutputSchema = &schemaObj{
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"step":        {Type: "string"},
+		"repo_path":   {Type: "string"},
+		"repo_name":   {Type: "string"},
+		"instruction": {Type: "string"},
 	},
 }
 
@@ -127,129 +154,177 @@ func runRepoAdd(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// `repo add` is pointed at the repo's code. Its Spektacular footprint is
-	// scaffolded into a .spektacular folder inside it, and that folder — the
-	// one that ends up holding repo.yaml — is what the registry records,
-	// since a registered location names the folder holding repo.yaml and
-	// nothing is appended when reading it back.
-	entry := config.RepoEntry{
-		Name:         input.Name,
-		Location:     filepath.Join(input.Location, ".spektacular"),
-		Dependencies: input.Dependencies,
-	}
-
-	// Idempotent registration by name: an identical entry is a no-op, a
-	// changed entry updates in place, a new one appends. The config write is
-	// skipped entirely when nothing changed.
-	changed := true
-	found := false
-	for i, existing := range cfg.Repos {
-		if existing.Name == entry.Name {
-			found = true
-			// Preserve provider settings the input shape doesn't carry.
-			entry.Provider = existing.Provider
-			entry.Config = existing.Config
-			if reposEqual(existing, entry) {
-				changed = false
-			} else {
-				cfg.Repos[i] = entry
-			}
-			break
-		}
-	}
-	if !found {
-		cfg.Repos = append(cfg.Repos, entry)
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-
-	if changed {
-		cfgPath, err := configFilePath()
-		if err != nil {
-			return err
-		}
-		if err := cfg.ToYAMLFile(cfgPath); err != nil {
-			return fmt.Errorf("writing config: %w", err)
-		}
-	}
-
-	// Create or repair the target repo's minimal footprint at its registered
-	// location, creating that folder when missing: the location is the
-	// footprint folder holding the repo's repo.yaml, so making it exist is
-	// registration's job.
 	root, err := projectRoot()
 	if err != nil {
 		return err
 	}
-	set, err := repo.New(cfg, root, repoGit)
-	if err != nil {
-		return err
-	}
-	location := entry.ResolvedLocation(root)
-	if err := os.MkdirAll(location, 0755); err != nil {
-		return fmt.Errorf("creating repo location %s: %w", location, err)
-	}
 
-	// A scaffolded footprint sits inside the repo's code, so its default
-	// source is the parent folder. An explicit source in this same add
-	// overrides it below.
-	scaffold := config.NewDefaultRepoConfig()
-	scaffold.Source = config.DefaultRepoSource
-	status, err := repo.EnsureFootprint(location, scaffold)
+	res, err := repo.Register(&cfg, root, repoGit, repo.Registration{
+		Name:         input.Name,
+		Location:     input.Location,
+		Source:       input.Source,
+		Description:  input.Description,
+		Role:         input.Role,
+		Tags:         input.Tags,
+		Dependencies: input.Dependencies,
+	})
 	if err != nil {
 		return err
 	}
 
-	// Write the input's descriptive fields and source into the target repo's
-	// own config, updating an already-footprinted repo rather than only a
-	// freshly created one. EnsureFootprint's caller-supplied config has no
-	// effect once a repo.yaml already exists, so this is a separate step.
-	// It runs before resolution so a git source given in this same add is
-	// honoured by the clone below.
-	repoConfigPath := filepath.Join(location, config.RepoConfigFileName)
-	repoCfg, err := config.RepoConfigFromYAMLFile(repoConfigPath)
-	if err != nil {
-		return fmt.Errorf("reading repo config: %w", err)
-	}
-	updated := repoCfg
-	if input.Description != "" {
-		updated.Description = input.Description
-	}
-	if input.Role != "" {
-		updated.Role = input.Role
-	}
-	if len(input.Tags) > 0 {
-		updated.Tags = input.Tags
-	}
-	if input.Source != "" {
-		src, err := config.SourceFromInput(input.Source)
-		if err != nil {
-			return output.NewError("invalid_data", err.Error()).
-				WithNextAction(`give "source" as a path (plain or file://) or a git location (git://, ssh://, https://, or user@host:path)`)
-		}
-		updated.Source = src
-	}
-	if !repoConfigDescriptiveFieldsEqual(repoCfg, updated) {
-		if err := updated.ToYAMLFile(repoConfigPath); err != nil {
-			return fmt.Errorf("writing repo config: %w", err)
-		}
-	}
-
-	// Resolve once so a git source is materialized (cloned into the
-	// project's working folder) on registration rather than on first use.
-	if _, err := set.Resolve(entry.Name); err != nil {
-		return err
-	}
-
-	result := map[string]any{"registered": true, "footprint": status}
-	if repoConfigDescriptiveFieldsEmpty(updated) {
-		result["metadata_note"] = fmt.Sprintf("repo %q has no descriptive metadata set; pass description/role/tags so it's consistently described", entry.Name)
+	result := map[string]any{"registered": res.Registered, "footprint": res.Footprint}
+	if res.MetadataNote != "" {
+		result["metadata_note"] = res.MetadataNote
 	}
 
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(result)
+}
+
+// repoStateFilePath is the guided add's own workflow state, a sibling of the
+// state.json that spec, plan and implement share. Keeping it separate is what
+// lets an add be started while one of those is in progress without either
+// disturbing the other.
+func repoStateFilePath(dataDir string) string {
+	return filepath.Join(dataDir, "repo-state.json")
+}
+
+func runRepoNew(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		s := commandSchema{
+			Input: &schemaObj{
+				Type: "object",
+				Properties: map[string]*schemaProp{
+					"location": {Type: "string"},
+				},
+			},
+			Output: repoWorkflowOutputSchema,
+		}
+		return output.Write(cmd.OutOrStdout(), s, "")
+	}
+
+	dataStr, _ := cmd.Flags().GetString("data")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	force, _ := cmd.Flags().GetBool("force")
+
+	dir, err := dataDir()
+	if err != nil {
+		return err
+	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	// Check for an add already in progress before doing anything else, so the
+	// driving agent can offer to resume it rather than silently starting over.
+	statePath := repoStateFilePath(dir)
+	if dryRun {
+		statePath += ".dryrun-tmp"
+	} else {
+		handled, err := resumeOrClear(statePath, cfg.Command, "repo", force)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return err
+		}
+	}
+
+	// Unlike a spec, an add needs no name up front: the only thing it can be
+	// given is the repo to add, and even that is optional.
+	input := map[string]any{}
+	if dataStr != "" {
+		if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+			return fmt.Errorf("parsing --data: %w", err)
+		}
+	}
+
+	st := store.NewSourceStore(root, "project")
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "repo", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	wf := workflow.New(reposteps.Steps(), statePath, wfCfg, st, out)
+
+	for k, v := range input {
+		wf.SetData(k, v)
+	}
+	if err := readInputIntoWorkflow(cmd, wf); err != nil {
+		return err
+	}
+
+	return wf.Next()
+}
+
+func runRepoGoto(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		s := commandSchema{
+			Input: &schemaObj{
+				Type: "object",
+				Properties: map[string]*schemaProp{
+					"step": {Type: "string", Enum: workflow.New(reposteps.Steps(), "", workflow.Config{}, nil, nil).StepNames()},
+				},
+				Required: []string{"step"},
+			},
+			Output: repoWorkflowOutputSchema,
+		}
+		return output.Write(cmd.OutOrStdout(), s, "")
+	}
+
+	dataStr, _ := cmd.Flags().GetString("data")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+	if dataStr == "" {
+		return output.NewError("step_required", "no step was provided").
+			WithNextAction(`specify the step with --data '{"step":"<step_name>"}'`)
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+		return fmt.Errorf("parsing --data: %w", err)
+	}
+	stepVal, _ := input["step"].(string)
+	if stepVal == "" {
+		return output.NewError("step_required", `"step" is missing or empty in --data`).
+			WithNextAction(`include a non-empty "step" in --data, e.g. --data '{"step":"description"}'`)
+	}
+
+	dir, err := dataDir()
+	if err != nil {
+		return err
+	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	if handled, err := guardKind(repoStateFilePath(dir), cfg.Command, "repo"); err != nil {
+		return err
+	} else if handled {
+		return err
+	}
+
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "repo", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	wf := workflow.New(reposteps.Steps(), repoStateFilePath(dir), wfCfg, store.NewSourceStore(root, "project"), out)
+
+	// Every field but the step is an answer the user just agreed to.
+	for k, v := range input {
+		if k != "step" {
+			wf.SetData(k, v)
+		}
+	}
+	if err := readInputIntoWorkflow(cmd, wf); err != nil {
+		return err
+	}
+
+	return wf.Goto(stepVal)
 }
 
 func runRepoList(cmd *cobra.Command, _ []string) error {
@@ -305,7 +380,7 @@ func runRepoList(cmd *cobra.Command, _ []string) error {
 		info.Description = meta.Description
 		info.Role = meta.Role
 		info.Tags = meta.Tags
-		if repoConfigDescriptiveFieldsEmpty(meta) {
+		if repo.DescriptiveFieldsEmpty(meta) {
 			info.MetadataNote = fmt.Sprintf("repo %q has no descriptive metadata set; run 'repo add' with description/role/tags to describe it", e.Name)
 		}
 		// The reported root is the repo's code: its source when one is
@@ -357,48 +432,20 @@ func repoAddData(cmd *cobra.Command) (repoAddInput, error) {
 	return input, nil
 }
 
-// reposEqual reports whether two registry entries are identical field for
-// field. RepoEntry carries membership only; descriptive metadata lives in
-// the repo's own config and is compared separately.
-func reposEqual(a, b config.RepoEntry) bool {
-	if a.Name != b.Name || a.Location != b.Location || a.Provider != b.Provider {
-		return false
-	}
-	return stringSlicesEqual(a.Dependencies, b.Dependencies)
-}
-
-// repoConfigDescriptiveFieldsEqual reports whether the fields repo add
-// writes — the descriptive metadata and the source — match, so the repo's
-// config is rewritten only when registration actually changed something.
-func repoConfigDescriptiveFieldsEqual(a, b config.RepoConfig) bool {
-	if a.Description != b.Description || a.Role != b.Role || a.Source != b.Source {
-		return false
-	}
-	return stringSlicesEqual(a.Tags, b.Tags)
-}
-
-// repoConfigDescriptiveFieldsEmpty reports whether a repo config carries no
-// descriptive metadata at all, the case this project wants surfaced with a
-// warn-only notice so every repo ends up consistently described. Source is
-// a location, not a description, so it does not count.
-func repoConfigDescriptiveFieldsEmpty(c config.RepoConfig) bool {
-	return c.Description == "" && c.Role == "" && len(c.Tags) == 0
-}
-
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func init() {
 	repoCmd.PersistentFlags().Bool("schema", false, "Print the input/output schema for this subcommand and exit")
+	repoCmd.PersistentFlags().BoolP("dry-run", "n", false, "Validate and preview without writing any files or persisting state")
+
 	repoAddCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"name":"docs","location":"/path/to/docs","description":"the documentation repo"}')`)
-	repoCmd.AddCommand(repoAddCmd, repoListCmd)
+
+	repoNewCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"location":"/path/to/docs"}')`)
+	repoNewCmd.Flags().Bool("force", false, "Discard any in-progress guided add and start fresh")
+	repoNewCmd.Flags().String("stdin", "", "Read stdin and store it in workflow data under this key")
+	repoNewCmd.Flags().String("file", "", "Read a file at <path> (relative to cwd) and store its contents under the filename's basename (without extension)")
+
+	repoGotoCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"step":"description"}')`)
+	repoGotoCmd.Flags().String("stdin", "", "Read stdin and store it in workflow data under this key")
+	repoGotoCmd.Flags().String("file", "", "Read a file at <path> (relative to cwd) and store its contents under the filename's basename (without extension)")
+
+	repoCmd.AddCommand(repoAddCmd, repoListCmd, repoNewCmd, repoGotoCmd)
 }

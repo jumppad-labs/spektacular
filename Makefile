@@ -4,7 +4,7 @@ VERSION := 0.15.1
 HARBOR_AUTH := CLAUDE_CODE_OAUTH_TOKEN=$$(python3 -c "import json; print(json.load(open('$$HOME/.claude/.credentials.json'))['claudeAiOauth']['accessToken'])")
 HARBOR_MODEL := claude-sonnet-4-6
 
-.PHONY: build test lint clean install install-local cross harbor-test plan-harbor-test harbor-test-spec harbor-test-spec-claude harbor-test-spec-codex _harbor-test-spec harbor-test-implement
+.PHONY: build test lint clean install install-local cross harbor-test plan-harbor-test harbor-test-spec harbor-test-spec-claude harbor-test-spec-codex _harbor-test-spec harbor-test-implement harbor-test-repo harbor-test-repo-one-at-a-time harbor-test-repo-delegated _harbor-test-repo
 
 build:
 	go build -ldflags "-X github.com/jumppad-labs/spektacular/cmd.version=$(VERSION)" -o ./bin/$(BINARY) .
@@ -69,6 +69,41 @@ _harbor-test-spec:
 	@echo ""
 	@echo "=== Test Results ==="
 	@cat $$(ls -td tests/harbor/jobs/*/spec-workflow-$(AGENT)__*/verifier/test-stdout.txt 2>/dev/null | head -1)
+
+harbor-test-repo: harbor-test-repo-one-at-a-time
+
+harbor-test-repo-one-at-a-time:
+	$(MAKE) _harbor-test-repo SCENARIO=one-at-a-time AGENT=claude HARBOR_AGENT=claude-code SKILL='/spek:manage-repos'
+
+harbor-test-repo-delegated:
+	$(MAKE) _harbor-test-repo SCENARIO=delegated AGENT=claude HARBOR_AGENT=claude-code SKILL='/spek:manage-repos'
+
+# Renders tests/harbor/repo-workflow into tests/harbor/.build/repo-workflow-$(SCENARIO),
+# substituting the agent, the skill invocation and the scenario block into
+# instruction.md, then runs harbor. The two scenarios share every other file:
+# one answers each question in turn, the other hands the whole set over.
+# Callers must set SCENARIO, AGENT, HARBOR_AGENT, SKILL.
+_harbor-test-repo:
+	@test -n "$(SCENARIO)" || (echo "SCENARIO is required" && exit 1)
+	@mkdir -p tests/harbor/.build/repo-workflow-$(SCENARIO)/environment \
+		tests/harbor/.build/repo-workflow-$(SCENARIO)/solution \
+		tests/harbor/.build/repo-workflow-$(SCENARIO)/tests
+	GOOS=linux GOARCH=amd64 go build -o tests/harbor/.build/repo-workflow-$(SCENARIO)/environment/spektacular .
+	cp tests/harbor/repo-workflow/task.toml tests/harbor/.build/repo-workflow-$(SCENARIO)/task.toml
+	cp tests/harbor/repo-workflow/environment/Dockerfile tests/harbor/.build/repo-workflow-$(SCENARIO)/environment/Dockerfile
+	cp tests/harbor/repo-workflow/solution/solve.sh tests/harbor/.build/repo-workflow-$(SCENARIO)/solution/solve.sh
+	cp tests/harbor/repo-workflow/tests/test.sh tests/harbor/.build/repo-workflow-$(SCENARIO)/tests/test.sh
+	cp tests/harbor/repo-workflow/tests/test_repo_workflow.py tests/harbor/.build/repo-workflow-$(SCENARIO)/tests/test_repo_workflow.py
+	SCENARIO_BODY=$$(cat tests/harbor/repo-workflow/scenario-$(SCENARIO).md); \
+	awk -v scenario="$$SCENARIO_BODY" -v agent="$(AGENT)" -v skill="$(SKILL)" \
+		'{ gsub(/\{\{agent\}\}/, agent); gsub(/\{\{skill_invocation\}\}/, skill); \
+		   if ($$0 == "{{scenario}}") print scenario; else print }' \
+		tests/harbor/repo-workflow/instruction.md \
+		> tests/harbor/.build/repo-workflow-$(SCENARIO)/instruction.md
+	SPEK_SCENARIO=$(SCENARIO) $(HARBOR_AUTH) harbor run -p tests/harbor/.build/repo-workflow-$(SCENARIO) -a $(HARBOR_AGENT) -m $(HARBOR_MODEL) -o tests/harbor/jobs
+	@echo ""
+	@echo "=== Test Results ==="
+	@cat $$(ls -td tests/harbor/jobs/*/repo-workflow-$(SCENARIO)__*/verifier/test-stdout.txt 2>/dev/null | head -1)
 
 harbor-test-plan:
 	GOOS=linux GOARCH=amd64 go build -o tests/harbor/plan-workflow/environment/spektacular .

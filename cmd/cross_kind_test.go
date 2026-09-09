@@ -232,3 +232,98 @@ func TestMismatchInstruction_RendersBothPathsAcrossKinds(t *testing.T) {
 	require.NotContains(t, out, "spec goto", "must not suggest resuming the other kind as a spec")
 	require.True(t, strings.Contains(out, "in progress"), "must state a workflow is in progress")
 }
+
+// TestRepoGuidedAdd_RunsToCompletionBesideAnInProgressSpec is the isolation
+// guarantee: the guided add keeps its own repo-state.json, so a complete add
+// runs start to finish while a spec workflow is unfinished — never reporting a
+// conflict of any kind — and leaves the spec's state.json byte-identical.
+func TestRepoGuidedAdd_RunsToCompletionBesideAnInProgressSpec(t *testing.T) {
+	project := repoProject(t)
+	dataDir := filepath.Join(project, ".spektacular")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		Kind:           "spec",
+		CurrentStep:    "requirements",
+		CompletedSteps: []string{"new", "interview", "overview"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "000024_resume"},
+	})
+
+	before, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+
+	target := repoTargetDir(t)
+	first := repoWorkflowStep(t, "new", "--data", repoAddJSON(t, map[string]any{"location": target}))
+	require.Equal(t, "locate", first.Step, "a guided add must start normally beside an in-progress spec")
+
+	for _, step := range []string{"name", "description", "role", "tags", "placement", "confirm", "register", "finished"} {
+		require.Equal(t, step, repoWorkflowStep(t, "goto", "--data", repoGotoData(t, step, nil)).Step)
+	}
+
+	addState := readRepoWorkflowState(t, project)
+	require.Equal(t, "repo", addState.Kind)
+	require.Equal(t, "finished", addState.CurrentStep)
+	require.Equal(t, repoGuidedSteps, addState.CompletedSteps)
+
+	after, err := os.ReadFile(filepath.Join(dataDir, "state.json"))
+	require.NoError(t, err)
+	require.Equal(t, before, after, "a guided add must not write a single byte of the shared state file")
+}
+
+// TestSpecStatus_ResumesAtItsOwnStepAfterAGuidedAdd asserts the spec is still
+// exactly where it was left once a whole guided add has run alongside it: its
+// status reports the same instance, step and completed steps as before.
+func TestSpecStatus_ResumesAtItsOwnStepAfterAGuidedAdd(t *testing.T) {
+	project := repoProject(t)
+	dataDir := filepath.Join(project, ".spektacular")
+
+	writeInProgressState(t, dataDir, workflow.State{
+		Kind:           "spec",
+		CurrentStep:    "requirements",
+		CompletedSteps: []string{"new", "interview", "overview"},
+		CreatedAt:      fixedResumeTime,
+		UpdatedAt:      fixedResumeTime,
+		Data:           map[string]any{"name": "000024_resume"},
+	})
+
+	target := repoTargetDir(t)
+	repoWorkflowStep(t, "new", "--data", repoAddJSON(t, map[string]any{"location": target}))
+	for _, step := range []string{"name", "description", "role", "tags", "placement", "confirm", "register", "finished"} {
+		repoWorkflowStep(t, "goto", "--data", repoGotoData(t, step, nil))
+	}
+
+	stdout, _, code := runRootCmd(t, "spec", "status")
+	require.Equal(t, 0, code)
+
+	var st spec.StatusResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &st))
+	require.Equal(t, "000024_resume", st.SpecName)
+	require.Equal(t, "requirements", st.CurrentStep, "the spec resumes at the step it was on")
+	require.Equal(t, []string{"new", "interview", "overview"}, st.CompletedSteps)
+}
+
+// TestSpecNew_NotRefusedWhileAGuidedAddIsInProgress asserts the isolation runs
+// the other way too: an unfinished guided add is not a workflow that contends
+// for the shared slot, so `spec new` starts normally rather than reporting a
+// conflict — and the add is left resting where it was.
+func TestSpecNew_NotRefusedWhileAGuidedAddIsInProgress(t *testing.T) {
+	project := repoProject(t)
+
+	target := repoTargetDir(t)
+	repoWorkflowStep(t, "new", "--data", repoAddJSON(t, map[string]any{"location": target}))
+	require.Equal(t, "name", repoWorkflowStep(t, "goto", "--data", repoGotoData(t, "name", nil)).Step)
+
+	resetSpecCommandFlags(t)
+	stdout, _, code := runRootCmd(t, "spec", "new", "--data", `{"name":"billing-export"}`)
+	require.Equal(t, 0, code, "an in-progress guided add must not block a new spec; got %s", stdout)
+
+	var result specCommandResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	require.Equal(t, "new", result.Step)
+	require.FileExists(t, result.SpecPath)
+
+	addState := readRepoWorkflowState(t, project)
+	require.Equal(t, "repo", addState.Kind)
+	require.Equal(t, "name", addState.CurrentStep, "starting a spec must not disturb the guided add")
+}

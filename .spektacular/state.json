@@ -1,23 +1,12 @@
 {
-  "kind": "implement",
-  "current_step": "finished",
+  "kind": "spec",
+  "current_step": "interview",
   "completed_steps": [
-    "new",
-    "read_plan",
-    "analyze",
-    "implement",
-    "test",
-    "verify",
-    "update_plan",
-    "update_changelog",
-    "test_plan",
-    "update_feature_changelog",
-    "reconcile_spec",
-    "finished"
+    "new"
   ],
-  "created_at": "2026-09-03T13:14:37.158329055Z",
-  "updated_at": "2026-09-04T07:17:18.797952085Z",
+  "created_at": "2026-09-09T10:54:13.488586557Z",
+  "updated_at": "2026-09-09T10:56:13.454595489Z",
   "data": {
-    "name": "000047_repo-scoped-knowledge-addressing"
+    "name": "000050_why-docs-page"
   }
 }

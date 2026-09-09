@@ -23,7 +23,7 @@ and an expected entry shape:
 |----------|------|---------------|
 | `conventions` | always-applied | The rules a team always wants honoured — coding standards, naming, formatting, required patterns, house style. A standing rule stated as an instruction to follow. |
 | `glossary` | always-applied | The shared vocabulary of the project — the domain and project-specific terms needed to read the rest of the knowledge base and the code. A term and a short gloss. |
-| `architecture` | looked-up | How the system is built and fits together — components, responsibilities, boundaries, data and control flow. What exists and how it works. |
+| `architecture` | looked-up | How the system is built and how new work must be built into it — components, responsibilities, boundaries, data and control flow. Binding on the work being planned, not a survey of today's code. |
 | `gotchas` | looked-up | Sharp edges and non-obvious traps — surprising behaviours and easy mistakes. A warning about a specific trap and how to avoid it. |
 | `learnings` | looked-up | Empirical knowledge from doing the work — what was tried, what worked, what didn't. An observation from experience. |
 | `decisions` | looked-up | The reasoning behind choices (ADR-style) — options considered, trade-offs weighed, why one path was taken. The why, not the what or how. |

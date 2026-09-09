@@ -63,9 +63,9 @@ func TestTrimExcerpt_CapsLongString(t *testing.T) {
 	require.Equal(t, maxExcerptBytes, len(got))
 }
 
-// Criterion 3: each hit carries the store's scope and a Path that round-trips
-// through Read; a no-match query returns an empty result and no error.
-func TestSearch_ScopeAndLocatorRoundTrip(t *testing.T) {
+// Criterion 3: each hit carries a Path that round-trips through Read; a
+// no-match query returns an empty result and no error.
+func TestSearch_LocatorRoundTrips(t *testing.T) {
 	dir := writeSearchFixture(t)
 	st := NewFileStore(dir, "project")
 
@@ -74,7 +74,6 @@ func TestSearch_ScopeAndLocatorRoundTrip(t *testing.T) {
 	require.NotEmpty(t, hits)
 
 	for _, h := range hits {
-		require.Equal(t, st.Scope(), h.Scope, "hit scope should match store scope")
 		data, readErr := st.Read(h.Path)
 		require.NoError(t, readErr, "hit Path %q should round-trip through Read", h.Path)
 		require.NotEmpty(t, data)
@@ -124,12 +123,14 @@ func TestSearch_CaseInsensitiveAndIncludesAllDirectories(t *testing.T) {
 	require.Empty(t, blankHits)
 }
 
-// The bare store does not populate Hit.Category: deriving a category from the
-// path is the knowledge layer's job, so every hit the store returns carries an
-// empty Category.
-func TestSearch_LeavesCategoryEmpty(t *testing.T) {
+// The bare store attributes nothing: deriving a category from the path, and
+// stamping the tier and name of the store a hit came from, are both the
+// knowledge layer's job. The store's own label is deliberately not copied onto
+// a hit, so every hit the store returns carries an empty Category, Tier, and
+// Name.
+func TestSearch_LeavesAttributionEmpty(t *testing.T) {
 	dir := writeSearchFixture(t)
-	st := NewFileStore(dir, "project")
+	st := NewFileStore(dir, "project:project")
 
 	hits, err := st.Search("needle")
 	require.NoError(t, err)
@@ -138,6 +139,10 @@ func TestSearch_LeavesCategoryEmpty(t *testing.T) {
 	for _, h := range hits {
 		require.Empty(t, h.Category,
 			"hit %q should carry an empty Category from the store", h.Path)
+		require.Empty(t, h.Tier,
+			"hit %q should carry an empty Tier from the store", h.Path)
+		require.Empty(t, h.Name,
+			"hit %q should carry an empty Name from the store", h.Path)
 	}
 }
 

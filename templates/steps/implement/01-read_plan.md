@@ -2,6 +2,9 @@
 
 This step is the **validation and drift gate** for the implement workflow. Nothing else runs until it passes. If any check below fails, STOP and report to the user with a three-option prompt — do not silently continue past a failed check.
 
+**Where the code lives.** Run `{{config.command}} repo list` now if you have not already: it reports each registered repo and the `root` its code lives at. For the rest of this workflow, carry out every code-touching step — analysis, implementation, tests, verification — in the `root` reported for the repo the work belongs to, never in whatever directory you started in, and pass that `root` to any sub-agent you launch.
+
+
 ### Step 1: Full plan read
 
 Read the three plan documents **in full** through the plan store. The plan documents are the implement workflow's own live artifact — this workflow owns them while it is actively running, which is why reading them here fits the AGENTS.md "specs and plans are historical" rule rather than breaking it. The plan documents are owned by spektacular — always read them with `{{config.command}} plan file read`, never with the `Read` tool, which bypasses the CLI:
@@ -37,9 +40,9 @@ Then verify the phase structure:
 
 If any structural check fails, STOP and report the failures to the user.
 
-### Step 3: Drift check against the working tree
+### Step 3: Drift check against each repo's source
 
-For every **file path**, **package path**, **function name**, **type name**, **command path**, and **template path** named in `{{plan_path}}` or `{{context_path}}` (including inside code blocks and in `file:line` references), verify the target still exists in the current codebase.
+For every **file path**, **package path**, **function name**, **type name**, **command path**, and **template path** named in `{{plan_path}}` or `{{context_path}}` (including inside code blocks and in `file:line` references), verify the target still exists in the codebase — checked in the `root` of the repo the reference belongs to (a `**Repo:**` line or a `<repo-name>: ` prefix says which; `{{config.command}} repo list` says where).
 
 **Method**:
 

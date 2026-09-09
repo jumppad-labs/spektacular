@@ -1,10 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +25,10 @@ func TestFromYAMLFile_LoadsAndExpandsEnvVars(t *testing.T) {
 	t.Setenv("TEST_CMD", "go run .")
 
 	yaml := `name: testproj
-command: "${TEST_CMD}"`
+command: "${TEST_CMD}"
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -37,7 +42,10 @@ command: "${TEST_CMD}"`
 
 func TestFromYAMLFile_MissingSpecConfigUsesDefaults(t *testing.T) {
 	yaml := `name: testproj
-command: "go run ."`
+command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -55,7 +63,10 @@ spec:
   provider: file
   id_method: unsupported
   config:
-    directory: specs`
+    directory: specs
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -68,7 +79,10 @@ spec:
 
 func TestFromYAMLFile_UnknownSpecTriggerThresholdReturnsError(t *testing.T) {
 	yaml := `name: testproj
-spec_trigger_threshold: unsupported`
+spec_trigger_threshold: unsupported
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -89,6 +103,7 @@ func TestFromYAMLFile_MissingFile_ReturnsError(t *testing.T) {
 func TestToYAMLFile_RoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
@@ -108,6 +123,7 @@ func TestToYAMLFile_RoundTrip(t *testing.T) {
 func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Spec = SpecConfig{
 		Provider: ProviderFile,
 		IDMethod: SpecIDMethodCounter,
@@ -126,12 +142,12 @@ func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 	cfg.Knowledge = KnowledgeConfig{
 		Sources: []SourceConfig{
 			{
-				Scope:    "project",
+				Name:     "project",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: ".spektacular/knowledge"},
 			},
 			{
-				Scope:    "team",
+				Name:     "team",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: "/shared/team/knowledge"},
 			},
@@ -156,7 +172,10 @@ func TestToYAMLFile_ProviderSectionsRoundTrip(t *testing.T) {
 // Criterion 2: a config with a section absent yields the documented default.
 func TestFromYAMLFile_AbsentProviderSectionsUseDefaults(t *testing.T) {
 	yaml := `name: testproj
-command: "go run ."`
+command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -177,42 +196,16 @@ command: "go run ."`
 	require.Empty(t, cfg.Knowledge.Sources)
 }
 
-// Criterion 2: an empty knowledge config synthesises exactly one default
-// project source via WithDefaults.
-func TestKnowledgeConfig_WithDefaultsSynthesisesProjectSource(t *testing.T) {
-	knowledge := KnowledgeConfig{}.WithDefaults("/some/root")
-
-	require.Len(t, knowledge.Sources, 1)
-	src := knowledge.Sources[0]
-	require.Equal(t, DefaultKnowledgeScope, src.Scope)
-	require.Equal(t, ProviderFile, src.Provider)
-	require.Equal(t, filepath.Join("/some/root", DefaultKnowledgeLocation), src.Config.Location)
-}
-
-// Criterion 2: WithDefaults leaves an already-configured knowledge config
-// unchanged.
-func TestKnowledgeConfig_WithDefaultsKeepsConfiguredSources(t *testing.T) {
-	configured := KnowledgeConfig{
-		Sources: []SourceConfig{
-			{
-				Scope:    "team",
-				Provider: ProviderFile,
-				Config:   FileKnowledgeConfig{Location: "/shared/knowledge"},
-			},
-		},
-	}
-
-	result := configured.WithDefaults("/some/root")
-	require.Equal(t, configured, result)
-}
-
 // Criterion 3: an unknown provider is rejected with a clear validation error.
 func TestFromYAMLFile_UnknownSpecProviderReturnsError(t *testing.T) {
 	yaml := `name: testproj
 spec:
   provider: bogus
   config:
-    directory: specs`
+    directory: specs
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -229,7 +222,10 @@ func TestFromYAMLFile_EmptySpecDirectoryReturnsError(t *testing.T) {
 spec:
   provider: file
   config:
-    directory: ""`
+    directory: ""
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -247,7 +243,10 @@ func TestFromYAMLFile_UnknownChangelogProviderReturnsError(t *testing.T) {
 changelog:
   provider: bogus
   config:
-    directory: changelog`
+    directory: changelog
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -264,7 +263,10 @@ func TestFromYAMLFile_EmptyChangelogDirectoryReturnsError(t *testing.T) {
 changelog:
   provider: file
   config:
-    directory: ""`
+    directory: ""
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -279,7 +281,7 @@ changelog:
 func TestKnowledgeConfig_ValidateRejectsMissingLocation(t *testing.T) {
 	knowledge := KnowledgeConfig{
 		Sources: []SourceConfig{
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: ""}},
+			{Name: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: ""}},
 		},
 	}
 
@@ -288,24 +290,53 @@ func TestKnowledgeConfig_ValidateRejectsMissingLocation(t *testing.T) {
 	require.Contains(t, err.Error(), "config.location")
 }
 
-// Criterion 3: a duplicate knowledge scope is rejected with a clear error.
-func TestKnowledgeConfig_ValidateRejectsDuplicateScope(t *testing.T) {
+// Phase 2.2 criterion 3: two shared stores declared under the same name are
+// rejected with a structured config_invalid refusal that names the duplicate
+// and tells the author to rename one of them.
+func TestKnowledgeConfig_ValidateRejectsDuplicateName(t *testing.T) {
 	knowledge := KnowledgeConfig{
 		Sources: []SourceConfig{
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/a"}},
-			{Scope: "project", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/b"}},
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/a"}},
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/b"}},
 		},
 	}
 
 	err := knowledge.Validate()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "more than once")
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "config_invalid", er.Code)
+	require.Equal(t, `knowledge.sources declares the name "team" more than once`, er.Message)
+	require.NotEmpty(t, er.NextAction)
+	require.Contains(t, er.NextAction, "rename")
+}
+
+// Phase 2.2 criterion 3: a shared store declared without a name is rejected
+// the same way, naming the offending entry's position in the list.
+func TestKnowledgeConfig_ValidateRejectsMissingName(t *testing.T) {
+	knowledge := KnowledgeConfig{
+		Sources: []SourceConfig{
+			{Name: "team", Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/a"}},
+			{Provider: ProviderFile, Config: FileKnowledgeConfig{Location: "/b"}},
+		},
+	}
+
+	err := knowledge.Validate()
+	require.Error(t, err)
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "config_invalid", er.Code)
+	require.Equal(t, "knowledge.sources[1] declares no name", er.Message)
+	require.NotEmpty(t, er.NextAction)
 }
 
 // Criterion 1: a project config file with a missing name fails validation
 // with an error naming the field.
 func TestFromYAMLFile_MissingNameReturnsError(t *testing.T) {
-	yaml := `command: "go run ."`
+	yaml := `command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -321,7 +352,10 @@ func TestFromYAMLFile_MissingNameReturnsError(t *testing.T) {
 // accept so it can backfill one — while still prefilling defaults, where the
 // validating loader rejects the same file.
 func TestParseYAMLFile_MissingNameParsesWithoutValidation(t *testing.T) {
-	yaml := `command: "go run ."`
+	yaml := `command: "go run ."
+repos:
+  - name: testproj
+    location: ..`
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0644))
 
@@ -335,7 +369,10 @@ func TestParseYAMLFile_MissingNameParsesWithoutValidation(t *testing.T) {
 // Criterion 1: a non-slug-safe name fails validation with an error naming
 // the field.
 func TestFromYAMLFile_NonSlugNameReturnsError(t *testing.T) {
-	yaml := `name: "Has Spaces/UPPER"`
+	yaml := `name: "Has Spaces/UPPER"
+repos:
+  - name: testproj
+    location: ..`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -351,6 +388,7 @@ func TestFromYAMLFile_NonSlugNameReturnsError(t *testing.T) {
 func TestToYAMLFile_NameAndSourceRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "my-project"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Source = "github.com/example/my-project"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -388,6 +426,7 @@ func TestSlugifyName_ProducesValidNames(t *testing.T) {
 	for _, in := range []string{"My Project", "spektacular", "___", "9lives", "-lead-trim-"} {
 		cfg := NewDefault()
 		cfg.Name = SlugifyName(in)
+		cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 		require.NoError(t, cfg.Validate(), "slugified %q should validate", in)
 	}
 }
@@ -397,9 +436,10 @@ func TestSlugifyName_ProducesValidNames(t *testing.T) {
 func TestValidateRepos_DuplicateNameReturnsError(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
-		{Name: "api", Local: "."},
-		{Name: "api", Address: "github.com/example/api"},
+		{Name: "api", Location: "."},
+		{Name: "api", Location: "./api"},
 	}
 
 	err := cfg.Validate()
@@ -412,9 +452,10 @@ func TestValidateRepos_DuplicateNameReturnsError(t *testing.T) {
 func TestValidateRepos_NonSlugNameReturnsError(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
-		{Name: "api", Local: "."},
-		{Name: "Has Spaces/UPPER", Local: "./other"},
+		{Name: "api", Location: "."},
+		{Name: "Has Spaces/UPPER", Location: "./other"},
 	}
 
 	err := cfg.Validate()
@@ -422,18 +463,98 @@ func TestValidateRepos_NonSlugNameReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "repos[1].name")
 }
 
-// Criterion 1: a registry entry with neither address nor local fails
-// validation with an error naming the entry.
-func TestValidateRepos_NeitherAddressNorLocalReturnsError(t *testing.T) {
+// Phase 1.2 criterion 3: a registry entry with neither location nor the
+// deprecated local key fails validation with a config_invalid error naming
+// the entry and pointing at the field to set.
+func TestValidateRepos_MissingLocationReturnsError(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
 		{Name: "api"},
 	}
 
 	err := cfg.Validate()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), `repo "api": at least one of address or local is required`)
+
+	var envelope *output.ErrorResponse
+	require.True(t, errors.As(err, &envelope), "expected an *output.ErrorResponse, got %T", err)
+	require.Equal(t, "config_invalid", envelope.Code)
+	require.Equal(t, `repo "api" has no location`, envelope.Message)
+	require.Contains(t, envelope.NextAction, "repos[0].location")
+}
+
+// Phase 1.2 criterion 1: a registry entry declared with location, and one
+// declared with the deprecated local alias, both load to the same entry with
+// Location set and Local empty; writing the loaded config back emits only
+// the location key.
+func TestFromYAMLFile_LocationAndLocalAliasLoadIdentically(t *testing.T) {
+	want := RepoEntry{Name: "api", Location: "./api"}
+
+	for _, tc := range []struct {
+		key  string
+		yaml string
+	}{
+		{key: "location", yaml: "name: testproj\nrepos:\n  - name: api\n    location: ./api\n"},
+		{key: "local", yaml: "name: testproj\nrepos:\n  - name: api\n    local: ./api\n"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tc.yaml), 0644))
+
+			cfg, err := FromYAMLFile(path)
+			require.NoError(t, err)
+			require.Equal(t, []RepoEntry{want}, cfg.Repos)
+			require.Empty(t, cfg.Repos[0].Local, "the alias must be folded into Location on load")
+
+			out := filepath.Join(dir, "rewritten.yaml")
+			require.NoError(t, cfg.ToYAMLFile(out))
+			raw, err := os.ReadFile(out)
+			require.NoError(t, err)
+			require.Contains(t, string(raw), "location: ./api")
+			require.NotContains(t, string(raw), "local:", "the deprecated alias must never be written back")
+		})
+	}
+}
+
+// Phase 1.2 criterion 2: a registry entry still carrying the removed address
+// key is rejected on load — by ParseYAMLFile and therefore FromYAMLFile —
+// with a config_invalid error naming the repo and the key, and a next action
+// that relocates the value to the repo's own repo.yaml as source.
+func TestFromYAMLFile_LegacyAddressKeyIsRejected(t *testing.T) {
+	yaml := "name: testproj\nrepos:\n  - name: api\n    address: git@example.com:org/api.git\n    local: ./repos/api\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(yaml), 0644))
+
+	for name, load := range map[string]func(string) (Config, error){
+		"ParseYAMLFile": ParseYAMLFile,
+		"FromYAMLFile":  FromYAMLFile,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := load(path)
+			require.Error(t, err)
+
+			var envelope *output.ErrorResponse
+			require.True(t, errors.As(err, &envelope), "expected an *output.ErrorResponse, got %T", err)
+			require.Equal(t, "config_invalid", envelope.Code)
+			require.Contains(t, envelope.Message, `"api"`)
+			require.Contains(t, envelope.Message, "'address'")
+			require.Contains(t, envelope.NextAction, "repos[0].address")
+			require.Contains(t, envelope.NextAction, "source: git@example.com:org/api.git")
+			require.Contains(t, envelope.NextAction, "./repos/api/.spektacular/repo.yaml")
+		})
+	}
+}
+
+// Phase 1.2 criterion 4 (WithDefaults): an entry built with the deprecated
+// Local field has it folded into Location, cleared, and the provider
+// defaulted to git.
+func TestRepoEntry_WithDefaultsFoldsLocalAlias(t *testing.T) {
+	got := RepoEntry{Name: "x", Local: "./x"}.WithDefaults()
+	require.Equal(t, RepoEntry{Name: "x", Location: "./x", Provider: ProviderGit}, got)
+	require.Empty(t, got.Local)
 }
 
 // Criterion 2: an unknown repo provider is rejected at load time with an
@@ -442,7 +563,7 @@ func TestFromYAMLFile_UnknownRepoProviderReturnsError(t *testing.T) {
 	yaml := `name: testproj
 repos:
   - name: api
-    local: "."
+    location: "."
     provider: svn`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -460,7 +581,7 @@ func TestFromYAMLFile_EmptyRepoProviderIsAccepted(t *testing.T) {
 	yaml := `name: testproj
 repos:
   - name: api
-    local: "."`
+    location: "."`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(yaml), 0644)
@@ -475,32 +596,32 @@ repos:
 // Criterion 2: WithDefaults resolves an empty provider to git and leaves an
 // explicit provider untouched.
 func TestRepoEntry_WithDefaultsResolvesProviderToGit(t *testing.T) {
-	entry := RepoEntry{Name: "api", Local: "."}
+	entry := RepoEntry{Name: "api", Location: "."}
 	require.Equal(t, ProviderGit, entry.WithDefaults().Provider)
 
-	explicit := RepoEntry{Name: "api", Local: ".", Provider: ProviderGit}
+	explicit := RepoEntry{Name: "api", Location: ".", Provider: ProviderGit}
 	require.Equal(t, ProviderGit, explicit.WithDefaults().Provider)
 }
 
 // A two-entry registry with every membership field populated round-trips
 // through config.yaml unchanged. RepoEntry carries membership only —
-// descriptive metadata (description/role/tags/deployment) lives in the
+// descriptive metadata (description/role/tags) lives in the
 // repo's own repo.yaml and is covered by internal/config/repo_test.go
 // instead.
 func TestToYAMLFile_ReposRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Repos = []RepoEntry{
 		{
 			Name:         "api",
-			Address:      "github.com/example/api",
-			Local:        "./api",
+			Location:     "./api",
 			Dependencies: []string{"db"},
 			Provider:     ProviderGit,
 		},
 		{
-			Name:  "db",
-			Local: "./db",
+			Name:     "db",
+			Location: "./db",
 		},
 	}
 
@@ -519,15 +640,16 @@ func TestToYAMLFile_ReposRoundTrip(t *testing.T) {
 func TestToYAMLFile_ProjectOwnedKnowledgeSourcesRoundTrip(t *testing.T) {
 	cfg := NewDefault()
 	cfg.Name = "testproj"
+	cfg.Repos = []RepoEntry{{Name: "testproj", Location: ".."}}
 	cfg.Knowledge = KnowledgeConfig{
 		Sources: []SourceConfig{
 			{
-				Scope:    "team",
+				Name:     "team",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: "/shared/team/knowledge"},
 			},
 			{
-				Scope:    "global",
+				Name:     "global",
 				Provider: ProviderFile,
 				Config:   FileKnowledgeConfig{Location: "/shared/global/knowledge"},
 			},
@@ -541,4 +663,103 @@ func TestToYAMLFile_ProjectOwnedKnowledgeSourcesRoundTrip(t *testing.T) {
 	loaded, err := FromYAMLFile(path)
 	require.NoError(t, err)
 	require.Equal(t, cfg.Knowledge, loaded.Knowledge)
+}
+
+// A project must register at least one repo: an otherwise valid config with
+// no repos entry fails validation with a config_invalid error that says so.
+func TestFromYAMLFile_NoReposReturnsError(t *testing.T) {
+	yaml := `name: testproj`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(yaml), 0644))
+
+	_, err := FromYAMLFile(path)
+	require.Error(t, err)
+	var er *output.ErrorResponse
+	require.ErrorAs(t, err, &er)
+	require.Equal(t, "config_invalid", er.Code)
+	require.Contains(t, er.Message, "no repos are registered")
+}
+
+// Phase 2.3 criteria 1, 2, 3 & 5: a project config whose shared knowledge
+// stores are still identified by the removed 'scope' key is refused on load —
+// by ParseYAMLFile and therefore FromYAMLFile — with a config_invalid error
+// naming the file and the key that was found, and a next action showing the
+// replacement block. The refusal repeats identically on a second load, the
+// file is byte-for-byte untouched by the failure, and the corrected form loads.
+func TestParseYAMLFile_LegacyKnowledgeScopeKeyIsRejected(t *testing.T) {
+	const legacy = "name: testproj\n" +
+		"repos:\n" +
+		"  - name: api\n" +
+		"    location: ./repos/api\n" +
+		"knowledge:\n" +
+		"  sources:\n" +
+		"    - scope: team\n" +
+		"      provider: file\n" +
+		"      config:\n" +
+		"        location: ./team-knowledge\n"
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(legacy), 0644))
+
+	for name, load := range map[string]func(string) (Config, error){
+		"ParseYAMLFile": ParseYAMLFile,
+		"FromYAMLFile":  FromYAMLFile,
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Criterion 3: the file's bytes as they stand before any load.
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			// Load twice: the guard must be a pure refusal, not a one-shot
+			// that repairs the file behind the caller's back.
+			var first, second *output.ErrorResponse
+			for _, envelope := range []**output.ErrorResponse{&first, &second} {
+				_, err := load(path)
+				require.Error(t, err)
+				require.True(t, errors.As(err, envelope), "expected an *output.ErrorResponse, got %T", err)
+			}
+
+			// Criterion 2: the message names the file, the offending source,
+			// and the key that was found.
+			require.Equal(t, "config_invalid", first.Code)
+			require.Contains(t, first.Message, path)
+			require.Contains(t, first.Message, "knowledge.sources[0]")
+			require.Contains(t, first.Message, "'scope'")
+			require.Equal(t, path, first.Resource)
+			// ...and the next action shows the block that is now required.
+			require.Contains(t, first.NextAction, "knowledge:")
+			require.Contains(t, first.NextAction, "sources:")
+			require.Contains(t, first.NextAction, "- name: team")
+
+			// Criterion 3: the same failure, and the same bytes on disk.
+			require.Equal(t, first, second)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "a refused config must not be rewritten on disk")
+		})
+	}
+
+	// Criterion 5: once the file is edited into the required form, the same
+	// load succeeds and the store is addressed by the name it now carries.
+	const corrected = "name: testproj\n" +
+		"repos:\n" +
+		"  - name: api\n" +
+		"    location: ./repos/api\n" +
+		"knowledge:\n" +
+		"  sources:\n" +
+		"    - name: team\n" +
+		"      provider: file\n" +
+		"      config:\n" +
+		"        location: ./team-knowledge\n"
+	require.NoError(t, os.WriteFile(path, []byte(corrected), 0644))
+
+	cfg, err := FromYAMLFile(path)
+	require.NoError(t, err)
+	require.Equal(t, []SourceConfig{{
+		Name:     "team",
+		Provider: "file",
+		Config:   FileKnowledgeConfig{Location: "./team-knowledge"},
+	}}, cfg.Knowledge.Sources)
 }

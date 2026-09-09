@@ -1,0 +1,29 @@
+version = "1.0"
+
+[metadata]
+author_name = "Jumppad Labs"
+author_email = "team@jumppad.dev"
+difficulty_explanation = "Multi-step CLI workflow whose promises are about the conversation rather than the files: the agent must ask one question at a time, propose a value in each, and keep Spektacular's vocabulary out of what the user is shown"
+category = "agent-orchestration"
+tags = ["spektacular", "repo-workflow", "guided-add", "multi-step", "cli"]
+
+[agent]
+# A guided add is nine rendered steps, most of them a single question. It is
+# shorter than the spec workflow but the agent also has to read the target repo
+# and compose a proposal for each answer. 600s leaves real headroom; a run that
+# needs appreciably more than this is stuck and should fail rather than be
+# masked by a larger number.
+timeout_sec = 600.0
+
+[verifier]
+timeout_sec = 120.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+
+[[artifacts]]
+source = "/app/.spektacular"
+destination = "spektacular"

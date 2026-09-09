@@ -43,7 +43,15 @@ func (c *captureWriter) WriteResult(v any) error {
 
 func renderStep(t *testing.T, cb workflow.StepCallback) string {
 	t.Helper()
-	data := &testData{values: map[string]any{"name": "test"}}
+	return renderStepWithData(t, cb, map[string]any{"name": "test"})
+}
+
+// renderStepWithData drives a step callback the way renderStep does but with
+// caller-supplied workflow data, for steps whose templates render values the
+// command layer injects into the workflow (e.g. the repo roster).
+func renderStepWithData(t *testing.T, cb workflow.StepCallback, values map[string]any) string {
+	t.Helper()
+	data := &testData{values: values}
 	writer := &captureWriter{}
 	st := store.NewFileStore(t.TempDir(), "project")
 	_, err := cb(data, writer, st, workflow.Config{Command: "spektacular"})
@@ -84,7 +92,6 @@ func TestStepsOrderMatchesExpected(t *testing.T) {
 		"verify",
 		"update_plan",
 		"update_changelog",
-		"update_repo_changelog",
 		"test_plan",
 		"update_feature_changelog",
 		"reconcile_spec",
@@ -144,8 +151,8 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 	// new auto-advances to read_plan, so the first Next lands on read_plan.
 	// Walk forward with Next() up through update_changelog. Then use explicit
 	// Goto() to disambiguate the multi-source exit (update_changelog has two
-	// legal successors — analyze via the loop, and update_repo_changelog —
-	// so Next() cannot pick one deterministically).
+	// legal successors — analyze via the loop, and test_plan — so Next()
+	// cannot pick one deterministically).
 	linear := []string{
 		"read_plan",
 		"analyze",
@@ -160,8 +167,6 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 		require.Equal(t, want, wf.Current(), "expected state %s after transition", want)
 	}
 
-	require.NoError(t, wf.Goto("update_repo_changelog"))
-	require.Equal(t, "update_repo_changelog", wf.Current())
 	require.NoError(t, wf.Goto("test_plan"))
 	require.Equal(t, "test_plan", wf.Current())
 	require.NoError(t, wf.Goto("update_feature_changelog"))
@@ -170,6 +175,27 @@ func TestFSMWalkFromNewToFinished(t *testing.T) {
 	require.Equal(t, "reconcile_spec", wf.Current())
 	require.NoError(t, wf.Goto("finished"))
 	require.Equal(t, "finished", wf.Current())
+}
+
+// Phase 2.1 criterion 1: the implement workflow has no root-changelog step,
+// and update_changelog's non-loop exit lands directly on test_plan; the
+// removed step name is not a legal state at all.
+func TestFSMHasNoUpdateRepoChangelogStep(t *testing.T) {
+	for _, step := range Steps() {
+		require.NotEqual(t, "update_repo_changelog", step.Name)
+		for _, src := range step.Src {
+			require.NotEqual(t, "update_repo_changelog", src, "%s must not be reachable from the removed step", step.Name)
+		}
+	}
+	tmp := t.TempDir()
+	wf := workflow.New(Steps(), filepath.Join(tmp, "state.json"), workflow.Config{Command: "spektacular", DryRun: true}, store.NewFileStore(tmp, "project"), &captureWriter{})
+	wf.SetData("name", "test")
+	for range []string{"read_plan", "analyze", "implement", "test", "verify", "update_plan", "update_changelog"} {
+		require.NoError(t, wf.Next())
+	}
+	require.Error(t, wf.Goto("update_repo_changelog"))
+	require.NoError(t, wf.Goto("test_plan"))
+	require.Equal(t, "test_plan", wf.Current())
 }
 
 func TestFSMLoopFromUpdateChangelogBackToAnalyze(t *testing.T) {
@@ -197,9 +223,7 @@ func TestFSMLoopFromUpdateChangelogBackToAnalyze(t *testing.T) {
 		require.Equal(t, want, wf.Current())
 	}
 
-	// Second exit: update_changelog → update_repo_changelog → test_plan → update_feature_changelog → reconcile_spec → finished.
-	require.NoError(t, wf.Goto("update_repo_changelog"))
-	require.Equal(t, "update_repo_changelog", wf.Current())
+	// Second exit: update_changelog → test_plan → update_feature_changelog → reconcile_spec → finished.
 	require.NoError(t, wf.Goto("test_plan"))
 	require.Equal(t, "test_plan", wf.Current())
 	require.NoError(t, wf.Goto("update_feature_changelog"))
@@ -254,7 +278,7 @@ func TestReadPlanTemplateDirectsDriftCheck(t *testing.T) {
 	out := renderStep(t, readPlan())
 	lower := strings.ToLower(out)
 	require.Contains(t, lower, "drift")
-	require.Contains(t, lower, "working tree", "drift check must name the target")
+	require.Contains(t, lower, "drift check against each repo's source", "drift check must name the target")
 	require.Contains(t, lower, "stop")
 	// The three-option prompt (fix / proceed / abandon).
 	require.Contains(t, lower, "fix the plan first")
@@ -335,7 +359,8 @@ func TestUpdateChangelogStepBranchesOnUncheckedPhases(t *testing.T) {
 	out := renderStep(t, updateChangelog())
 	// Both legal exits must be present.
 	require.Contains(t, out, `"step":"analyze"`)
-	require.Contains(t, out, `"step":"update_repo_changelog"`)
+	require.Contains(t, out, `"step":"test_plan"`)
+	require.NotContains(t, out, "update_repo_changelog")
 	require.Contains(t, strings.ToLower(out), "ask the user")
 }
 
@@ -376,16 +401,6 @@ func TestUpdateChangelogStepOffersKnowledgeCaptureForDurableDiscoveries(t *testi
 	require.NotContains(t, out, "skill spek-knowledge", "update_changelog must not direct the nonexistent `skill spek-knowledge` CLI invocation")
 }
 
-func TestUpdateRepoChangelogTemplateContainsDirectives(t *testing.T) {
-	out := renderStep(t, updateRepoChangelog())
-	require.Contains(t, out, "CHANGELOG.md")
-	// Mustache substitutes {{plan_name}} with the instance name "test" —
-	// assert the resolved value (the section header "## test") is present.
-	require.Contains(t, out, "## test")
-	require.Contains(t, out, `"step":"test_plan"`)
-	require.Contains(t, strings.ToLower(out), "prepend")
-}
-
 func TestStopOnMismatchDirectivePresentInEveryNonTerminalTemplate(t *testing.T) {
 	nonTerminal := map[string]workflow.StepCallback{
 		"read_plan":                readPlan(),
@@ -395,7 +410,6 @@ func TestStopOnMismatchDirectivePresentInEveryNonTerminalTemplate(t *testing.T) 
 		"verify":                   verify(),
 		"update_plan":              updatePlan(),
 		"update_changelog":         updateChangelog(),
-		"update_repo_changelog":    updateRepoChangelog(),
 		"test_plan":                testPlan(),
 		"update_feature_changelog": updateFeatureChangelog(),
 		"reconcile_spec":           reconcileSpec(),
@@ -432,6 +446,18 @@ func TestFinishedStepReportsSpecCompletionStatus(t *testing.T) {
 	require.Contains(t, out, "Requirements/Acceptance-Criteria", "finished template must report Requirements/Acceptance-Criteria status")
 	require.Contains(t, out, "reconcile_spec", "finished template must reference reconcile_spec as the source of unchecked-item reasons")
 	require.Contains(t, out, "deferred, descoped, or not attempted", "finished template must enumerate the possible reasons for unchecked items")
+}
+
+// Phase 2.2 criterion 2: the finished step reports where the project
+// record and each per-repo record were written, and no longer mentions a
+// repo-level CHANGELOG.md.
+func TestFinishedStepReportsProjectAndPerRepoRecordLocations(t *testing.T) {
+	out := renderFinishedStep(t)
+	require.Contains(t, out, "project changelog record", "finished must name the project record")
+	require.Contains(t, out, "one derived record per affected repo", "finished must name the per-repo records")
+	require.Contains(t, out, "changelog file read test.md --repo <repo-name>", "finished must direct reading each per-repo record through the CLI")
+	require.Contains(t, out, "user-facing summary", "finished must describe the per-repo record as the repo's release note")
+	require.NotContains(t, out, "CHANGELOG.md")
 }
 
 func TestUpdateFeatureChangelogStepMentionsSourcesAndCommitCommand(t *testing.T) {
@@ -474,6 +500,19 @@ func TestUpdateFeatureChangelogStepDerivesOneEntryPerAffectedRepo(t *testing.T) 
 		"unaffected repos must not receive empty records")
 }
 
+// Phase 2.2 criterion 1: each per-repo record opens with a two-to-four
+// sentence user-facing summary written for someone who has never seen the
+// plan, taking over the role of the removed root release note.
+func TestUpdateFeatureChangelogStepOpensRepoRecordWithUserFacingSummary(t *testing.T) {
+	out := renderStep(t, updateFeatureChangelog())
+	require.Contains(t, out, "User-facing summary first", "the per-repo record must lead with a user-facing summary")
+	require.Contains(t, out, "2-4 sentence summary", "the summary length must be pinned")
+	require.Contains(t, out, "never seen the plan", "the summary must be written for a reader without the plan")
+	require.Contains(t, out, "No file paths, no internal package names", "the summary must exclude implementation detail")
+	require.Contains(t, out, "release note", "the per-repo record must be framed as the repo's release note")
+	require.NotContains(t, out, "CHANGELOG.md")
+}
+
 // Criterion 3: a derived write failing on a missing/broken repo footprint is
 // surfaced to the user via the error's repair offer, never skipped silently.
 func TestUpdateFeatureChangelogStepSurfacesFootprintRepair(t *testing.T) {
@@ -496,28 +535,45 @@ func TestUpdateChangelogStepDirectsRepoPrefixedFilesChanged(t *testing.T) {
 	require.Contains(t, out, "`<repo-name>: path",
 		"the Files-changed example must show the repo-name prefix shape")
 	lower := strings.ToLower(out)
-	require.Contains(t, lower, "prefix every path that lives in a registered member repo",
-		"member-repo paths must carry the repo-name prefix")
-	require.Contains(t, lower, "colocated repo carry no prefix",
-		"colocated paths must stay unprefixed")
+	// Plan 000046: the prefix rule is defined by the number of registered
+	// repos, never by which repo shares the working tree.
+	require.Contains(t, lower, "prefix every path with its repo's name",
+		"paths must carry the repo-name prefix")
+	require.Contains(t, lower, "whenever more than one repo is registered",
+		"the prefix is required whenever more than one repo is registered")
+	require.Contains(t, lower, "an unprefixed path belongs to the only registered repo",
+		"unprefixed paths belong to the only registered repo")
+	require.NotContains(t, lower, "working tree",
+		"the prefix rule must not use the working tree as a stand-in")
 	require.Contains(t, lower, "one entry per affected repo",
 		"the prefix rule must be tied to the downstream per-repo derivation")
 }
 
-// Criterion 3: the update_repo_changelog instruction covers the root
-// CHANGELOG.md of each affected repo — resolved via `repo list` — no longer
-// implying exactly one repo root.
-func TestUpdateRepoChangelogStepCoversEachAffectedRepo(t *testing.T) {
-	out := renderStep(t, updateRepoChangelog())
-
-	require.Contains(t, out, "each repo the plan's work changed",
-		"update_repo_changelog must target each affected repo's root CHANGELOG.md")
-	require.Contains(t, out, "spektacular repo list",
-		"member-repo roots must be resolved via `repo list`")
-	require.Contains(t, out, "every repo whose files were changed",
-		"only repos whose files changed receive a summary")
-	require.Contains(t, out, "each summary scoped to what changed in that repo",
-		"each repo's summary must be scoped to that repo's own changes")
+// Phase 2.1 criterion 2: driving the implement workflow end to end never
+// instructs the agent to create or modify a CHANGELOG.md; every non-terminal
+// template and the finished template are free of the file name and of the
+// removed step's name.
+func TestNoImplementTemplateMentionsRootChangelogFile(t *testing.T) {
+	all := map[string]workflow.StepCallback{
+		"read_plan":                readPlan(),
+		"analyze":                  analyze(),
+		"implement":                implementStep(),
+		"test":                     testStep(),
+		"verify":                   verify(),
+		"update_plan":              updatePlan(),
+		"update_changelog":         updateChangelog(),
+		"test_plan":                testPlan(),
+		"update_feature_changelog": updateFeatureChangelog(),
+		"reconcile_spec":           reconcileSpec(),
+	}
+	rendered := map[string]string{"finished": renderFinishedStep(t)}
+	for name, cb := range all {
+		rendered[name] = renderStep(t, cb)
+	}
+	for name, out := range rendered {
+		require.NotContains(t, out, "CHANGELOG.md", "%s must not direct the agent at a CHANGELOG.md file", name)
+		require.NotContains(t, out, "update_repo_changelog", "%s must not name the removed step", name)
+	}
 }
 
 func TestReconcileSpecStepMentionsSourcesAndCommitCommand(t *testing.T) {
@@ -636,4 +692,59 @@ func TestImplementFinished_TolerantOfMissingTestPlan(t *testing.T) {
 
 	testPlanPath := filepath.Join(cfg.PlanDir, planName, "test-plan.md")
 	require.False(t, st.Exists(testPlanPath), "finished() must not create test-plan.md when it was missing")
+}
+
+// --- where each repo's code lives, in the code-touching steps ---
+
+// repoListSteps are the two implement callbacks whose templates must send the
+// agent to `repo list`: read_plan, which opens the workflow with the "Where
+// the code lives" preamble, and update_feature_changelog, which attributes
+// changes to repos. The other code-touching steps (analyze, implement, test,
+// verify) rely on the agent carrying that forward from read_plan.
+func repoListSteps() map[string]workflow.StepCallback {
+	return map[string]workflow.StepCallback{
+		"read_plan":                readPlan(),
+		"update_feature_changelog": updateFeatureChangelog(),
+	}
+}
+
+// laterCodeTouchingSteps are the code-touching steps after read_plan that
+// must not repeat the preamble.
+func laterCodeTouchingSteps() map[string]workflow.StepCallback {
+	return map[string]workflow.StepCallback{
+		"analyze":     analyze(),
+		"implement":   implementStep(),
+		"test":        testStep(),
+		"verify":      verify(),
+		"update_plan": updatePlan(),
+	}
+}
+
+// No implement step carries a roster. The steps that need to know where a
+// repo's code lives send the agent to `repo list`, which reports the registry
+// as it stands right now — on a fresh run and on a resume alike.
+func TestRepoListStepsSendTheAgentToRepoList(t *testing.T) {
+	for name, cb := range repoListSteps() {
+		t.Run(name, func(t *testing.T) {
+			out := renderStep(t, cb)
+			require.Contains(t, out, "repo list", "%s must send the agent to `repo list`", name)
+			require.Contains(t, out, "`root`", "%s must name the root that repo list reports", name)
+			require.NotContains(t, out, "## Repos", "%s must not point at a Repos section", name)
+			require.NotContains(t, out, "{{", "%s must leave no unrendered mustache", name)
+		})
+	}
+}
+
+func TestWhereTheCodeLivesPreambleRenderedOnceByReadPlan(t *testing.T) {
+	out := renderStepWithData(t, readPlan(), map[string]any{"name": "test"})
+	require.Contains(t, out, "Where the code lives", "read_plan must open with the code-location preamble")
+	require.Contains(t, out, "the rest of this workflow", "read_plan must scope the preamble to the whole workflow")
+
+	for name, cb := range laterCodeTouchingSteps() {
+		t.Run(name, func(t *testing.T) {
+			out := renderStepWithData(t, cb, map[string]any{"name": "test"})
+			require.NotContains(t, out, "Where the code lives", "%s must not repeat the code-location preamble", name)
+			require.NotContains(t, out, "repo list", "%s must not repeat the repo list direction", name)
+		})
+	}
 }

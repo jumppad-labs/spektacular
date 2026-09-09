@@ -7,19 +7,39 @@ Examples:
 • Cannot introduce breaking changes to the public API
 • Must support the current minimum supported runtime versions
 
-**Constraints are the hard rules and boundaries the solution MUST honor.** If the user states something as a binding rule — a "must", "must not", or "cannot" about how or within what bounds the solution is built — it is a constraint. This explicitly includes a **mandated technology**: "must use X" is a constraint, not a design decision to be moved elsewhere.
+**Constraints are the hard rules and boundaries the solution MUST honor — and that the team does not get to negotiate.** Two things have to be true. A candidate that fails either one is not a constraint, and belongs in another section rather than being dropped.
 
-Apply this test:
+Apply both tests, in order:
 
-> *Is this a hard rule the solution is required to honor, or just a preferred direction the planner could adapt or replace?*
+> **1. Is it binding?** *Is this a hard rule the solution is required to honor, or just a preferred direction the planner could adapt or replace?*
 
-Hard rules belong here. Non-binding direction — "use X if convenient", "prefer Y", "consider Z" — is **not** a constraint; it belongs in Technical Approach, which is guidance the planner may revise. Phrasing is the strongest signal: "must" / "must not" / "cannot" → constraint; "prefer" / "consider" / "use … if" → Technical Approach.
+> **2. Whose decision was it?** *Did this come from outside the team's free choice — a user or stakeholder decision, a policy or regulation, an existing system, a platform reality — or did we simply pick it while drafting?*
 
-• Constraint: *"must use SQLite"* — a binding technology mandate (e.g. the whole point of a migration). It stays a constraint; do **not** move it to Technical Approach.
-• Constraint: *"must integrate with the existing user store"* — a required integration boundary.
+Phrasing is the strongest signal for the first test: "must" / "must not" / "cannot" → binding; "prefer" / "consider" / "use … if" → Technical Approach. But **phrasing tells you nothing about the second test**, and that is where this section goes wrong. *"Must use SQLite"* reads identically whether the user mandated it or you concluded it was a sensible fit while writing the draft. Only one of those is a constraint, and you are the one choosing the wording — so the phrasing cannot be your evidence.
+
+The practical form of the second test: **could the planner reasonably propose an alternative and be right?** If yes, it is direction, not a constraint. A constraint takes a decision away from the planner, so there must be a *reason* it was taken away. If you cannot state that reason, you are not looking at a constraint.
+
+**Traceability rule — this is the one that keeps the section honest.** Every constraint you draft must trace back to something the user actually said, in the interview findings or in this conversation. If you are about to write a "must" that you inferred, assumed, or judged sensible rather than one the user imposed, do not write it as a constraint. Either ask the user whether it is binding and record their answer, or put it in Technical Approach as direction the planner may revise. An unasked question is not a mandate.
+
+When a candidate fails, move it to the section that owns it:
+
+• A **design decision you chose freely** — the planner could pick differently and be right → Technical Approach.
+• A **statement of what you are *not* doing** — reads as "no changes to X", "we won't touch Y" → Non-Goals.
+• Something the feature must ***do*** — describes behaviour rather than a bound on how it is built → Requirements.
+• A **definition invented so an acceptance criterion becomes checkable** → leave Constraints alone and rephrase the criterion.
+
+That last one is a trap worth naming. If an acceptance criterion cannot be verified because something is undefined, the fix is to rephrase the criterion so it refers to the thing generically. Pinning down a route, a filename, or a label purely so a criterion has something concrete to point at hands the planner a decision that was never taken away from them.
+
+Examples:
+
+• Constraint: *"must use SQLite"* — **when the user mandated it** (e.g. the whole point of a migration). It stays a constraint; do **not** move it to Technical Approach.
+• Not a constraint: *"must use SQLite"* — **when you chose it** because it fit the requirements. The planner could reasonably propose otherwise; that is Technical Approach.
+• Constraint: *"must integrate with the existing user store"* — a required integration boundary; the existing system is a fact, not a choice.
 • Constraint: *"must not break the shape of the public JSON response"* — removing it lets the feature break downstream consumers.
 • Constraint: *"must run embedded, with no separate database server"* — a deployment boundary.
 • Not a constraint: *"prefer a table-per-entity schema"* — a non-binding design preference; that's Technical Approach.
+• Not a constraint: *"must be served at /reports/"* — a route is a design decision unless the user fixed it; that's Technical Approach.
+• Not a constraint: *"no changes to the existing admin pages"* — a scope exclusion; that's Non-Goals.
 
 (Hard rules about what the feature must *do* — its behaviour — are Requirements, captured in the previous step. Constraints are the hard rules about *how / within what bounds* it is built.)
 
@@ -32,6 +52,15 @@ Before drafting an empty section, check the most common sources of real boundari
 If, after checking these, there are genuinely none, draft the section as empty and say so plainly when presenting it — a blank section is a valid outcome, but the user should still confirm it was a deliberate check, not a skip.
 
 **Format each constraint as its own bullet point** (`- ...`), one hard rule per line, rather than a paragraph running multiple rules together. Write the working file in this shape from the start — it is assembled into the final spec largely as-is.
+
+**Before you save, re-read every bullet and confirm all four:**
+
+- [ ] **Binding** — a rule the solution must honor, not a preference.
+- [ ] **Not our free choice** — it came from a user or stakeholder decision, a policy, an existing system, or a platform reality.
+- [ ] **Traceable** — you can point to where the user imposed it. If you cannot, ask them before saving it as a constraint.
+- [ ] **Owned by this section** — not a scope exclusion, a behaviour, or a patch for an unverifiable acceptance criterion.
+
+Move any bullet that fails a box to the section that owns it — do not simply delete it.
 
 Before advancing, save this section to its working file. Using your own `Write` tool, write the agreed **Constraints** content (the body only — no `## ` heading line) to `.spektacular/work/{{spec_name}}/constraints.md`. This working file is git-tracked and is read back on resume and when the spec is assembled, so it must hold the final agreed content for this section. It is **not** a spec store document — write it directly with your file tools and do **not** route it through `{{config.command}} spec file write` (that command is only for the final assembled spec).
 

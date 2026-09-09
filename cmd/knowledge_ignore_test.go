@@ -39,15 +39,15 @@ func TestKnowledgeList_OmitsIgnoredPaths(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	require.ElementsMatch(t, []knowledgeEntry{
-		{Scope: "project", Path: "readme.md"},
-		{Scope: "project", Path: "architecture/initial-idea.md"},
-		{Scope: "team", Path: "guidelines.md"},
+		{Tier: "repo", Name: "testproj", Path: "readme.md"},
+		{Tier: "repo", Name: "testproj", Path: "architecture/initial-idea.md"},
+		{Tier: "project", Name: "team", Path: "guidelines.md"},
 	}, result.Entries)
 }
 
 // Criterion 1: `knowledge search` omits hits inside excluded paths — the
-// "compass" occurrence in team noise/scratch.md never surfaces, while the
-// visible matches in both scopes still do.
+// "compass" occurrence in the team store's noise/scratch.md never surfaces,
+// while the visible matches in both stores still do.
 func TestKnowledgeSearch_OmitsIgnoredPaths(t *testing.T) {
 	ignoredSourceProject(t)
 
@@ -59,11 +59,11 @@ func TestKnowledgeSearch_OmitsIgnoredPaths(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 
-	var paths []string
+	var addressed []string
 	for _, h := range result.Hits {
-		paths = append(paths, h.Scope+"/"+h.Path)
+		addressed = append(addressed, h.Tier+":"+h.Name+"/"+h.Path)
 	}
-	require.ElementsMatch(t, []string{"project/readme.md", "team/guidelines.md"}, paths)
+	require.ElementsMatch(t, []string{"repo:testproj/readme.md", "project:team/guidelines.md"}, addressed)
 }
 
 // Criterion 2: an excluded path named directly by its exact path is still
@@ -72,18 +72,18 @@ func TestKnowledgeSearch_OmitsIgnoredPaths(t *testing.T) {
 func TestKnowledgeRead_ExcludedPathStillReadable(t *testing.T) {
 	ignoredSourceProject(t)
 
-	stdout, _, err := runKnowledge(t, "read", "--data", `{"scope":"team","path":"noise/scratch.md"}`)
+	stdout, _, err := runKnowledge(t, "read", "--data",
+		`{"tier":"project","name":"team","path":"noise/scratch.md"}`)
 	require.NoError(t, err)
 
-	var result struct {
-		Scope   string `json:"scope"`
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
+	var result knowledgeAddressResult
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	require.Equal(t, "team", result.Scope)
-	require.Equal(t, "noise/scratch.md", result.Path)
-	require.Equal(t, "scratch notes: the compass wobbles\n", result.Content)
+	require.Equal(t, knowledgeAddressResult{
+		Tier:    "project",
+		Name:    "team",
+		Path:    "noise/scratch.md",
+		Content: "scratch notes: the compass wobbles\n",
+	}, result)
 }
 
 // Criterion 2: an excluded path named directly is still writable —
@@ -96,7 +96,7 @@ func TestKnowledgeWrite_ExcludedPathStillWritable(t *testing.T) {
 	require.NoError(t, os.WriteFile(contentPath, []byte("hidden but writable\n"), 0o644))
 
 	_, _, err := runKnowledge(t, "write",
-		"--data", `{"scope":"team","path":"noise/hidden.md"}`,
+		"--data", `{"tier":"project","name":"team","path":"noise/hidden.md"}`,
 		"--file", contentPath)
 	require.NoError(t, err)
 

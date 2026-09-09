@@ -72,9 +72,10 @@ func NewIgnoreStore(inner Store, m IgnoreMatcher) Store {
 
 // NewSourceStore builds the standard store for a source directory: a
 // FileStore rooted at root, wrapped with the exclusions declared by the
-// root's own .spektacular_ignore (a pass-through when none exists).
-func NewSourceStore(root, scope string) Store {
-	return NewIgnoreStore(NewFileStore(root, scope), LoadIgnore(root))
+// root's own .spektacular_ignore (a pass-through when none exists). The label
+// is an opaque diagnostic tag; the store never interprets it.
+func NewSourceStore(root, label string) Store {
+	return NewIgnoreStore(NewFileStore(root, label), LoadIgnore(root))
 }
 
 func (s *ignoreStore) Root() string { return s.inner.Root() }

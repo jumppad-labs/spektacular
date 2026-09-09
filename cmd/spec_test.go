@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/identifier"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/workflow"
@@ -26,9 +28,22 @@ func writeSpecCommandConfig(t *testing.T, dir, body string) {
 	dataDir := filepath.Join(dir, ".spektacular")
 	require.NoError(t, os.MkdirAll(dataDir, 0o755))
 	// A project config requires a slug-safe `name`; prepend one so fixture
-	// bodies stay focused on the section each test exercises.
+	// bodies stay focused on the section each test exercises. A project must
+	// also register at least one repo: unless the body declares its own
+	// registry, register the project's own footprint folder (`.` counted
+	// from config.yaml, so the .spektacular folder itself), the shape init
+	// produces.
 	body = "name: testproj\n" + body
+	if !strings.Contains(body, "repos:") {
+		body += "repos:\n  - name: testproj\n    location: .\n"
+	}
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(body), 0o644))
+	repoConfigPath := filepath.Join(dataDir, config.RepoConfigFileName)
+	if _, err := os.Stat(repoConfigPath); os.IsNotExist(err) {
+		rc := config.NewDefaultRepoConfig()
+		rc.Source = config.DefaultRepoSource
+		require.NoError(t, rc.ToYAMLFile(repoConfigPath))
+	}
 }
 
 func writeSpecCommandFile(t *testing.T, dir, name string) {

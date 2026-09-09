@@ -125,7 +125,7 @@ func repoRoutedStore(repoName string) (store.Store, string, error) {
 		return nil, "", err
 	}
 
-	rc, err := config.RepoConfigFromYAMLFile(filepath.Join(resolved.Root, ".spektacular", config.RepoConfigFileName))
+	rc, err := config.RepoConfigFromYAMLFile(filepath.Join(resolved.Root, config.RepoConfigFileName))
 	if err != nil {
 		return nil, "", err
 	}

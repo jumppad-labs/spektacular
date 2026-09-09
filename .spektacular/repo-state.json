@@ -1,0 +1,64 @@
+{
+  "kind": "repo",
+  "current_step": "finished",
+  "completed_steps": [
+    "new",
+    "locate",
+    "name",
+    "placement",
+    "confirm",
+    "register",
+    "finished"
+  ],
+  "created_at": "2026-09-07T16:10:26.551948412Z",
+  "updated_at": "2026-09-07T16:15:44.687699731Z",
+  "data": {
+    "description": "CLI tool for building local cloud native development environments — declares OCI containers, Nomad and Kubernetes clusters and supporting resources in the Jumppad HCL configuration language and brings them up via Docker or Podman drivers.",
+    "evidence": {
+      "identity": "jumppad",
+      "languages": [
+        "Go"
+      ],
+      "languages_line": "Go",
+      "manifest": "go.mod",
+      "readable": true,
+      "readme": "Jumppad is a tool for building modern cloud native development environments. Using the Jumppad configuration language you can create OCI containers, Nomad/Kubernetes clusters and more.",
+      "summary": "",
+      "top_level": [
+        "bin/",
+        "cmd/",
+        "dagger/",
+        "examples/",
+        "pkg/",
+        "testutils/",
+        "CLAUDE.md",
+        "ChangeLog.md",
+        "LICENSE",
+        "Makefile",
+        "README.md",
+        "env",
+        "go.mod",
+        "go.sum",
+        "main.go",
+        "main_test.go"
+      ],
+      "top_level_line": "bin/, cmd/, dagger/, examples/, pkg/, testutils/, CLAUDE.md, ChangeLog.md, LICENSE, Makefile, README.md, env, go.mod, go.sum, main.go, main_test.go"
+    },
+    "location": "/home/nicj/code/github.com/jumppad-labs/jumppad",
+    "name": "jumppad",
+    "placement": "inside",
+    "registration": {
+      "footprint": "created",
+      "metadata_note": "",
+      "registered": true
+    },
+    "role": "tool",
+    "tags": [
+      "go",
+      "cli",
+      "hcl",
+      "containers",
+      "dev-environments"
+    ]
+  }
+}

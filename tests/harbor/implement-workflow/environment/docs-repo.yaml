@@ -3,14 +3,15 @@ role: docs
 tags:
     - documentation
     - markdown
-deployment: static-site
+source:
+    provider: file
+    config:
+        location: /opt/docs-repo
 knowledge:
-    sources:
-        - scope: project
-          provider: file
-          config:
-            location: .spektacular/knowledge
+    provider: file
+    config:
+        location: knowledge
 changelog:
     provider: file
     config:
-        directory: .spektacular/changelog
+        directory: changelog

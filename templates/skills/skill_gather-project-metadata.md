@@ -13,6 +13,8 @@ Gather the following metadata:
 
 ## Commands
 
+Run these in the code of the repo the plan targets (the `repo list` command reports where it lives as `root`), not in whatever directory you happen to be in.
+
 ```bash
 # ISO timestamp
 date -u +"%Y-%m-%dT%H:%M:%SZ"

@@ -30,15 +30,21 @@ COPY plan.md /app/.spektacular/plans/20260101000000-jwt-auth/plan.md
 COPY test-plan.md /app/.spektacular/plans/20260101000000-jwt-auth/test-plan.md
 COPY state.json /app/.spektacular/state.json
 
-# --- External member repo footprint at /opt/docs-repo -----------------------
+# --- Separate member repo: footprint under the project, code elsewhere ------
 #
-# The "docs" member repository has its own working tree at /opt/docs-repo
-# with its own .spektacular/repo.yaml. It does not need to be a git repo —
-# repo.Set.Resolve only checks that .spektacular/repo.yaml exists and parses.
-# Any repo-routed changelog write (`changelog file write --repo docs`) will
-# land under /opt/docs-repo/.spektacular/changelog/auth-service/<name>.md.
-RUN mkdir -p /opt/docs-repo/.spektacular
-COPY docs-repo.yaml /opt/docs-repo/.spektacular/repo.yaml
+# The "docs" member repository keeps its Spektacular files in the project
+# folder at /app/repos/docs/.spektacular/ (the registry's `location`, which
+# names the folder holding repo.yaml), while
+# its code lives at /opt/docs-repo, declared by `source: file:///opt/docs-repo`
+# in its repo.yaml. The code checkout carries NO .spektacular/ directory and
+# must stay that way: any repo-routed changelog write
+# (`changelog file write --repo docs`) lands under
+# /app/repos/docs/.spektacular/changelog/auth-service/<name>.md, and nothing
+# Spektacular writes may touch /opt/docs-repo.
+RUN mkdir -p /app/repos/docs/.spektacular/knowledge /app/repos/docs/.spektacular/changelog
+COPY docs-repo.yaml /app/repos/docs/.spektacular/repo.yaml
+RUN mkdir -p /opt/docs-repo/docs && printf '# auth-service docs\n' > /opt/docs-repo/README.md \
+    && printf '# API reference\n' > /opt/docs-repo/docs/api.md
 
 # The pre-seeded spec, plan, and test-plan files each carry in-progress
 # frontmatter directly (see environment/*.md). The finished step's

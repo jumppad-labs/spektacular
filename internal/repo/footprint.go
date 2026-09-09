@@ -17,8 +17,8 @@ const (
 )
 
 // EnsureFootprint creates or repairs a repo's minimal Spektacular footprint
-// at root: the repo config file plus the knowledge storage its sources
-// declare — and nothing else (no agent guidance, no skills, no version
+// at root — the folder that holds the repo's repo.yaml: that file plus the
+// knowledge storage its sources declare — and nothing else (no agent guidance, no skills, no version
 // file). It is idempotent and strictly additive: an existing repo.yaml is
 // kept (and drives the scaffolding) unless it is broken, existing knowledge
 // files are never overwritten, and a repo initialized by another project is
@@ -26,14 +26,13 @@ const (
 // repo.yaml existed), repaired (repo.yaml existed but was broken, or parts
 // of the knowledge storage were missing), or unchanged.
 func EnsureFootprint(root string, repoCfg config.RepoConfig) (string, error) {
-	spektacularDir := filepath.Join(root, ".spektacular")
-	repoConfigPath := filepath.Join(spektacularDir, config.RepoConfigFileName)
+	repoConfigPath := filepath.Join(root, config.RepoConfigFileName)
 
 	status := FootprintUnchanged
 	if _, err := os.Stat(repoConfigPath); os.IsNotExist(err) {
 		status = FootprintCreated
-		if err := os.MkdirAll(spektacularDir, 0755); err != nil {
-			return "", fmt.Errorf("creating directory %s: %w", spektacularDir, err)
+		if err := os.MkdirAll(root, 0755); err != nil {
+			return "", fmt.Errorf("creating directory %s: %w", root, err)
 		}
 		if err := repoCfg.ToYAMLFile(repoConfigPath); err != nil {
 			return "", err
@@ -54,11 +53,9 @@ func EnsureFootprint(root string, repoCfg config.RepoConfig) (string, error) {
 	// root plus a directory and README for every category in the registry.
 	// Only missing pieces are created, so an already-initialized repo is
 	// never disturbed.
-	for _, src := range repoCfg.WithDefaults(root).Knowledge.Sources {
-		if src.Provider != config.ProviderFile || src.Scope != config.DefaultKnowledgeScope {
-			continue
-		}
-		location := src.Config.Location
+	kc := repoCfg.WithDefaults(root).Knowledge
+	if kc.Provider == config.ProviderFile {
+		location := kc.Config.Location
 		if !filepath.IsAbs(location) {
 			location = filepath.Join(root, location)
 		}

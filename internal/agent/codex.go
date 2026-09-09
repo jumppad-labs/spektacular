@@ -14,6 +14,9 @@ func (codexAgent) Install(projectPath string, cfg config.Config, out io.Writer) 
 	if err := installWorkflowSkills(projectPath, ".agents/skills", cfg, out); err != nil {
 		return err
 	}
+	if err := installRepoSourcesSection(projectPath, cfg, out); err != nil {
+		return err
+	}
 	if err := installMemoryContextSection(projectPath, cfg, out); err != nil {
 		return err
 	}

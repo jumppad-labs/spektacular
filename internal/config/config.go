@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"gopkg.in/yaml.v3"
 )
 
@@ -46,11 +47,13 @@ const (
 	// configured. It is resolved relative to the project root, like the
 	// knowledge location.
 	DefaultChangelogDir = ".spektacular/changelog"
-	// DefaultKnowledgeScope is the scope of the synthesised default knowledge source.
-	DefaultKnowledgeScope = "project"
-	// DefaultKnowledgeLocation is the project-relative location of the
-	// synthesised default knowledge source.
-	DefaultKnowledgeLocation = ".spektacular/knowledge"
+
+	// DefaultRepoKnowledgeLocation and DefaultRepoChangelogDir are the
+	// repo-scoped defaults written into a repo.yaml. Every relative path in
+	// that file is resolved from the folder holding it, so these are bare
+	// folder names beside repo.yaml — not project-root paths.
+	DefaultRepoKnowledgeLocation = "knowledge"
+	DefaultRepoChangelogDir      = "changelog"
 )
 
 // DebugConfig holds debug logging configuration.
@@ -96,21 +99,52 @@ type FileChangelogConfig struct {
 	Directory string `yaml:"directory"`
 }
 
-// KnowledgeConfig holds the ordered list of configured knowledge sources.
+// KnowledgeConfig holds the ordered list of the project's own shared knowledge
+// stores. It is the project-tier declaration; a repo declares its single store
+// with RepoKnowledgeConfig instead.
 type KnowledgeConfig struct {
 	Sources []SourceConfig `yaml:"sources,omitempty"`
 }
 
-// SourceConfig is a single knowledge source. Each source names its own
-// provider and scope, so scopes can use different backends independently.
-type SourceConfig struct {
-	Scope    string              `yaml:"scope"`
+// RepoKnowledgeConfig is a repo's single knowledge store declaration. It
+// deliberately mirrors ChangelogConfig, which sits beside it in the same file:
+// one provider block, no list and no label, because a repo has exactly one
+// store and is addressed by the name the project registered it under, not by
+// a name it chooses for itself.
+type RepoKnowledgeConfig struct {
 	Provider string              `yaml:"provider"`
 	Config   FileKnowledgeConfig `yaml:"config"`
-	// Repo is the registry name of the repo whose config declared this
-	// source, set programmatically during aggregation for attribution; it is
-	// never declared in a config file. Empty for project-owned sources.
-	Repo string `yaml:"-"`
+}
+
+// Validate checks the repo's knowledge declaration names a supported provider
+// and a location to read from.
+func (k RepoKnowledgeConfig) Validate() error {
+	if k.Provider != ProviderFile {
+		return fmt.Errorf("knowledge.provider %q is not supported (only %q)", k.Provider, ProviderFile)
+	}
+	if k.Config.Location == "" {
+		return fmt.Errorf("knowledge.config.location must not be empty")
+	}
+	return nil
+}
+
+// SourceConfig is a single knowledge store. Each store names its own provider,
+// so stores can use different backends independently.
+//
+// Name is the name the store is addressed by, and it is the same word wherever
+// it appears: in this declaration, in a write, and in a narrowing. A
+// project-declared store carries the name written here; a repo-declared store
+// has its name stamped from the registry during aggregation, since a repo is
+// addressed by the name the project registered it under and does not choose one.
+type SourceConfig struct {
+	Name     string              `yaml:"name"`
+	Provider string              `yaml:"provider"`
+	Config   FileKnowledgeConfig `yaml:"config"`
+	// Tier is the store's addressing tier, stamped programmatically during
+	// aggregation where every tier is visible at once, and never declared in a
+	// config file. It is a plain string because the knowledge package that
+	// defines the tier type imports this one.
+	Tier string `yaml:"-"`
 }
 
 // FileKnowledgeConfig is the file-provider configuration for a knowledge source.
@@ -119,16 +153,23 @@ type FileKnowledgeConfig struct {
 }
 
 // RepoEntry is a single member repo in the project's registry. It carries
-// membership only — identity, location, and project-scoped dependencies —
-// deliberately provider-agnostic siblings of the provider block, mirroring
-// how knowledge sources keep scope outside their provider config. A repo's
-// descriptive metadata (description, role, tags, deployment) lives in the
-// repo's own configuration, not here, so it is never duplicated across the
-// projects that register it. At least one of Address/Local is required;
-// when both are set, Local wins and Address serves as provenance metadata.
+// membership only — identity, the folder holding the repo's own Spektacular
+// files, and project-scoped dependencies — deliberately provider-agnostic
+// siblings of the provider block, mirroring how knowledge sources keep scope
+// outside their provider config. A repo's descriptive metadata (description,
+// role, tags) and the location of its code (RepoConfig.Source)
+// live in the repo's own configuration, not here, so they are never
+// duplicated across the projects that register it.
+//
+// Location is the folder holding the repo's .spektacular/ directory, absolute
+// or relative to the folder holding config.yaml (so the project's own root
+// is `..`), and is required. Local is the older name
+// for the same setting: it is accepted on load, folded into Location, and
+// never written back. The former address key is no longer accepted; a repo's
+// git origin belongs in its repo.yaml as source.
 type RepoEntry struct {
 	Name         string        `yaml:"name"`
-	Address      string        `yaml:"address,omitempty"`
+	Location     string        `yaml:"location,omitempty"`
 	Local        string        `yaml:"local,omitempty"`
 	Dependencies []string      `yaml:"dependencies,omitempty"`
 	Provider     string        `yaml:"provider,omitempty"`
@@ -139,11 +180,34 @@ type RepoEntry struct {
 // empty in this release and reserved for provider-specific settings.
 type GitRepoConfig struct{}
 
+// ProjectConfigDir returns the folder holding the project's config.yaml:
+// <projectRoot>/.spektacular. Relative paths written in config.yaml are
+// resolved from this folder — from the file that declares them — so
+// `..` is the project's own root and `../repos/<name>` a sibling folder.
+func ProjectConfigDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".spektacular")
+}
+
+// ResolvedLocation returns the entry's location as an absolute path. An
+// absolute location is returned cleaned; a relative one is resolved from the
+// folder holding config.yaml (see ProjectConfigDir), never from the process
+// working directory or the project root.
+func (e RepoEntry) ResolvedLocation(projectRoot string) string {
+	if filepath.IsAbs(e.Location) {
+		return filepath.Clean(e.Location)
+	}
+	return filepath.Join(ProjectConfigDir(projectRoot), e.Location)
+}
+
 // Config is the top-level project configuration. It carries the project's
 // identity, agent behaviour, and the central spec/plan/changelog storage.
 // The knowledge section lists only project-owned sources (team or global
 // shares, for example); each repo's own knowledge sources are declared in
 // that repo's RepoConfig instead.
+//
+// Source is the project's git address, recorded in changelog provenance
+// only. It is not a code location: where a repo's code lives is declared by
+// RepoConfig.Source in that repo's repo.yaml.
 type Config struct {
 	Name                 string          `yaml:"name"`
 	Source               string          `yaml:"source,omitempty"`
@@ -219,7 +283,77 @@ func ParseYAMLFile(path string) (Config, error) {
 	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 		return Config{}, fmt.Errorf("parsing config file %s: %w", path, err)
 	}
+	if err := rejectLegacyRepoAddress(expanded, path); err != nil {
+		return Config{}, err
+	}
+	if err := rejectLegacyKnowledgeScope(expanded, path); err != nil {
+		return Config{}, err
+	}
+	for i := range cfg.Repos {
+		cfg.Repos[i] = cfg.Repos[i].foldLocationAlias()
+	}
 	return cfg, nil
+}
+
+// rejectLegacyRepoAddress fails a config whose registry still carries the
+// removed address key. The value is not lost, only relocated: the error
+// names the repo and the exact source line to add to its repo.yaml. The raw
+// document is scanned because RepoEntry no longer has a field the key could
+// land in.
+// rejectLegacyKnowledgeScope refuses a project config whose shared knowledge
+// stores are still identified by the removed 'scope' key. The typed config has
+// no field that key could land in, so without this guard a stale file parses
+// cleanly and behaves as though it declared an unnamed store. Nothing is
+// rewritten on disk, so the same file fails identically on every run until a
+// person edits it.
+func rejectLegacyKnowledgeScope(raw, path string) error {
+	var shape struct {
+		Knowledge struct {
+			Sources []map[string]any `yaml:"sources"`
+		} `yaml:"knowledge"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &shape); err != nil {
+		return nil // the typed unmarshal already accepted the document
+	}
+	for i, src := range shape.Knowledge.Sources {
+		scope, ok := src["scope"]
+		if !ok {
+			continue
+		}
+		return output.NewError("config_invalid",
+			fmt.Sprintf("%s: knowledge.sources[%d] uses the removed 'scope' key; a shared knowledge store is now identified by 'name'", path, i)).
+			WithResource(path).
+			WithNextAction(fmt.Sprintf("in %s, rename knowledge.sources[%d].scope to 'name', e.g.:\n\nknowledge:\n  sources:\n    - name: %v\n      provider: file\n      config:\n        location: <location>", path, i, scope))
+	}
+	return nil
+}
+
+func rejectLegacyRepoAddress(raw, path string) error {
+	var shape struct {
+		Repos []map[string]any `yaml:"repos"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &shape); err != nil {
+		return nil // the typed unmarshal already accepted the document
+	}
+	for i, r := range shape.Repos {
+		addr, ok := r["address"]
+		if !ok {
+			continue
+		}
+		name, _ := r["name"].(string)
+		location, _ := r["location"].(string)
+		if location == "" {
+			location, _ = r["local"].(string)
+		}
+		if location == "" {
+			location = "<location>"
+		}
+		return output.NewError("config_invalid",
+			fmt.Sprintf("%s: repo %q uses the removed 'address' key; a repo's git origin now belongs in its own repo.yaml as 'source'", path, name)).
+			WithResource(path).
+			WithNextAction(fmt.Sprintf("remove repos[%d].address from %s and set 'source: %v' in %s/.spektacular/repo.yaml", i, path, addr, location))
+	}
+	return nil
 }
 
 // slugPattern matches slug/filesystem-safe identifiers: lowercase letters,
@@ -284,6 +418,10 @@ func (c Config) Validate() error {
 // validateRepos checks every registry entry for a slug-safe unique name, a
 // usable location, and a supported provider.
 func validateRepos(repos []RepoEntry) error {
+	if len(repos) == 0 {
+		return output.NewError("config_invalid", "no repos are registered in config.yaml; a project must register at least one repo").
+			WithNextAction("run 'init' to register this project's own repo, or add a repos entry with a name and location")
+	}
 	seen := make(map[string]bool, len(repos))
 	for i, r := range repos {
 		if err := validateSlug(fmt.Sprintf("repos[%d].name", i), r.Name); err != nil {
@@ -293,8 +431,9 @@ func validateRepos(repos []RepoEntry) error {
 			return fmt.Errorf("repos: name %q is configured more than once", r.Name)
 		}
 		seen[r.Name] = true
-		if r.Address == "" && r.Local == "" {
-			return fmt.Errorf("repo %q: at least one of address or local is required", r.Name)
+		if r.Location == "" && r.Local == "" {
+			return output.NewError("config_invalid", fmt.Sprintf("repo %q has no location", r.Name)).
+				WithNextAction(fmt.Sprintf("set repos[%d].location to the folder holding %s's .spektacular/ directory", i, r.Name))
 		}
 		switch r.Provider {
 		case "", ProviderGit:
@@ -306,11 +445,24 @@ func validateRepos(repos []RepoEntry) error {
 }
 
 // WithDefaults returns the entry with its provider defaulted to git when
-// unset, mirroring how absent config sections resolve to defaults at load.
+// unset, mirroring how absent config sections resolve to defaults at load,
+// and with the deprecated local alias folded into Location.
 func (r RepoEntry) WithDefaults() RepoEntry {
+	r = r.foldLocationAlias()
 	if r.Provider == "" {
 		r.Provider = ProviderGit
 	}
+	return r
+}
+
+// foldLocationAlias moves a value given under the older local key into
+// Location and clears Local, so the alias is honoured on load and the
+// current key is the only one ever written back.
+func (r RepoEntry) foldLocationAlias() RepoEntry {
+	if r.Location == "" && r.Local != "" {
+		r.Location = r.Local
+	}
+	r.Local = ""
 	return r
 }
 
@@ -355,47 +507,34 @@ func (c ChangelogConfig) Validate() error {
 	return nil
 }
 
-// Validate checks every knowledge source for a supported provider, required
-// fields, and a unique scope.
+// Validate checks every shared knowledge store for a supported provider,
+// required fields, and a name unique within the project tier. Uniqueness is
+// checked within this list rather than globally, so naming a shared store after
+// a repo is allowed: a store's identity is its tier and its name together.
 func (c KnowledgeConfig) Validate() error {
 	seen := make(map[string]bool, len(c.Sources))
 	for i, src := range c.Sources {
-		if src.Scope == "" {
-			return fmt.Errorf("knowledge.sources[%d].scope must not be empty", i)
+		if src.Name == "" {
+			return output.NewError(
+				"config_invalid",
+				fmt.Sprintf("knowledge.sources[%d] declares no name", i),
+			).WithNextAction("give every entry under knowledge.sources a `name:`, which is the name that store is addressed by")
 		}
-		if seen[src.Scope] {
-			return fmt.Errorf("knowledge.sources: scope %q is configured more than once", src.Scope)
+		if seen[src.Name] {
+			return output.NewError(
+				"config_invalid",
+				fmt.Sprintf("knowledge.sources declares the name %q more than once", src.Name),
+			).WithNextAction(fmt.Sprintf("rename one of the two %q entries under knowledge.sources; names must be unique within the project tier", src.Name))
 		}
-		seen[src.Scope] = true
+		seen[src.Name] = true
 		if src.Provider != ProviderFile {
-			return fmt.Errorf("knowledge source %q: provider %q is not supported (only %q)", src.Scope, src.Provider, ProviderFile)
+			return fmt.Errorf("knowledge store %q: provider %q is not supported (only %q)", src.Name, src.Provider, ProviderFile)
 		}
 		if src.Config.Location == "" {
-			return fmt.Errorf("knowledge source %q: config.location must not be empty", src.Scope)
+			return fmt.Errorf("knowledge store %q: config.location must not be empty", src.Name)
 		}
 	}
 	return nil
-}
-
-// WithDefaults returns a KnowledgeConfig guaranteed to carry at least one
-// source: if none are configured it synthesises the default project source
-// pointing at the init-created knowledge directory under projectRoot. A
-// configuration that already lists sources is returned unchanged.
-func (c KnowledgeConfig) WithDefaults(projectRoot string) KnowledgeConfig {
-	if len(c.Sources) > 0 {
-		return c
-	}
-	return KnowledgeConfig{
-		Sources: []SourceConfig{
-			{
-				Scope:    DefaultKnowledgeScope,
-				Provider: ProviderFile,
-				Config: FileKnowledgeConfig{
-					Location: filepath.Join(projectRoot, DefaultKnowledgeLocation),
-				},
-			},
-		},
-	}
 }
 
 // ToYAMLFile writes the Config to a YAML file.

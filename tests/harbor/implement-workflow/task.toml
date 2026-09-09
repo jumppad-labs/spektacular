@@ -24,5 +24,9 @@ source = "/app/.spektacular"
 destination = "spektacular"
 
 [[artifacts]]
-source = "/opt/docs-repo/.spektacular"
+source = "/app/repos/docs/.spektacular"
 destination = "docs-repo-spektacular"
+
+[[artifacts]]
+source = "/opt/docs-repo"
+destination = "docs-repo-source"

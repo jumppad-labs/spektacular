@@ -32,6 +32,18 @@ When writing content for each section, use these details about the feature:
 
 Write meaningful, non-placeholder content for every section.
 
+## You are running non-interactively
+
+There is no human at the other end of this session. You are playing both roles:
+you drive the workflow **and** you supply the answers it asks for.
+
+So when the workflow interviews you, or asks you to confirm a draft, answer it
+yourself from the details above and from the scripted rejection below, and keep
+going. Make a reasonable decision on anything they do not cover, record it in
+the spec, and move on. **Never end your turn waiting for a reply** — nothing
+will answer, and the run will stall at that step. Only stop once the workflow
+itself reports it has finished.
+
 ## A rejection that reveals a missing requirement
 
 When you reach the **Constraints** step and it presents its draft to you, reject

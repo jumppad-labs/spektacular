@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,46 +45,71 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// newSourceRepo builds a local "remote" as a plain path: a git repo in a
-// fresh temp dir holding a committed README.md and a committed, valid
-// .spektacular/repo.yaml footprint, so a clone of it passes the footprint
-// check. Returns the repo's path, usable directly as a RepoEntry Address.
+// newSourceRepo builds a local "remote": a git repo in a fresh temp dir
+// holding a committed README.md. The repo carries no Spektacular footprint —
+// that lives at the registered location, not in the code. Returns the
+// repo's path.
 func newSourceRepo(t *testing.T) string {
 	t.Helper()
 	src := t.TempDir()
 	runGit(t, src, "init")
 	require.NoError(t, os.WriteFile(filepath.Join(src, "README.md"), []byte("member repo\n"), 0o644))
-	writeFootprint(t, src)
 	runGit(t, src, "add", ".")
 	runGit(t, src, "commit", "-m", "initial")
+	runGit(t, src, "update-server-info")
 	return src
 }
 
 // commitChange writes name in src with content and commits it, advancing the
-// source repo's HEAD.
+// source repo's HEAD (and refreshing the dumb-HTTP ref advertisement).
 func commitChange(t *testing.T, src, name, content string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(filepath.Join(src, name), []byte(content), 0o644))
 	runGit(t, src, "add", ".")
 	runGit(t, src, "commit", "-m", "change "+name)
+	runGit(t, src, "update-server-info")
 }
 
-// Criterion 2: an address-only entry resolves by a real clone into
-// <projectRoot>/.spektacular/repos/<name>, and the cloned working tree
-// contains the committed file.
-func TestIntegration_AddressOnlyResolvesByCloning(t *testing.T) {
-	requireGit(t)
-	src := newSourceRepo(t)
-	projectRoot := t.TempDir()
+// serveGitOverHTTP exposes src over git's dumb HTTP protocol from a loopback
+// server and returns the URL a git client clones it from. A plain path
+// would be classified as a file source by repo.yaml, so the real-git tests
+// need a genuine git transport; static files behind http:// are the one git
+// accepts without an ssh daemon or a smart server.
+func serveGitOverHTTP(t *testing.T, src string) string {
+	t.Helper()
+	t.Setenv("NO_PROXY", "127.0.0.1")
+	srv := httptest.NewServer(http.FileServer(http.Dir(src)))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/.git"
+}
 
-	set := newSet(t, projectRoot, NewGitRunner(), config.RepoEntry{Name: "member", Address: src})
+// newIntegrationSet registers a single repo named "member" whose location is
+// a fresh temp dir holding a repo.yaml with the given git source, over
+// projectRoot with the real git runner. Returns the set and the location.
+func newIntegrationSet(t *testing.T, projectRoot, source string) (*Set, string) {
+	t.Helper()
+	root := t.TempDir()
+	writeSourceFootprint(t, root, source)
+	return newSet(t, projectRoot, NewGitRunner(), config.RepoEntry{Name: "member", Location: root}), root
+}
+
+// Criterion 2: a git source declared in repo.yaml resolves by a real clone
+// into <projectRoot>/.spektacular/repos/<name>: the root stays the
+// registered location, the source is the clone, and the cloned working tree
+// contains the committed file.
+func TestIntegration_GitSourceResolvesByCloning(t *testing.T) {
+	requireGit(t)
+	url := serveGitOverHTTP(t, newSourceRepo(t))
+	projectRoot := t.TempDir()
+	set, root := newIntegrationSet(t, projectRoot, url)
 
 	r, err := set.Resolve("member")
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(projectRoot, ".spektacular", MaterializeDirName, "member"), r.Root)
+	require.Equal(t, root, r.Root)
+	require.Equal(t, filepath.Join(projectRoot, ".spektacular", "repos", "member"), r.Source)
 	require.True(t, r.Materialized)
 
-	data, err := os.ReadFile(filepath.Join(r.Root, "README.md"))
+	data, err := os.ReadFile(filepath.Join(r.Source, "README.md"))
 	require.NoError(t, err)
 	require.Equal(t, "member repo\n", string(data))
 }
@@ -91,20 +118,18 @@ func TestIntegration_AddressOnlyResolvesByCloning(t *testing.T) {
 // again — a marker file placed in the clone survives the second resolve.
 func TestIntegration_SecondResolveReusesCloneWithoutCloning(t *testing.T) {
 	requireGit(t)
-	src := newSourceRepo(t)
-	projectRoot := t.TempDir()
-
-	set := newSet(t, projectRoot, NewGitRunner(), config.RepoEntry{Name: "member", Address: src})
+	url := serveGitOverHTTP(t, newSourceRepo(t))
+	set, _ := newIntegrationSet(t, t.TempDir(), url)
 
 	first, err := set.Resolve("member")
 	require.NoError(t, err)
 
-	marker := filepath.Join(first.Root, "marker.txt")
+	marker := filepath.Join(first.Source, "marker.txt")
 	require.NoError(t, os.WriteFile(marker, []byte("still here"), 0o644))
 
 	second, err := set.Resolve("member")
 	require.NoError(t, err)
-	require.Equal(t, first.Root, second.Root)
+	require.Equal(t, first.Source, second.Source)
 	require.FileExists(t, marker, "a re-clone would have destroyed the marker")
 }
 
@@ -113,7 +138,7 @@ func TestIntegration_SecondResolveReusesCloneWithoutCloning(t *testing.T) {
 // .spektacular/repos/ folder and never enters the project's history.
 func TestIntegration_MaterializationLeavesProjectGitClean(t *testing.T) {
 	requireGit(t)
-	src := newSourceRepo(t)
+	url := serveGitOverHTTP(t, newSourceRepo(t))
 
 	// The project root is itself a git repo, gitignoring repos/ the same way
 	// project init does.
@@ -124,7 +149,7 @@ func TestIntegration_MaterializationLeavesProjectGitClean(t *testing.T) {
 	runGit(t, projectRoot, "add", ".")
 	runGit(t, projectRoot, "commit", "-m", "project init")
 
-	set := newSet(t, projectRoot, NewGitRunner(), config.RepoEntry{Name: "member", Address: src})
+	set, _ := newIntegrationSet(t, projectRoot, url)
 	_, err := set.Resolve("member")
 	require.NoError(t, err)
 
@@ -138,9 +163,8 @@ func TestIntegration_MaterializationLeavesProjectGitClean(t *testing.T) {
 func TestIntegration_CloneBehindRemoteWarns(t *testing.T) {
 	requireGit(t)
 	src := newSourceRepo(t)
-	projectRoot := t.TempDir()
-
-	set := newSet(t, projectRoot, NewGitRunner(), config.RepoEntry{Name: "member", Address: src})
+	url := serveGitOverHTTP(t, src)
+	set, _ := newIntegrationSet(t, t.TempDir(), url)
 
 	fresh, err := set.Resolve("member")
 	require.NoError(t, err)
@@ -151,22 +175,22 @@ func TestIntegration_CloneBehindRemoteWarns(t *testing.T) {
 	behind, err := set.Resolve("member")
 	require.NoError(t, err, "a behind-remote clone must still resolve")
 	require.NotEmpty(t, behind.StaleNote)
-	require.Contains(t, behind.StaleNote, behind.Root)
+	require.Contains(t, behind.StaleNote, behind.Source)
 }
 
 // Criterion 4: NewGitRunner's LocalHead and RemoteHead round-trip — right
 // after a clone the local head equals the remote head.
 func TestIntegration_LocalAndRemoteHeadRoundTrip(t *testing.T) {
 	requireGit(t)
-	src := newSourceRepo(t)
+	url := serveGitOverHTTP(t, newSourceRepo(t))
 	runner := NewGitRunner()
 
 	clone := filepath.Join(t.TempDir(), "clone")
-	require.NoError(t, runner.Clone(src, clone))
+	require.NoError(t, runner.Clone(url, clone))
 
 	local, err := runner.LocalHead(clone)
 	require.NoError(t, err)
-	remote, err := runner.RemoteHead(src)
+	remote, err := runner.RemoteHead(url)
 	require.NoError(t, err)
 	require.NotEmpty(t, local)
 	require.Equal(t, remote, local)

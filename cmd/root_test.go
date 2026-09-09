@@ -1128,3 +1128,54 @@ func TestSessionLog_ForceRestartStartsANewFileNotAppendingToPrevious(t *testing.
 	require.NoError(t, err)
 	require.Len(t, strings.Split(strings.TrimRight(string(newestEvents), "\n"), "\n"), 2, "the goto must resume into the restarted session's file, not the abandoned one")
 }
+
+// Criterion 3: the published interface of every command family other than
+// knowledge is exactly what it was before the knowledge commands gained a
+// flags block — an input schema and an output schema, and the error
+// discriminant the writer injects into every response, and nothing else. The
+// expected key set is hand-written and exhaustive, so a family picking up a
+// "flags" key, or any other new top-level key, fails here rather than
+// silently changing an interface its callers depend on.
+func TestSchema_NonKnowledgeFamiliesPublishExactlyInputAndOutput(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeSpecCommandConfig(t, dir, "")
+
+	for family, subcommands := range map[string][]string{
+		"spec":      {"new", "goto", "status", "steps"},
+		"plan":      {"new", "goto", "status", "steps"},
+		"implement": {"new", "goto", "status", "steps"},
+		"repo":      {"add", "list"},
+	} {
+		t.Run(family, func(t *testing.T) {
+			for _, sub := range subcommands {
+				t.Run(sub, func(t *testing.T) {
+					switch family {
+					case "spec":
+						resetSpecCommandFlags(t)
+					case "plan":
+						resetPlanCommandFlags(t)
+					case "implement":
+						resetImplementCommandFlags(t)
+					case "repo":
+						resetRepoFlags(t)
+					}
+
+					stdout, stderr, code := runRootCmd(t, family, sub, "--schema")
+					require.Equal(t, 0, code)
+					require.Empty(t, stderr)
+
+					var raw map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal([]byte(stdout), &raw))
+
+					keys := make([]string, 0, len(raw))
+					for k := range raw {
+						keys = append(keys, k)
+					}
+					require.ElementsMatch(t, []string{"input", "output", "error"}, keys,
+						"`%s %s --schema` must publish exactly the interface it published before", family, sub)
+				})
+			}
+		})
+	}
+}

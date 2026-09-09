@@ -222,15 +222,6 @@ func scanProjectMetadata(projectRoot string) (*config.RepoConfig, error) {
 		cfg.Tags = append(cfg.Tags, "nodejs")
 	}
 
-	// Infer deployment method from Makefile/Dockerfile
-	makefilePath := filepath.Join(projectRoot, "Makefile")
-	dockerfilePath := filepath.Join(projectRoot, "Dockerfile")
-	if _, err := os.Stat(dockerfilePath); err == nil {
-		cfg.Deployment = "docker"
-	} else if _, err := os.Stat(makefilePath); err == nil {
-		cfg.Deployment = "make"
-	}
-
 	// Ensure defaults if nothing was detected
 	if cfg.Description == "" {
 		cfg.Description = "A Spektacular project"
@@ -240,9 +231,6 @@ func scanProjectMetadata(projectRoot string) (*config.RepoConfig, error) {
 	}
 	if len(cfg.Tags) == 0 {
 		cfg.Tags = []string{"general"}
-	}
-	if cfg.Deployment == "" {
-		cfg.Deployment = "manual"
 	}
 
 	return &cfg, nil

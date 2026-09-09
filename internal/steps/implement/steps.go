@@ -18,7 +18,7 @@ import (
 // `update_changelog` can lead into `analyze`. This encodes the phase-loop
 // directly in the FSM declaration — when `update_changelog` detects remaining
 // unchecked phases in the plan, it advances back to `analyze`; otherwise it
-// advances to `update_repo_changelog`.
+// advances to `test_plan`.
 func Steps() []workflow.StepConfig {
 	return []workflow.StepConfig{
 		{Name: "new", Src: []string{"start"}, Dst: "new", Callback: newStep()},
@@ -29,8 +29,7 @@ func Steps() []workflow.StepConfig {
 		{Name: "verify", Src: []string{"test"}, Dst: "verify", Callback: verify()},
 		{Name: "update_plan", Src: []string{"verify"}, Dst: "update_plan", Callback: updatePlan()},
 		{Name: "update_changelog", Src: []string{"update_plan"}, Dst: "update_changelog", Callback: updateChangelog()},
-		{Name: "update_repo_changelog", Src: []string{"update_changelog"}, Dst: "update_repo_changelog", Callback: updateRepoChangelog()},
-		{Name: "test_plan", Src: []string{"update_repo_changelog"}, Dst: "test_plan", Callback: testPlan()},
+		{Name: "test_plan", Src: []string{"update_changelog"}, Dst: "test_plan", Callback: testPlan()},
 		{Name: "update_feature_changelog", Src: []string{"test_plan"}, Dst: "update_feature_changelog", Callback: updateFeatureChangelog()},
 		{Name: "reconcile_spec", Src: []string{"update_feature_changelog"}, Dst: "reconcile_spec", Callback: reconcileSpec()},
 		{Name: "finished", Src: []string{"reconcile_spec"}, Dst: "finished", Callback: finished()},
@@ -109,24 +108,18 @@ func updatePlan() workflow.StepCallback {
 
 // updateChangelog has two legal exits encoded in the template:
 //   - goto analyze (loop back) when unchecked phases remain
-//   - goto update_repo_changelog when no unchecked phases remain
+//   - goto test_plan when no unchecked phases remain
 //
-// NextStep is set to "update_repo_changelog" for the default advance path; the
-// template instructs the agent to branch based on plan-file state.
+// NextStep is set to "test_plan" for the default advance path; the template
+// instructs the agent to branch based on plan-file state.
 func updateChangelog() workflow.StepCallback {
 	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("update_changelog", "update_repo_changelog", "steps/implement/07-update_changelog.md", data, out, st, cfg, nil)
+		return "", writeStep("update_changelog", "test_plan", "steps/implement/07-update_changelog.md", data, out, st, cfg, nil)
 	}
 }
 
-func updateRepoChangelog() workflow.StepCallback {
-	return func(data workflow.Data, out workflow.ResultWriter, st store.Store, cfg workflow.Config) (string, error) {
-		return "", writeStep("update_repo_changelog", "test_plan", "steps/implement/08-update_repo_changelog.md", data, out, st, cfg, nil)
-	}
-}
-
-// testPlan runs once at the end, after all phases are implemented and the repo
-// changelog is written. By this point the implementation is complete, so the
+// testPlan runs once at the end, after all phases are implemented and their
+// changelog entries are written. By this point the implementation is complete, so the
 // manual test plan it produces can reference real endpoints, commands, and
 // thresholds. It writes `.spektacular/plans/<name>/test-plan.md` for success
 // metrics that cannot be covered by an automated behavioural test.

@@ -78,9 +78,11 @@ Running `spektacular init <agent>` creates:
 
 ```
 .spektacular/
-├── config.yaml              # agent, command, debug, and store settings
+├── config.yaml              # agent, command, debug, store settings, and the repo registry
+├── repo.yaml                # the colocated repo's own configuration
 ├── specs/                   # your specification files
 ├── plans/                   # generated plans (plan.md, research.md, context.md)
+├── changelog/               # changelog records written by the implement workflow
 └── knowledge/               # default project knowledge source
     ├── conventions/         # always-applied: standing rules, one per file
     ├── glossary/            # always-applied: shared domain/project terms
@@ -90,30 +92,33 @@ Running `spektacular init <agent>` creates:
     └── decisions/           # looked-up: the reasoning behind choices
 ```
 
-Each knowledge category directory is scaffolded with a `README.md` describing what belongs in it. By default Spektacular reads `.spektacular/knowledge/` as the `project` knowledge source; additional sources at other scopes — for example a shared `team` directory or a machine-wide `global` one — can be configured under `knowledge.sources` (see [Configuration](#configuration)). See [Knowledge](#knowledge) for how it is organised and consumed.
+Each knowledge category directory is scaffolded with a `README.md` describing what belongs in it. By default Spektacular reads `.spektacular/knowledge/` as this repo's own store, addressed by the name the project registered the repo under; the project can declare additional shared stores — for example a `team` directory or a machine-wide `global` one — under `knowledge.sources` (see [Configuration](#configuration)). See [Knowledge](#knowledge) for how it is organised and consumed.
 
 ## Knowledge
 
 Knowledge is the accumulated know-how a project draws on when planning — conventions, glossary terms, architecture notes, gotchas, learnings, and decisions. It is strictly a **planning-time input**: the planning agent reads it while producing a plan, and the relevant parts are written into the plan itself. The implement workflow then consumes only the plan documents — the plan is the contract.
 
-### Six categories, two tiers
+### Six categories, two retrieval tiers
 
 Every entry belongs to exactly one of six categories, fixed by the first segment of its path. Each category has a **retrieval tier** that decides when its entries are loaded:
 
 - **Always-applied** — `conventions` (standing rules to follow) and `glossary` (shared domain and project terms). Loaded in full on every planning task, and deliberately excluded from search results so they are never surfaced twice.
 - **Looked-up** — `architecture`, `gotchas`, `learnings`, and `decisions`. The larger reference body, fetched only when a search matches, so it can grow without weighing down every task.
 
-The category model — names, tiers, and per-category boundaries — is declared once in code, so it stays consistent across directory scaffolding, search labelling, and retrieval.
+The category model — names, retrieval tiers, and per-category boundaries — is declared once in code, so it stays consistent across directory scaffolding, search labelling, and retrieval. A category's *retrieval tier* says **when** its entries are loaded; the addressing *tier* below says **which** knowledge a store holds. The two are different axes.
 
-### Scopes, search, and de-duplication
+### Tiers, search, and de-duplication
 
-A knowledge source has a **scope** label. The default project ships one scope, `project`, backed by `.spektacular/knowledge/`; you can configure additional scopes — a shared `team` directory or a machine-wide `global` one — under `knowledge.sources` (see [Configuration](#configuration)). Every read, search, and convention load fans across all configured scopes in order, and each result is tagged with the scope and category it came from.
+Knowledge lives in one of two tiers. Every registered repo contributes exactly one store, addressed by the name the project registered it under, holding knowledge about that repo's own code. The project declares any number of shared stores under `knowledge.sources`, each with its own `name`, for knowledge that belongs to no single repo (see [Configuration](#configuration)). Every read, search, and always-applied load states a tier and, optionally, the store names to narrow to; every result reports the tier and store it came from.
 
-Lookups are **consolidated and de-duplicated** across scopes: each entry carries a SHA-256 checksum over its exact bytes, and byte-identical entries appearing in more than one scope collapse to a single result. A search result looks like:
+Reading and writing name exactly one store, so they take a `tier` and a `name` alongside the path; a request that leaves either out is refused, and the refusal lists the names available in that tier. Searching, listing, conventions, and the always-applied load take `--tier <project|repo|all>` and a repeatable `--filter <name>`; omitting the narrowing covers every store the tier reaches, and no store is ever included or excluded implicitly.
+
+Lookups are **consolidated and de-duplicated** across stores: each entry carries a SHA-256 checksum over its exact bytes, and byte-identical entries appearing in more than one store collapse to a single result. A search result looks like:
 
 ```
 Hit {
-  scope     // scope label of the originating store (e.g. project, team)
+  tier      // addressing tier of the originating store (project or repo)
+  name      // name of the originating store (e.g. docs)
   path      // locator relative to the store root (e.g. gotchas/db-timeouts.md)
   title     // the document's first heading, or the locator when it has none
   excerpts  // compact matched excerpts
@@ -123,38 +128,39 @@ Hit {
 }
 ```
 
-For the full model — every category definition, the retrieval tiers, scope precedence, and the de-duplication rationale — see the [knowledge-base documentation](https://spektacular.dev/knowledge-base/).
+For the full model — every category definition, the retrieval tiers, the addressing tiers, and the de-duplication rationale — see the [knowledge-base documentation](https://spektacular.dev/knowledge-base/).
 
 ### CLI
 
-Agents (and you) reach knowledge through the `spektacular knowledge` commands rather than reading the files directly, so access stays consistent across scopes. The main subcommands:
+Agents (and you) reach knowledge through the `spektacular knowledge` commands rather than reading the files directly, so access stays consistent across stores. The main subcommands:
 
-- `knowledge search <query>` — keyword-search every scope (excluding `conventions/`), returning scope- and category-tagged hits
-- `knowledge conventions` / `knowledge always-applied` — read the always-applied entries in full
-- `knowledge categories` — list the categories and their tiers
-- `knowledge read` / `knowledge list` / `knowledge write` — read, list, and write individual entries
-- `knowledge sources` — list the configured scopes and their locations
+- `knowledge search <query>` — keyword-search the stores the request covers (excluding the always-applied categories), returning tier- and category-tagged hits; narrow with `--tier` and `--filter`
+- `knowledge conventions` / `knowledge always-applied` — read the always-applied entries in full; both take `--tier` and `--filter`
+- `knowledge categories` — list the categories and their retrieval tiers
+- `knowledge read` / `knowledge write` — read and write one addressed entry, via `--data '{"tier":"…","name":"…","path":"…"}'`
+- `knowledge list` — list entries across the stores the request covers; takes `--tier` and `--filter`
+- `knowledge sources` — list the configured stores by tier and name, with their locations
 
 Every subcommand accepts `--schema` to print its input/output JSON schema and exit.
 
 ### Capturing knowledge
 
-When research surfaces a durable learning, gotcha, or convention worth keeping, the agent **proposes** the target scope and exact content and waits for your explicit confirmation before writing — it never persists to a knowledge source unprompted. In a Spektacular-initialised repo, the `spek-knowledge` skill is the entry point for reading, contributing to, and updating the knowledge base in any session, and coding agents route what they would otherwise save to their own per-user memory into the project knowledge base instead, so captured knowledge lands in git and travels with the project.
+When research surfaces a durable learning, gotcha, or convention worth keeping, the agent **proposes** the destination — the tier, the store name, and the path — along with the exact content, and waits for your explicit confirmation before writing; it never persists to a knowledge store unprompted. In a Spektacular-initialised repo, the `spek-knowledge` skill is the entry point for reading, contributing to, and updating the knowledge base in any session, and coding agents route what they would otherwise save to their own per-user memory into the project knowledge base instead, so captured knowledge lands in git and travels with the project.
 
 ## Configuration
 
-Configuration is split across two files, and a colocated single-repo project simply holds both in the same `.spektacular/` directory:
+Configuration is split across two files, and a colocated single-repo project simply holds both in the same `.spektacular/` directory. A repo's Spektacular files can also live apart from its code, in a folder that points at the code (see [Repo configuration](#repo-configuration-repoyaml) below).
 
-- **`.spektacular/config.yaml` — project configuration.** The project's identity, the coding agent Spektacular drives, the registry of member repos, and the central `spec`, `plan`, and `changelog` stores. Spektacular always runs against a project: running it in a directory with no `config.yaml` produces an explicit error pointing at `init` (there is no parent-directory search).
-- **`.spektacular/repo.yaml` — repo configuration.** A repo's own concerns only: its knowledge sources and its changelog provider. It carries no pointer to any project, so one repo can belong to several projects at once.
+- **`.spektacular/config.yaml` (project configuration).** The project's identity, the coding agent Spektacular drives, the registry of member repos with the location of each repo's Spektacular files, and the central `spec`, `plan`, and `changelog` stores. Spektacular always runs against a project: running it in a directory with no `config.yaml` produces an explicit error pointing at `init` (there is no parent-directory search).
+- **`.spektacular/repo.yaml` (repo configuration).** A repo's own concerns only: what it is, where its code lives, its knowledge sources, and its changelog provider. It carries no pointer to any project, so one repo can belong to several projects at once.
 
-> **Breaking change**: earlier releases used a single `config.yaml` without a project `name`. Existing setups re-initialize with `spektacular init <agent>` — init backfills the name (from the directory basename, or `--name`), seeds the colocated repo's `repo.yaml`, and registers it in the new `repos` list.
+> **Breaking change**: earlier releases used a single `config.yaml` without a project `name`. Existing setups re-initialize with `spektacular init <agent>`: init backfills the name (from the directory basename, or `--name`), seeds the colocated repo's `repo.yaml`, and registers it in the new `repos` list.
 
 ### Project configuration (`config.yaml`)
 
 ```yaml
 name: my-project                    # required, slug-safe; namespaces changelog entries
-source: git@example.com:org/my-project.git  # optional; recorded in derived changelog entries
+source: git@example.com:org/my-project.git  # optional; the project's git address, recorded in derived changelog entries only
 command: spektacular
 agent: claude
 debug:
@@ -173,21 +179,21 @@ changelog:
   config:
     directory: .spektacular/changelog  # central changelog; entries land under <directory>/<name>/
 repos:
-  - name: my-project                # the colocated repo, registered by init
-    local: .
-  - name: docs                      # a member repo by local path
-    local: ../docs
-  - name: lib                       # a member repo by remote address —
-    address: git@example.com:org/lib.git   # cloned into .spektacular/repos/lib/ on first use
+  - name: my-project                # the colocated repo, registered by init: this .spektacular/ folder
+    location: .
+  - name: docs                      # a repo checked out beside this one, with its own .spektacular/
+    location: ../../docs/.spektacular
+  - name: lib                       # a repo folder in this project; its code is cloned from a git source
+    location: ../repos/lib
 knowledge:
-  sources:                          # optional, project-owned sources only (e.g. a team share);
-    - scope: team                   # each repo's own sources live in its repo.yaml
+  sources:                          # optional, the project's shared stores only (e.g. a team share);
+    - name: team                    # each repo declares its own store in its repo.yaml
       provider: file
       config:
         location: /shared/team-kb
 ```
 
-Each repo entry needs a slug-safe unique `name` and at least one of `address`/`local` (`local` wins when both are set); `description`, `role`, `tags`, `dependencies`, and `deployment` are optional metadata that cross-repo planning uses to attribute requirements to the right repo. Manage the registry with `spektacular repo add` and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically — a stale clone produces a warning only.
+Each repo entry needs a slug-safe unique `name` and a `location`: the folder holding that repo's `repo.yaml` (`local` is still accepted and means the same thing). A relative location is resolved from the folder holding `config.yaml`, and nothing is appended to it, so the project's own footprint is `.` and a repo folder in the project is `../repos/<name>`. A repo is normally added through a guided flow: you are asked which repo to add, and its name, description, role and tags are each proposed for you from what the repo says about itself, one question at a time, with a plain-language confirmation before anything is written. Spektacular's files go inside the repo being added unless it cannot take them or you say otherwise, in which case they live in a folder under the project and the repo is left with only its code. An add can be started and finished while a spec or plan is already in progress. A caller that already knows every detail can still register a repo in a single command with `repo add`. Where the code lives is declared in the repo's own `repo.yaml` as `source`; the old `address` key is no longer read, and a config that still carries it fails to load with an error saying where the value now goes. `description`, `role`, and `tags` are optional metadata, also in `repo.yaml`, that cross-repo planning uses to attribute requirements to the right repo. Add to the registry with `spektacular repo new`, or `spektacular repo add` when every detail is already known, and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically; a stale clone produces a warning only.
 
 ### Repo configuration (`repo.yaml`)
 
@@ -195,26 +201,29 @@ Each repo entry needs a slug-safe unique `name` and at least one of `address`/`l
 description: the documentation repo
 role: documentation
 tags: [docs]
-deployment: static-site
-knowledge:
-  sources:
-    - scope: project                # the repo's own store; synthesised if the file is absent
-      provider: file
-      config:
-        location: .spektacular/knowledge
+source:                           # where the code is; omit when it is this folder
+  provider: file                  # file or git
+  config:
+    location: ..                  # a path relative to this file, or a git URL for the git provider
+knowledge:                        # the repo's single store; synthesised if the file is absent
+  provider: file                    # addressed by the name the project registered this repo under
+  config:
+    location: knowledge
 changelog:
   provider: file
   config:
-    directory: .spektacular/changelog  # where this repo's derived entries land
+    directory: changelog            # where this repo's derived entries land
 ```
 
-Knowledge aggregates across every registered repo's declared sources (in registry order) followed by the project-owned sources, so a repo's knowledge travels with it into every project that registers it. Changelog entries — central and derived per-repo — are namespaced under a folder named after the project (`<directory>/<project-name>/<id>_<slug>.md`), so multiple projects writing into one repo can never collide.
+A repo's Spektacular files can sit inside its code, in a `.spektacular/` folder holding `repo.yaml` with a file source pointing at `..`, or in a folder of their own, for example one folder per repo under a project, with `source` pointing at a checkout on disk (absolute, relative to the folder holding `repo.yaml`, or using `${VAR}`) or at a git repository that Spektacular clones into `.spektacular/repos/<name>/` on first use. In the separate layout the code repository receives only code changes; knowledge and changelog entries land under the folder holding `repo.yaml`. `spektacular repo list` reports the resolved source as each repo's `root`. See [Multi-Repo Projects](https://spektacular.dev/projects/) for the layouts.
+
+Knowledge aggregates across every registered repo's declared sources (in registry order) followed by the project-owned sources, so a repo's knowledge travels with it into every project that registers it. Changelog entries, central and derived per-repo, are namespaced under a folder named after the project (`<directory>/<project-name>/<id>_<slug>.md`), so multiple projects writing into one repo can never collide.
 
 ### Excluding paths (`.spektacular_ignore`)
 
-Any source root (a repo, or the project's own storage locations) may carry a `.spektacular_ignore` file using gitignore pattern syntax. Matching paths are excluded from Spektacular's own listing and search results — keeping build artifacts and dependency directories out of planning research — but a directly named path is never blocked, and agents' native file tools are unaffected.
+Any source root (a repo, or the project's own storage locations) may carry a `.spektacular_ignore` file using gitignore pattern syntax. Matching paths are excluded from Spektacular's own listing and search results, keeping build artifacts and dependency directories out of planning research, but a directly named path is never blocked, and agents' native file tools are unaffected.
 
-For the full reference — every key, the id-method semantics, name-normalisation rules, and `${VAR}` expansion — see the [configuration documentation](https://spektacular.dev/configuration/). For the concept of multi-repo projects, why the configuration is split this way, and how work is attributed across repos, see [Multi-Repo Projects](https://spektacular.dev/projects/).
+For the full reference (every key, the id-method semantics, name-normalisation rules, and `${VAR}` expansion) see the [configuration documentation](https://spektacular.dev/configuration/). For the concept of multi-repo projects, why the configuration is split this way, and how work is attributed across repos, see [Multi-Repo Projects](https://spektacular.dev/projects/).
 
 ## Testing
 
@@ -272,9 +281,11 @@ harbor run -p tests/harbor/spec-workflow -a claude-code -m claude-sonnet-4-6 -o 
 Makefile wrappers run the suites for you, building the binary and wiring up the agent-specific placeholders:
 
 ```bash
-make harbor-test-spec          # spec workflow (claude)
-make harbor-test-spec-codex    # spec workflow (codex)
-make harbor-test-plan          # plan workflow (claude)
+make harbor-test-spec            # spec workflow (claude)
+make harbor-test-spec-codex      # spec workflow (codex)
+make harbor-test-plan            # plan workflow (claude)
+make harbor-test-repo            # guided repo add, answering each question (claude)
+make harbor-test-repo-delegated  # guided repo add, handing the whole set over (claude)
 ```
 
 #### Test results
@@ -298,6 +309,18 @@ tests/harbor/jobs/<timestamp>/
 |---|---|
 | `tests/harbor/spec-workflow` | Full spec creation workflow, end to end |
 | `tests/harbor/plan-workflow` | Full plan generation workflow, end to end |
+| `tests/harbor/repo-workflow` | Guided repo add, checked against the agent's own transcript |
+
+The repo-workflow suite is the one whose assertions are about the conversation rather than the
+files: that only the repo itself is asked for cold, that every later question carries a proposed
+value, that the questions arrive one per exchange, and that none of Spektacular's internal
+vocabulary reaches the user. Its rules are themselves checked by
+`tests/harbor/repo-workflow/tests/test_verifier_selfcheck.py`, which runs locally under plain
+pytest with no container and proves each rule fails on a transcript that breaks it:
+
+```bash
+python3 -m pytest tests/harbor/repo-workflow/tests/test_verifier_selfcheck.py
+```
 
 ## Building from Source
 

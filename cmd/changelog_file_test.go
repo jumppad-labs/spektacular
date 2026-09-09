@@ -189,7 +189,7 @@ func memberRepoProject(t *testing.T) (projectDir, memberDir string) {
 		"source: https://example.com/testproj\n"+
 			"spec:\n  id_method: counter\n"+
 			"changelog:\n  config:\n    directory: docs/changelog\n"+
-			"repos:\n  - name: member\n    local: "+memberDir+"\n")
+			"repos:\n  - name: member\n    location: "+memberDir+"\n")
 	return projectDir, memberDir
 }
 
@@ -211,9 +211,9 @@ func TestChangelogFileWriteRepo_RoutesToMemberStoreWithProvenance(t *testing.T) 
 	require.NoError(t, rootCmd.Execute())
 
 	// The entry sits in the member repo's own changelog directory (the
-	// footprint's default, .spektacular/changelog), namespaced by the
+	// footprint's default, changelog), namespaced by the
 	// PROJECT's name — not in the central store.
-	entryPath := filepath.Join(memberDir, ".spektacular", "changelog", "testproj", "000001_feat.md")
+	entryPath := filepath.Join(memberDir, "changelog", "testproj", "000001_feat.md")
 	require.FileExists(t, entryPath)
 	require.NoFileExists(t, filepath.Join(projectDir, "docs", "changelog", "testproj", "000001_feat.md"),
 		"a repo-routed write must not also land in the central store")
@@ -258,7 +258,7 @@ func TestChangelogFileReadRepo_ReturnsMemberEntry(t *testing.T) {
 // offers the `repo add` repair, and writes nothing.
 func TestChangelogFileWriteRepo_MissingFootprintErrorsWithRepairOffer(t *testing.T) {
 	_, memberDir := memberRepoProject(t)
-	require.NoError(t, os.Remove(filepath.Join(memberDir, ".spektacular", "repo.yaml")))
+	require.NoError(t, os.Remove(filepath.Join(memberDir, "repo.yaml")))
 
 	srcPath := filepath.Join(t.TempDir(), "staged.md")
 	require.NoError(t, os.WriteFile(srcPath, []byte("body"), 0o644))
@@ -273,7 +273,7 @@ func TestChangelogFileWriteRepo_MissingFootprintErrorsWithRepairOffer(t *testing
 	require.Equal(t, "repo_footprint", er.Code)
 	require.Contains(t, er.NextAction, "repo add")
 
-	require.NoFileExists(t, filepath.Join(memberDir, ".spektacular", "changelog", "testproj", "000001_feat.md"),
+	require.NoFileExists(t, filepath.Join(memberDir, "changelog", "testproj", "000001_feat.md"),
 		"a footprint failure must not create the entry")
 }
 
@@ -296,7 +296,7 @@ func TestChangelogFileWriteRepo_TwoProjectsUseSeparateNamespaceFolders(t *testin
 		t.Chdir(dir)
 		writeNamedProjectConfig(t, dir, p.name,
 			"spec:\n  id_method: counter\n"+
-				"repos:\n  - name: member\n    local: "+memberDir+"\n")
+				"repos:\n  - name: member\n    location: "+memberDir+"\n")
 
 		srcPath := filepath.Join(t.TempDir(), "staged.md")
 		require.NoError(t, os.WriteFile(srcPath, []byte(p.body), 0o644))
@@ -310,7 +310,7 @@ func TestChangelogFileWriteRepo_TwoProjectsUseSeparateNamespaceFolders(t *testin
 	// Both entries coexist under their own project-named folders, each with
 	// its own project's content and provenance.
 	for _, p := range projects {
-		content, err := os.ReadFile(filepath.Join(memberDir, ".spektacular", "changelog", p.name, "000001_feat.md"))
+		content, err := os.ReadFile(filepath.Join(memberDir, "changelog", p.name, "000001_feat.md"))
 		require.NoError(t, err)
 		meta, gotBody, err := metadata.Split(content)
 		require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestChangelogFileWriteRepo_RewriteStampsProvenanceAndPreservesCreatedDate(t
 		Status:      metadata.StatusInProgress,
 	}, []byte("original derived body"))
 	require.NoError(t, err)
-	entryPath := filepath.Join(memberDir, ".spektacular", "changelog", "testproj", "000001_feat.md")
+	entryPath := filepath.Join(memberDir, "changelog", "testproj", "000001_feat.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(entryPath), 0o755))
 	require.NoError(t, os.WriteFile(entryPath, seeded, 0o644))
 
@@ -446,4 +446,49 @@ func TestChangelogFileListRepo_ListsMemberEntries(t *testing.T) {
 		names[i] = f.Name
 	}
 	require.ElementsMatch(t, []string{"000001_feat.md", "000002_more.md"}, names)
+}
+
+// Phase 1.4 criterion 4: a repo-routed changelog write for a member whose
+// repo.yaml declares `source: file://<code>` lands in the member's
+// changelog store at its LOCATION — <root>/repos/api/.spektacular/changelog/
+// <project>/ — and the code directory the source points at stays
+// byte-identical.
+func TestChangelogFileWriteRepo_MemberWithFileSourceWritesAtLocationNotSource(t *testing.T) {
+	projectDir, location, code := sourcedMemberProject(t)
+	git := &stubGit{}
+	swapRepoGit(t, git)
+	// Reuse the standard project shape the routing tests rely on: a source
+	// for provenance and the counter id method.
+	writeSpecCommandConfig(t, projectDir,
+		"source: https://example.com/testproj\n"+
+			"spec:\n  id_method: counter\n"+
+			"repos:\n"+
+			"  - name: testproj\n"+
+			"    location: \".\"\n"+
+			"  - name: api\n"+
+			"    location: ../repos/api/.spektacular\n")
+	codeBefore := snapshotDir(t, code)
+
+	srcPath := filepath.Join(t.TempDir(), "staged.md")
+	require.NoError(t, os.WriteFile(srcPath, []byte("api-scoped changes"), 0o644))
+
+	resetChangelogRepoFlags(t)
+	setupImplementCmd(t)
+	rootCmd.SetArgs([]string{"changelog", "file", "write", "000001_feat.md", "--repo", "api", "--from", srcPath})
+	require.NoError(t, rootCmd.Execute())
+
+	entryPath := filepath.Join(projectDir, "repos", "api", ".spektacular", "changelog", "testproj", "000001_feat.md")
+	require.FileExists(t, entryPath)
+	require.Equal(t, filepath.Join(location, ".spektacular", "changelog", "testproj", "000001_feat.md"), entryPath)
+	content, err := os.ReadFile(entryPath)
+	require.NoError(t, err)
+	_, gotBody, err := metadata.Split(content)
+	require.NoError(t, err)
+	require.Equal(t, "api-scoped changes", string(gotBody))
+
+	require.NoFileExists(t, filepath.Join(projectDir, ".spektacular", "changelog", "000001_feat.md"),
+		"a repo-routed write must not land in the central store")
+	require.Equal(t, codeBefore, snapshotDir(t, code), "the code dir the source points at must stay byte-identical")
+	require.NoDirExists(t, filepath.Join(code, ".spektacular", "changelog"))
+	require.Zero(t, git.calls, "a file source never invokes git")
 }

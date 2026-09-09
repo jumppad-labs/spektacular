@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -245,9 +246,12 @@ func sessionLogDir() (string, error) {
 
 // toErrorResponse converts any error returned by a command into the shared
 // ErrorResponse shape: an already-built *output.ErrorResponse passes through
-// unchanged, anything else falls back to a generic internal_error.
+// unchanged (even when wrapped, so a remediation built deep in a loader
+// survives the wrapping its callers add), anything else falls back to a
+// generic internal_error.
 func toErrorResponse(err error) *output.ErrorResponse {
-	if er, ok := err.(*output.ErrorResponse); ok {
+	var er *output.ErrorResponse
+	if errors.As(err, &er) {
 		return er
 	}
 	return output.NewError("internal_error", err.Error())

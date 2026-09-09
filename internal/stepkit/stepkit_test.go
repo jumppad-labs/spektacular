@@ -38,10 +38,10 @@ type fakeStrategy struct {
 
 func (f fakeStrategy) PathVars(instanceName, storeRoot string) map[string]any {
 	out := map[string]any{
-		"fake_path":      filepath.Join(storeRoot, "fake", instanceName+".md"),
-		"fake_name":      instanceName,
-		"fake_store":     storeRoot,
-		"fake_primary":   filepath.Join(storeRoot, instanceName),
+		"fake_path":    filepath.Join(storeRoot, "fake", instanceName+".md"),
+		"fake_name":    instanceName,
+		"fake_store":   storeRoot,
+		"fake_primary": filepath.Join(storeRoot, instanceName),
 	}
 	for k, v := range f.vars {
 		out[k] = v

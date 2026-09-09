@@ -9,6 +9,9 @@ import (
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/jumppad-labs/spektacular/internal/repo"
+	reposteps "github.com/jumppad-labs/spektacular/internal/steps/repo"
+	"github.com/jumppad-labs/spektacular/internal/store"
+	"github.com/jumppad-labs/spektacular/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +29,20 @@ var repoAddCmd = &cobra.Command{
 
 var repoListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List the project's registered repos with metadata and resolved locations",
+	Short: "List the project's registered repos with metadata and the resolved root of each repo's code",
 	RunE:  runRepoList,
+}
+
+var repoNewCmd = &cobra.Command{
+	Use:   "new",
+	Short: "Start a guided add that registers a repo by proposing its details",
+	RunE:  runRepoNew,
+}
+
+var repoGotoCmd = &cobra.Command{
+	Use:   "goto",
+	Short: "Advance a guided add to a named step",
+	RunE:  runRepoGoto,
 }
 
 // repoGit is the GitRunner the repo commands resolve with; a variable so
@@ -38,15 +53,14 @@ var repoAddInputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
 		"name":         {Type: "string"},
-		"address":      {Type: "string"},
-		"local":        {Type: "string"},
+		"location":     {Type: "string"},
+		"source":       {Type: "string"},
 		"description":  {Type: "string"},
 		"role":         {Type: "string"},
 		"tags":         {Type: "array", Items: &schemaProp{Type: "string"}},
 		"dependencies": {Type: "array", Items: &schemaProp{Type: "string"}},
-		"deployment":   {Type: "string"},
 	},
-	Required: []string{"name"},
+	Required: []string{"name", "location"},
 }
 
 var repoAddOutputSchema = &schemaObj{
@@ -58,6 +72,19 @@ var repoAddOutputSchema = &schemaObj{
 	},
 }
 
+// repoWorkflowOutputSchema is the shape both guided add subcommands return:
+// the step just rendered, the repo being added, and the instruction to carry
+// out. It mirrors the spec and plan workflows' result schema.
+var repoWorkflowOutputSchema = &schemaObj{
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"step":        {Type: "string"},
+		"repo_path":   {Type: "string"},
+		"repo_name":   {Type: "string"},
+		"instruction": {Type: "string"},
+	},
+}
+
 var repoListOutputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
@@ -66,16 +93,14 @@ var repoListOutputSchema = &schemaObj{
 			Items: &schemaProp{
 				Type: "object",
 				Properties: map[string]*schemaProp{
-					"name":         {Type: "string"},
-					"address":      {Type: "string"},
-					"local":        {Type: "string"},
-					"root":         {Type: "string"},
-					"provider":     {Type: "string"},
-					"description":  {Type: "string"},
-					"role":         {Type: "string"},
-					"tags":         {Type: "array", Items: &schemaProp{Type: "string"}},
-					"dependencies": {Type: "array", Items: &schemaProp{Type: "string"}},
-					"deployment":   {Type: "string"},
+					"name":          {Type: "string"},
+					"location":      {Type: "string"},
+					"root":          {Type: "string"},
+					"provider":      {Type: "string"},
+					"description":   {Type: "string"},
+					"role":          {Type: "string"},
+					"tags":          {Type: "array", Items: &schemaProp{Type: "string"}},
+					"dependencies":  {Type: "array", Items: &schemaProp{Type: "string"}},
 					"materialized":  {Type: "boolean"},
 					"stale_note":    {Type: "string"},
 					"metadata_note": {Type: "string"},
@@ -85,31 +110,30 @@ var repoListOutputSchema = &schemaObj{
 	},
 }
 
-// repoAddInput is the --data payload for repo add, mirroring RepoEntry's
-// provider-agnostic identity and metadata fields.
+// repoAddInput is the --data payload for repo add: the registry entry's
+// identity and location, plus the fields written into the repo's own
+// config — its descriptive metadata and, when given, the source its code
+// lives at.
 type repoAddInput struct {
 	Name         string   `json:"name"`
-	Address      string   `json:"address"`
-	Local        string   `json:"local"`
+	Location     string   `json:"location"`
+	Source       string   `json:"source"`
 	Description  string   `json:"description"`
 	Role         string   `json:"role"`
 	Tags         []string `json:"tags"`
 	Dependencies []string `json:"dependencies"`
-	Deployment   string   `json:"deployment"`
 }
 
 // repoInfo is the list projection agents consume for cross-repo attribution.
 type repoInfo struct {
 	Name         string   `json:"name"`
-	Address      string   `json:"address,omitempty"`
-	Local        string   `json:"local,omitempty"`
+	Location     string   `json:"location,omitempty"`
 	Root         string   `json:"root"`
-	Provider     string   `json:"provider"`
+	Provider     string   `json:"provider,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Role         string   `json:"role,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
-	Deployment   string   `json:"deployment,omitempty"`
 	Materialized bool     `json:"materialized"`
 	StaleNote    string   `json:"stale_note,omitempty"`
 	MetadataNote string   `json:"metadata_note,omitempty"`
@@ -130,110 +154,177 @@ func runRepoAdd(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	entry := config.RepoEntry{
-		Name:         input.Name,
-		Address:      input.Address,
-		Local:        input.Local,
-		Dependencies: input.Dependencies,
-	}
-
-	// Idempotent registration by name: an identical entry is a no-op, a
-	// changed entry updates in place, a new one appends. The config write is
-	// skipped entirely when nothing changed.
-	changed := true
-	found := false
-	for i, existing := range cfg.Repos {
-		if existing.Name == entry.Name {
-			found = true
-			// Preserve provider settings the input shape doesn't carry.
-			entry.Provider = existing.Provider
-			entry.Config = existing.Config
-			if reposEqual(existing, entry) {
-				changed = false
-			} else {
-				cfg.Repos[i] = entry
-			}
-			break
-		}
-	}
-	if !found {
-		cfg.Repos = append(cfg.Repos, entry)
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-
-	if changed {
-		cfgPath, err := configFilePath()
-		if err != nil {
-			return err
-		}
-		if err := cfg.ToYAMLFile(cfgPath); err != nil {
-			return fmt.Errorf("writing config: %w", err)
-		}
-	}
-
-	// Create or repair the target repo's minimal footprint on its resolved
-	// root. Resolution materializes an address-only repo by cloning; a
-	// footprint error from resolution is expected here — creating that
-	// footprint is this command's job.
 	root, err := projectRoot()
 	if err != nil {
 		return err
 	}
-	set, err := repo.New(cfg, root, repoGit)
-	if err != nil {
-		return err
-	}
-	resolved, err := set.Resolve(entry.Name)
-	if err != nil {
-		var fpErr *repo.FootprintError
-		if !errors.As(err, &fpErr) {
-			return err
-		}
-	}
 
-	status, err := repo.EnsureFootprint(resolved.Root, config.NewDefaultRepoConfig())
+	res, err := repo.Register(&cfg, root, repoGit, repo.Registration{
+		Name:         input.Name,
+		Location:     input.Location,
+		Source:       input.Source,
+		Description:  input.Description,
+		Role:         input.Role,
+		Tags:         input.Tags,
+		Dependencies: input.Dependencies,
+	})
 	if err != nil {
 		return err
 	}
 
-	// Write the input's descriptive fields into the target repo's own
-	// config, updating an already-footprinted repo rather than only a
-	// freshly created one. EnsureFootprint's caller-supplied config has no
-	// effect once a repo.yaml already exists, so this is a separate step.
-	repoConfigPath := filepath.Join(resolved.Root, ".spektacular", config.RepoConfigFileName)
-	repoCfg, err := config.RepoConfigFromYAMLFile(repoConfigPath)
-	if err != nil {
-		return fmt.Errorf("reading repo config: %w", err)
-	}
-	updated := repoCfg
-	if input.Description != "" {
-		updated.Description = input.Description
-	}
-	if input.Role != "" {
-		updated.Role = input.Role
-	}
-	if len(input.Tags) > 0 {
-		updated.Tags = input.Tags
-	}
-	if input.Deployment != "" {
-		updated.Deployment = input.Deployment
-	}
-	if !repoConfigDescriptiveFieldsEqual(repoCfg, updated) {
-		if err := updated.ToYAMLFile(repoConfigPath); err != nil {
-			return fmt.Errorf("writing repo config: %w", err)
-		}
-	}
-
-	result := map[string]any{"registered": true, "footprint": status}
-	if repoConfigDescriptiveFieldsEmpty(updated) {
-		result["metadata_note"] = fmt.Sprintf("repo %q has no descriptive metadata set; pass description/role/tags/deployment so it's consistently described", entry.Name)
+	result := map[string]any{"registered": res.Registered, "footprint": res.Footprint}
+	if res.MetadataNote != "" {
+		result["metadata_note"] = res.MetadataNote
 	}
 
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(result)
+}
+
+// repoStateFilePath is the guided add's own workflow state, a sibling of the
+// state.json that spec, plan and implement share. Keeping it separate is what
+// lets an add be started while one of those is in progress without either
+// disturbing the other.
+func repoStateFilePath(dataDir string) string {
+	return filepath.Join(dataDir, "repo-state.json")
+}
+
+func runRepoNew(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		s := commandSchema{
+			Input: &schemaObj{
+				Type: "object",
+				Properties: map[string]*schemaProp{
+					"location": {Type: "string"},
+				},
+			},
+			Output: repoWorkflowOutputSchema,
+		}
+		return output.Write(cmd.OutOrStdout(), s, "")
+	}
+
+	dataStr, _ := cmd.Flags().GetString("data")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	force, _ := cmd.Flags().GetBool("force")
+
+	dir, err := dataDir()
+	if err != nil {
+		return err
+	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	// Check for an add already in progress before doing anything else, so the
+	// driving agent can offer to resume it rather than silently starting over.
+	statePath := repoStateFilePath(dir)
+	if dryRun {
+		statePath += ".dryrun-tmp"
+	} else {
+		handled, err := resumeOrClear(statePath, cfg.Command, "repo", force)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return err
+		}
+	}
+
+	// Unlike a spec, an add needs no name up front: the only thing it can be
+	// given is the repo to add, and even that is optional.
+	input := map[string]any{}
+	if dataStr != "" {
+		if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+			return fmt.Errorf("parsing --data: %w", err)
+		}
+	}
+
+	st := store.NewSourceStore(root, "project")
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "repo", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	wf := workflow.New(reposteps.Steps(), statePath, wfCfg, st, out)
+
+	for k, v := range input {
+		wf.SetData(k, v)
+	}
+	if err := readInputIntoWorkflow(cmd, wf); err != nil {
+		return err
+	}
+
+	return wf.Next()
+}
+
+func runRepoGoto(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		s := commandSchema{
+			Input: &schemaObj{
+				Type: "object",
+				Properties: map[string]*schemaProp{
+					"step": {Type: "string", Enum: workflow.New(reposteps.Steps(), "", workflow.Config{}, nil, nil).StepNames()},
+				},
+				Required: []string{"step"},
+			},
+			Output: repoWorkflowOutputSchema,
+		}
+		return output.Write(cmd.OutOrStdout(), s, "")
+	}
+
+	dataStr, _ := cmd.Flags().GetString("data")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+	if dataStr == "" {
+		return output.NewError("step_required", "no step was provided").
+			WithNextAction(`specify the step with --data '{"step":"<step_name>"}'`)
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
+		return fmt.Errorf("parsing --data: %w", err)
+	}
+	stepVal, _ := input["step"].(string)
+	if stepVal == "" {
+		return output.NewError("step_required", `"step" is missing or empty in --data`).
+			WithNextAction(`include a non-empty "step" in --data, e.g. --data '{"step":"description"}'`)
+	}
+
+	dir, err := dataDir()
+	if err != nil {
+		return err
+	}
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	if handled, err := guardKind(repoStateFilePath(dir), cfg.Command, "repo"); err != nil {
+		return err
+	} else if handled {
+		return err
+	}
+
+	wfCfg := workflow.Config{Command: cfg.Command, Kind: "repo", DryRun: dryRun, SpecDir: cfg.Spec.Config.Directory, PlanDir: cfg.Plan.Config.Directory}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	wf := workflow.New(reposteps.Steps(), repoStateFilePath(dir), wfCfg, store.NewSourceStore(root, "project"), out)
+
+	// Every field but the step is an answer the user just agreed to.
+	for k, v := range input {
+		if k != "step" {
+			wf.SetData(k, v)
+		}
+	}
+	if err := readInputIntoWorkflow(cmd, wf); err != nil {
+		return err
+	}
+
+	return wf.Goto(stepVal)
 }
 
 func runRepoList(cmd *cobra.Command, _ []string) error {
@@ -255,43 +346,55 @@ func runRepoList(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Listing is inspection and must stay side-effect-free: entries whose
-	// repo is already on disk resolve to their root (no cloning happens for
-	// them), while address-only repos not yet materialized are reported
-	// unresolved rather than triggering a clone.
+	// location is on disk resolve to their root (no cloning happens for
+	// them), while repos whose location is missing are reported unresolved
+	// rather than triggering any side effect.
 	infos := make([]repoInfo, 0, len(set.Entries()))
 	for _, e := range set.Entries() {
 		info := repoInfo{
 			Name:         e.Name,
-			Address:      e.Address,
-			Local:        e.Local,
-			Provider:     e.Provider,
+			Location:     e.ResolvedLocation(root),
 			Dependencies: e.Dependencies,
 		}
-		if set.Present(e.Name) {
+		// A registered repo whose location is not on disk, or whose footprint
+		// is missing or unreadable, is a misregistration: report it as an
+		// error naming the path that was looked at, rather than listing the
+		// repo with an empty root and no metadata as if that were fine.
+		meta, err := set.Footprint(e.Name)
+		if err != nil {
+			var fpErr *repo.FootprintError
+			if errors.As(err, &fpErr) {
+				return output.NewError("repo_footprint_missing", fpErr.Error()).
+					WithResource(fpErr.Root).
+					WithNextAction(fmt.Sprintf("expected %s; run 'repo add' with name %q and location %q to scaffold it, or correct repos[].location for %q", filepath.Join(fpErr.Root, config.RepoConfigFileName), e.Name, e.Location, e.Name))
+			}
+			return err
+		}
+		// Descriptive metadata comes from the repo's own config at its
+		// location, the single source now that the registry carries
+		// membership only.
+		// The reported provider is the one the repo declares for its own
+		// source, so it says how the code at `root` was reached: `file` for a
+		// directory, `git` for a clone. A repo declaring no source has none.
+		info.Provider = meta.Source.Provider
+		info.Description = meta.Description
+		info.Role = meta.Role
+		info.Tags = meta.Tags
+		if repo.DescriptiveFieldsEmpty(meta) {
+			info.MetadataNote = fmt.Sprintf("repo %q has no descriptive metadata set; run 'repo add' with description/role/tags to describe it", e.Name)
+		}
+		// The reported root is the repo's code: its source when one is
+		// declared, otherwise the location itself. A git source that has
+		// not been cloned yet is reported unresolved rather than cloned —
+		// resolution only runs once the code is already on disk.
+		if _, ok := set.LocalSource(e.Name); ok {
 			resolved, err := set.Resolve(e.Name)
 			if err != nil {
-				var fpErr *repo.FootprintError
-				if !errors.As(err, &fpErr) {
-					return err
-				}
-				// A broken footprint doesn't hide the repo from the listing;
-				// repair is offered when the repo is actually used.
+				return err
 			}
-			info.Root = resolved.Root
+			info.Root = resolved.Source
 			info.Materialized = resolved.Materialized
 			info.StaleNote = resolved.StaleNote
-			// Descriptive metadata comes from the repo's own config, the
-			// single source now that the registry carries membership only.
-			meta, ok := set.DescriptiveMetadata(e.Name)
-			if ok {
-				info.Description = meta.Description
-				info.Role = meta.Role
-				info.Tags = meta.Tags
-				info.Deployment = meta.Deployment
-			}
-			if !ok || repoConfigDescriptiveFieldsEmpty(meta) {
-				info.MetadataNote = fmt.Sprintf("repo %q has no descriptive metadata set; run 'repo add' with description/role/tags/deployment to describe it", e.Name)
-			}
 		}
 		infos = append(infos, info)
 	}
@@ -302,9 +405,18 @@ func runRepoList(cmd *cobra.Command, _ []string) error {
 
 // repoAddData parses and validates the --data flag for repo add.
 func repoAddData(cmd *cobra.Command) (repoAddInput, error) {
+	const example = `{"name":"docs","location":"../repos/docs","source":"git@example.com:org/docs.git","description":"the documentation repo"}`
 	dataStr, _ := cmd.Flags().GetString("data")
 	if dataStr == "" {
-		return repoAddInput{}, fmt.Errorf(`--data is required (e.g. --data '{"name":"docs","address":"git@example.com:org/docs.git","description":"the documentation repo"}')`)
+		return repoAddInput{}, fmt.Errorf(`--data is required (e.g. --data '%s')`, example)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(dataStr), &raw); err != nil {
+		return repoAddInput{}, fmt.Errorf("parsing --data: %w", err)
+	}
+	if addr, ok := raw["address"]; ok {
+		return repoAddInput{}, output.NewError("invalid_data", "--data no longer accepts \"address\"; a repo's git origin is its \"source\", written into the repo's own repo.yaml").
+			WithNextAction(fmt.Sprintf(`re-run with --data '{"name":%q,"location":"<folder holding the repo's .spektacular/>","source":"%v"}'`, raw["name"], addr))
 	}
 	var input repoAddInput
 	if err := json.Unmarshal([]byte(dataStr), &input); err != nil {
@@ -313,47 +425,27 @@ func repoAddData(cmd *cobra.Command) (repoAddInput, error) {
 	if input.Name == "" {
 		return repoAddInput{}, fmt.Errorf(`--data must include a non-empty "name"`)
 	}
+	if input.Location == "" {
+		return repoAddInput{}, output.NewError("invalid_data", fmt.Sprintf(`--data must include a non-empty "location": the folder holding %q's .spektacular/ directory (created if missing)`, input.Name)).
+			WithNextAction(fmt.Sprintf(`re-run with --data '%s'`, example))
+	}
 	return input, nil
-}
-
-// reposEqual reports whether two registry entries are identical field for
-// field. RepoEntry carries membership only; descriptive metadata lives in
-// the repo's own config and is compared separately.
-func reposEqual(a, b config.RepoEntry) bool {
-	if a.Name != b.Name || a.Address != b.Address || a.Local != b.Local || a.Provider != b.Provider {
-		return false
-	}
-	return stringSlicesEqual(a.Dependencies, b.Dependencies)
-}
-
-func repoConfigDescriptiveFieldsEqual(a, b config.RepoConfig) bool {
-	if a.Description != b.Description || a.Role != b.Role || a.Deployment != b.Deployment {
-		return false
-	}
-	return stringSlicesEqual(a.Tags, b.Tags)
-}
-
-// repoConfigDescriptiveFieldsEmpty reports whether a repo config carries no
-// descriptive metadata at all, the case this project wants surfaced with a
-// warn-only notice so every repo ends up consistently described.
-func repoConfigDescriptiveFieldsEmpty(c config.RepoConfig) bool {
-	return c.Description == "" && c.Role == "" && c.Deployment == "" && len(c.Tags) == 0
-}
-
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func init() {
 	repoCmd.PersistentFlags().Bool("schema", false, "Print the input/output schema for this subcommand and exit")
-	repoAddCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"name":"docs","address":"git@example.com:org/docs.git"}')`)
-	repoCmd.AddCommand(repoAddCmd, repoListCmd)
+	repoCmd.PersistentFlags().BoolP("dry-run", "n", false, "Validate and preview without writing any files or persisting state")
+
+	repoAddCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"name":"docs","location":"/path/to/docs","description":"the documentation repo"}')`)
+
+	repoNewCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"location":"/path/to/docs"}')`)
+	repoNewCmd.Flags().Bool("force", false, "Discard any in-progress guided add and start fresh")
+	repoNewCmd.Flags().String("stdin", "", "Read stdin and store it in workflow data under this key")
+	repoNewCmd.Flags().String("file", "", "Read a file at <path> (relative to cwd) and store its contents under the filename's basename (without extension)")
+
+	repoGotoCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"step":"description"}')`)
+	repoGotoCmd.Flags().String("stdin", "", "Read stdin and store it in workflow data under this key")
+	repoGotoCmd.Flags().String("file", "", "Read a file at <path> (relative to cwd) and store its contents under the filename's basename (without extension)")
+
+	repoCmd.AddCommand(repoAddCmd, repoListCmd, repoNewCmd, repoGotoCmd)
 }

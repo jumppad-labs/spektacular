@@ -6,7 +6,7 @@ Orchestrate parallel research agents to investigate the codebase for planning pu
 
 Use your agent orchestration capability to run multiple research tasks in parallel.
 
-**Multi-repo projects**: when the project registers more than one repo, fan the research out per repo — run the `repo list` command for each registered repo's resolved local path and metadata, and give every research agent below an explicit repo root (or one agent per repo per question, for questions that span repos). Each repo's description, role, and tags tell you which repos a question is even relevant to; don't send every agent into every repo indiscriminately.
+**Multi-repo projects**: when the project registers more than one repo, fan the research out per repo — the `repo list` command reports each registered repo's metadata and the `root` its code lives at — and give every research agent below an explicit code directory (or one agent per repo per question, for questions that span repos). Each repo's description, role, and tags tell you which repos a question is even relevant to; don't send every agent into every repo indiscriminately.
 
 Launch the following agents concurrently:
 
@@ -19,7 +19,7 @@ Find all files related to the feature being planned. Organize results by categor
 
 ### Agent 2: Prior Research
 Search for existing research and plans related to this feature:
-- Search the configured knowledge sources with the `knowledge search` command for related notes, gotchas, or prior learnings — results are ranked one per matching document and tagged by scope (`project`, `team`, `global`)
+- Search the configured knowledge sources with the `knowledge search` command for related notes, gotchas, or prior learnings — results are ranked one per matching document and tagged by the tier and store name they came from
 - Check `.spektacular/plans/` for related plans
 - Check `.spektacular/specs/` for related specs
 - Look for relevant issues, tickets, or TODOs in the codebase

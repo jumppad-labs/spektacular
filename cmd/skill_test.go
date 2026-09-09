@@ -41,35 +41,12 @@ func fetchSkillInstructions(t *testing.T, name string) string {
 	return instructions
 }
 
-// Criterion 4: `skill manage-repos` returns the repo-management skill's
-// content — registration, inspection, and the never-fetch/pull rule.
-func TestSkillManageRepos_IsRetrievable(t *testing.T) {
-	skillProject(t)
-	instructions := fetchSkillInstructions(t, "manage-repos")
-
-	require.Contains(t, instructions, "repo add",
-		"manage-repos must document the `repo add` registration command")
-	require.Contains(t, instructions, "repo list",
-		"manage-repos must document the `repo list` inspection command")
-	require.Contains(t, instructions, "never fetches or pulls",
-		"manage-repos must state Spektacular never fetches or pulls on its own")
-}
-
-// Criterion 4: manage-repos is a library skill served raw — its content
-// carries no command placeholder in either form.
-func TestSkillManageRepos_ServedWithoutCommandPlaceholders(t *testing.T) {
-	skillProject(t)
-	instructions := fetchSkillInstructions(t, "manage-repos")
-
-	require.NotContains(t, instructions, "{{command}}",
-		"library skills are served unrendered and must not carry the {{command}} placeholder")
-	require.NotContains(t, instructions, "{{config.command}}",
-		"library skills are served unrendered and must not carry the {{config.command}} placeholder")
-}
-
-// Criterion 4: the skill listing includes manage-repos alongside the existing
-// skills.
-func TestSkillList_IncludesManageRepos(t *testing.T) {
+// The skill listing enumerates the library skills only. `spek-manage-repos` is
+// installed into the agent's own skills directory by `init <agent>` (see
+// internal/agent/skills.go's workflowSkills), so it is deliberately absent
+// here: an installed skill served raw as well would be two copies of the same
+// content, free to drift.
+func TestSkillList_EnumeratesLibrarySkillsOnly(t *testing.T) {
 	skillProject(t)
 	stdout, stderr, code := runRootCmd(t, "skill", "list")
 	require.Equal(t, 0, code)
@@ -79,23 +56,23 @@ func TestSkillList_IncludesManageRepos(t *testing.T) {
 		Skills []string `json:"skills"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &listing))
-	require.Contains(t, listing.Skills, "manage-repos",
-		"the listing must include the repo-management skill")
 	require.Contains(t, listing.Skills, "spawn-planning-agents",
 		"the listing must still include the existing planning skill")
 	require.Contains(t, listing.Skills, "spawn-implementation-agents",
 		"the listing must still include the existing implementation skill")
+	require.NotContains(t, listing.Skills, "spek-manage-repos",
+		"spek-manage-repos is installed by init, not served as a library skill")
 }
 
-// Criterion 4: the unknown-skill error's available-skills list names
-// manage-repos, so an agent probing with a wrong name is steered to it.
-func TestSkillUnknownName_ErrorListsManageRepos(t *testing.T) {
+// An agent probing the library with a wrong name is steered to the skills the
+// library actually serves.
+func TestSkillUnknownName_ErrorListsAvailableSkills(t *testing.T) {
 	skillProject(t)
 	stdout, stderr, code := runRootCmd(t, "skill", "does-not-exist")
 	require.Equal(t, 1, code)
 	require.Empty(t, stderr)
-	require.Contains(t, stdout, "manage-repos",
-		"the unknown-skill error must list manage-repos among the available skills")
+	require.Contains(t, stdout, "spawn-planning-agents",
+		"the unknown-skill error must list the available skills")
 }
 
 // Criterion 3: the spawn-implementation-agents skill directs carrying each
@@ -108,10 +85,10 @@ func TestSkillSpawnImplementationAgents_DirectsWorkToAttributedRepo(t *testing.T
 
 	require.Contains(t, instructions, "Work belongs in its attributed repo",
 		"the skill must open with the attributed-repo rule")
-	require.Contains(t, instructions, "carry that work out inside that repo's resolved root",
-		"attributed work must be carried out in the repo's resolved root")
+	require.Contains(t, instructions, "carry that work out inside that repo's code",
+		"attributed work must be carried out in the repo's code")
 	require.Contains(t, instructions, "repo list",
-		"resolved local paths must come from the `repo list` command")
+		"where a repo's code lives must come from the `repo list` command")
 	require.Contains(t, instructions, "changelog derivation stay per-repo",
 		"changes must stay per-repo so derived changelog entries follow the attribution")
 }

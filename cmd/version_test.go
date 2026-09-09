@@ -304,10 +304,10 @@ func TestVersionCheck_MigrationNeeded(t *testing.T) {
 // handles missing directories gracefully.
 func TestDetectMigrationNeeded(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFiles     func(t *testing.T, dir string)
-		wantMigration  bool
-		wantErr        bool
+		name          string
+		setupFiles    func(t *testing.T, dir string)
+		wantMigration bool
+		wantErr       bool
 	}{
 		{
 			name: "legacy config without repo.yaml needs migration",
@@ -420,7 +420,6 @@ func TestExecuteMigration(t *testing.T) {
 			cfg.Description = "Test project"
 			cfg.Role = "application"
 			cfg.Tags = []string{"test"}
-			cfg.Deployment = "manual"
 
 			err := executeMigration(dataDir, &cfg)
 
@@ -447,7 +446,6 @@ func TestScanProjectMetadata(t *testing.T) {
 		wantDescription string
 		wantRole        string
 		wantTags        []string
-		wantDeployment  string
 	}{
 		{
 			name: "extracts description from README H1 title",
@@ -458,7 +456,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "My Awesome Project",
 			wantRole:        "application",
 			wantTags:        []string{"general"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "extracts description from README first paragraph",
@@ -469,7 +466,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "This is the first paragraph.",
 			wantRole:        "application",
 			wantTags:        []string{"general"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "detects Go project via go.mod",
@@ -480,7 +476,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "A Spektacular project",
 			wantRole:        "application",
 			wantTags:        []string{"go"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "detects Node.js project via package.json",
@@ -491,29 +486,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "A Spektacular project",
 			wantRole:        "application",
 			wantTags:        []string{"nodejs"},
-			wantDeployment:  "manual",
-		},
-		{
-			name: "infers docker deployment from Dockerfile",
-			setupFiles: func(t *testing.T, dir string) {
-				dockerfile := "FROM golang:1.21\nCOPY . .\nRUN go build\n"
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644))
-			},
-			wantDescription: "A Spektacular project",
-			wantRole:        "application",
-			wantTags:        []string{"general"},
-			wantDeployment:  "docker",
-		},
-		{
-			name: "infers make deployment from Makefile",
-			setupFiles: func(t *testing.T, dir string) {
-				makefile := "build:\n\tgo build\n"
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), []byte(makefile), 0o644))
-			},
-			wantDescription: "A Spektacular project",
-			wantRole:        "application",
-			wantTags:        []string{"general"},
-			wantDeployment:  "make",
 		},
 		{
 			name: "provides defaults when all heuristics fail",
@@ -523,7 +495,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "A Spektacular project",
 			wantRole:        "application",
 			wantTags:        []string{"general"},
-			wantDeployment:  "manual",
 		},
 		{
 			name: "combines multiple heuristics",
@@ -538,7 +509,6 @@ func TestScanProjectMetadata(t *testing.T) {
 			wantDescription: "Spektacular CLI Tool",
 			wantRole:        "application",
 			wantTags:        []string{"go"},
-			wantDeployment:  "docker",
 		},
 	}
 
@@ -553,7 +523,32 @@ func TestScanProjectMetadata(t *testing.T) {
 			require.Equal(t, tt.wantDescription, cfg.Description)
 			require.Equal(t, tt.wantRole, cfg.Role)
 			require.Equal(t, tt.wantTags, cfg.Tags)
-			require.Equal(t, tt.wantDeployment, cfg.Deployment)
 		})
 	}
+}
+
+// Phase 2.3 criterion 6: upgrading a project from the older single-file
+// configuration must produce a repo.yaml that is accepted without further
+// correction. Writing the file is not enough — the migrator seeds it from
+// config.NewDefaultRepoConfig(), so this asserts the result actually loads
+// back through config.RepoConfigFromYAMLFile, passing the guard that refuses a
+// knowledge block in the superseded form, and that the store it declares is
+// the repo's own.
+func TestExecuteMigration_WritesRepoConfigThatLoadsWithoutCorrection(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, ".spektacular")
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("project: test\n"), 0o644))
+
+	cfg := config.NewDefaultRepoConfig()
+	cfg.Description = "Test project"
+	cfg.Role = "application"
+	cfg.Tags = []string{"test"}
+	require.NoError(t, executeMigration(dataDir, &cfg))
+
+	loaded, err := config.RepoConfigFromYAMLFile(filepath.Join(dataDir, config.RepoConfigFileName))
+	require.NoError(t, err, "a migrated repo.yaml must load without further correction")
+	require.Equal(t, "file", loaded.Knowledge.Provider)
+	require.Equal(t, "knowledge", loaded.Knowledge.Config.Location)
+	require.Equal(t, "Test project", loaded.Description)
 }

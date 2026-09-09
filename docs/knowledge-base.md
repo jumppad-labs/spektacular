@@ -81,7 +81,8 @@ Search is keyword-based and runs in-process. A document matches when every query
 word occurs somewhere in it, in any order; results come back ranked — one result
 per matching document, strongest match first. Each result carries:
 
-- its **scope** (which configured source it came from — see precedence below),
+- its **tier** and store **name** (which configured store it came from — together
+  with the path, exactly what a read needs to fetch it back),
 - its **category** label (so a consumer can tell a `gotchas` warning from an
   `architecture` fact from a `learnings` finding),
 - a **checksum** (a content hash, used for de-duplication — see below),
@@ -93,7 +94,7 @@ in full — so search surfaces only the looked-up reference knowledge.
 
 ## De-duplication and consolidation
 
-The same knowledge often lives in more than one place — copied across scopes, or
+The same knowledge often lives in more than one place — copied across stores, or
 worded differently in two entries. A lookup does not return that pile of
 overlapping hits. Instead it returns a single consolidated, source-cited answer,
 produced in two strictly separated stages:
@@ -106,8 +107,9 @@ produced in two strictly separated stages:
    consolidation **sub-agent**, which reads their full bodies and classifies the
    *relationship* between them:
    - **equivalent** (same point, different words) → merged into one cited point;
-   - **refinement** (one is a more specific case) → resolved by layered precedence
-     (below);
+   - **refinement** (one is a more specific case) → kept alongside what it
+     refines and noted, never hidden (there is no precedence between stores —
+     see below);
    - **genuine contradiction** (sources actually disagree) → **surfaced** as a
      conflict naming both sources, never silently dropped;
    - **distinct** → both kept.
@@ -138,23 +140,35 @@ contradiction), which only an LLM does reliably.
 So exact-equivalence is the most effective *mechanical* primitive precisely because
 it is narrow: it claims the one provable point — zero difference — for free, and
 routes everything semantic to the judgement layer, fed the inputs that make that
-judgement good (full bodies, scope/specificity order, and the category label).
+judgement good (full bodies, the store each came from, and the category label).
 
-## Layered source precedence
+## Two tiers, and how a store is addressed
 
-A knowledge source has a **scope** label. A project ships one scope, `project`,
-backed by `.spektacular/knowledge/`; additional scopes — for example a shared
-`team` directory or a machine-wide `global` one — can be configured. Every read,
-search, and always-applied load fans across all configured scopes in order, and
-every result is tagged with the scope it came from.
+Knowledge lives in one of two tiers. Every registered repo contributes exactly one
+store, holding what is true of that repo's own code, declared as a single provider
+block in its `repo.yaml` and addressed by the name the project registered the repo
+under. The project declares any number of shared stores under `knowledge.sources`
+in `.spektacular/config.yaml`, each with its own `name`, for knowledge that belongs
+to no single repo. Names must be unique within a tier; the same name may appear
+once in each, because a store is identified by its tier and name together.
 
-When more than one scope covers the same item, precedence is **layered**: the
-**most-specific scope wins**. Specificity runs `project` (most specific) → `team`
-→ `global` (least specific) — a project-local entry overrides a team entry, which
-overrides a global one. This is applied during consolidation: a refinement is
-resolved in favour of the most-specific source, and the override is noted rather
-than hidden. A *genuine* disagreement between sources is surfaced as a conflict,
-not silently resolved.
+Reading and writing address exactly one store, so they take a `tier` and a `name`
+alongside the path. A request that leaves either out is refused rather than
+resolved to whichever store looks closest, and the refusal lists the names
+available in that tier so it can be reissued immediately.
+
+Searching, listing, conventions, and the always-applied load take `--tier
+<project|repo|all>` and a repeatable `--filter <name>`. Omitting the narrowing
+covers every store the tier reaches; naming stores covers exactly those. No store
+is ever included or excluded implicitly, which is what lets planning work on one
+repo skip every other repo's standing rules.
+
+**There is no precedence between stores.** A repo's own store answers what is true
+of that repo's code, and the project's shared stores answer what spans repos; they
+answer different questions rather than overriding one another. During consolidation
+a refinement is kept alongside what it refines and noted rather than hidden, and a
+*genuine* disagreement is surfaced as a conflict naming both stores, not silently
+resolved.
 
 ## Contributing knowledge
 
@@ -163,23 +177,24 @@ Contributions are routed to the right category at the moment they are filed. The
 (`spektacular knowledge categories`), picks the category whose purpose matches the
 entry and whose boundary does not exclude it, and steers over-long or
 multi-paragraph content out of the always-applied `glossary` toward a more fitting
-category — keeping the always-applied tier compact. The entry is filed at
-`<category>/<slug>.md`. As always, the assistant proposes the scope, path, and body
-and waits for explicit confirmation before writing.
+category — keeping the always-applied retrieval tier compact. The entry is filed at
+`<category>/<slug>.md`. As always, the assistant proposes the destination — the
+tier, the store name, and the path — along with the body, and waits for explicit
+confirmation before writing.
 
 ## Command reference
 
 Agents (and you) reach knowledge through the `spektacular knowledge` commands
-rather than reading the files directly, so access stays consistent across scopes.
+rather than reading the files directly, so access stays consistent across stores.
 Each command has a `--schema` mode that prints its input/output schema.
 
 | Command | Purpose |
 |---------|---------|
-| `spektacular knowledge search <query>` | Keyword-search every scope (always-applied categories excluded); ranked, one scope- and category-tagged result per matching document, each with title, score, excerpts, and a content checksum |
-| `spektacular knowledge read --data '{"scope":"project","path":"architecture/x.md"}'` | Read one entry's full body from a named scope |
-| `spektacular knowledge list` | List every entry across all scopes |
-| `spektacular knowledge write --data '{"scope":"project","path":"gotchas/x.md"}' --file <path>` | Write an entry into a named scope (content from `--file`, or stdin) |
-| `spektacular knowledge sources` | List the configured scopes and their locations |
+| `spektacular knowledge search <query> [--tier T] [--filter N]` | Keyword-search the stores the request covers (always-applied categories excluded); ranked, one tier-, store- and category-tagged result per matching document, each with title, score, excerpts, and a content checksum |
+| `spektacular knowledge read --data '{"tier":"repo","name":"docs","path":"architecture/x.md"}'` | Read one entry's full body from one addressed store |
+| `spektacular knowledge list [--tier T] [--filter N]` | List every entry across the stores the request covers |
+| `spektacular knowledge write --data '{"tier":"repo","name":"docs","path":"gotchas/x.md"}' --file <path>` | Write an entry into one addressed store (content from `--file`, or stdin) |
+| `spektacular knowledge sources` | List the configured stores by tier and name, with their locations |
 | `spektacular knowledge categories` | List the category definitions — purpose, boundary, tier, and entry shape |
-| `spektacular knowledge always-applied` | Read every always-applied entry (conventions and glossary) across all scopes, each tagged with its category |
-| `spektacular knowledge conventions` | Read every convention across all scopes (the conventions-only, backward-compatible view) |
+| `spektacular knowledge always-applied [--tier T] [--filter N]` | Read every always-applied entry (conventions and glossary) across the stores the request covers, each tagged with its category |
+| `spektacular knowledge conventions [--tier T] [--filter N]` | Read every convention across the stores the request covers (the conventions-only view) |

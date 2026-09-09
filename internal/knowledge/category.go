@@ -5,23 +5,28 @@ import (
 	"strings"
 )
 
-// Tier declares how a category's entries are retrieved. A category's tier is
-// stated once, here in the registry, and every behaviour that depends on it —
-// project scaffolding, search exclusion, and the always-applied reader — reads
-// it from here rather than restating a category name. Re-tiering a category is
-// therefore a single-field change.
-type Tier string
+// CategoryTier declares how a category's entries are retrieved. A category's
+// retrieval tier is stated once, here in the registry, and every behaviour that
+// depends on it — project scaffolding, search exclusion, and the always-applied
+// reader — reads it from here rather than restating a category name. Re-tiering
+// a category is therefore a single-field change.
+//
+// This is a different axis from the addressing Tier in address.go, which says
+// which knowledge a store holds rather than when its entries are loaded. The
+// two never appear on the same object, so Category keeps its "tier" JSON key
+// and the unqualified Go name goes to the addressing concept.
+type CategoryTier string
 
 const (
-	// TierAlwaysApplied marks a category whose entries are loaded in full on
-	// every task and are deliberately excluded from search, so the same content
-	// is never surfaced twice. Keep these categories small: their whole content
-	// is paid for on every task.
-	TierAlwaysApplied Tier = "always-applied"
-	// TierLookedUp marks a category whose entries are retrieved only when a
-	// query matches them. This is the larger reference body of the knowledge
-	// base.
-	TierLookedUp Tier = "looked-up"
+	// CategoryTierAlwaysApplied marks a category whose entries are loaded in
+	// full on every task and are deliberately excluded from search, so the same
+	// content is never surfaced twice. Keep these categories small: their whole
+	// content is paid for on every task.
+	CategoryTierAlwaysApplied CategoryTier = "always-applied"
+	// CategoryTierLookedUp marks a category whose entries are retrieved only
+	// when a query matches them. This is the larger reference body of the
+	// knowledge base.
+	CategoryTierLookedUp CategoryTier = "looked-up"
 )
 
 // Category is the registry record describing one knowledge category. It is the
@@ -40,7 +45,7 @@ type Category struct {
 	// contributor can tell categories apart at the edges.
 	Boundary string `json:"boundary"`
 	// Tier declares how the category's entries are retrieved.
-	Tier Tier `json:"tier"`
+	Tier CategoryTier `json:"tier"`
 	// EntryShape describes the shape an entry should take, e.g. "a term and a
 	// short gloss".
 	EntryShape string `json:"entryShape"`
@@ -54,42 +59,42 @@ var Categories = []Category{
 		Name:       "conventions",
 		Purpose:    "The rules a team always wants honoured — coding standards, naming schemes, formatting, required patterns, and the house style that every change must follow.",
 		Boundary:   "Not the reasoning behind a rule (that is a decision) and not a one-off lesson learned in passing (that is a learning). A convention is a standing rule, stated as an instruction to follow.",
-		Tier:       TierAlwaysApplied,
+		Tier:       CategoryTierAlwaysApplied,
 		EntryShape: "An imperative rule with, where useful, a brief note on its scope — short enough to apply without re-reading.",
 	},
 	{
 		Name:       "glossary",
 		Purpose:    "The shared vocabulary of the project — the domain and project-specific terms a contributor must understand to read the rest of the knowledge base and the code.",
 		Boundary:   "Not an explanation of how a thing works (that is architecture) and not the rationale for a choice (that is a decision). A glossary entry defines what a term means, nothing more.",
-		Tier:       TierAlwaysApplied,
+		Tier:       CategoryTierAlwaysApplied,
 		EntryShape: "A term and a short gloss — one or two sentences. Anything longer belongs in architecture, decisions, or learnings.",
 	},
 	{
 		Name:       "architecture",
 		Purpose:    "How the system is built and fits together — components and their responsibilities, the boundaries between them, data and control flow, and the structural facts a contributor needs to navigate the code.",
 		Boundary:   "Not why a structure was chosen over the alternatives (that is a decision) and not a defined term (that is a glossary entry). Architecture describes what exists and how it works.",
-		Tier:       TierLookedUp,
+		Tier:       CategoryTierLookedUp,
 		EntryShape: "A focused description of one component, boundary, or flow, written so a reader can place it in the larger system.",
 	},
 	{
 		Name:       "gotchas",
 		Purpose:    "Sharp edges and non-obvious traps — surprising behaviours, easy-to-make mistakes, and the things that bite a contributor who does not already know about them.",
 		Boundary:   "Not a standing rule (that is a convention) and not the structure of the system (that is architecture). A gotcha is a warning about a specific trap and how to avoid it.",
-		Tier:       TierLookedUp,
+		Tier:       CategoryTierLookedUp,
 		EntryShape: "A short warning naming the trap, why it surprises, and what to do instead.",
 	},
 	{
 		Name:       "learnings",
 		Purpose:    "Empirical knowledge gained from doing the work — what was tried, what worked, what did not, and the practical findings that save the next contributor from repeating the effort.",
 		Boundary:   "Not a recorded decision with its rationale (that is a decision) and not a standing rule the team must follow (that is a convention). A learning is an observation from experience.",
-		Tier:       TierLookedUp,
+		Tier:       CategoryTierLookedUp,
 		EntryShape: "A finding stated plainly, with enough context to know when it applies.",
 	},
 	{
 		Name:       "decisions",
 		Purpose:    "The reasoning behind choices the project has made — the options considered, the trade-offs weighed, and why one path was taken over the others (ADR-style).",
 		Boundary:   "Not a description of the resulting structure (that is architecture) and not a rule to follow (that is a convention). A decision records the why, not the what or the how.",
-		Tier:       TierLookedUp,
+		Tier:       CategoryTierLookedUp,
 		EntryShape: "A record of the decision, the alternatives considered, and the rationale for the choice made.",
 	},
 }
@@ -112,7 +117,7 @@ func (c Category) README() string {
 func AlwaysApplied() []string {
 	var names []string
 	for _, c := range Categories {
-		if c.Tier == TierAlwaysApplied {
+		if c.Tier == CategoryTierAlwaysApplied {
 			names = append(names, c.Name)
 		}
 	}

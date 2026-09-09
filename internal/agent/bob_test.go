@@ -21,12 +21,13 @@ func TestBobAgent_Install(t *testing.T) {
 	err := bobAgent{}.Install(tmp, cfg, io.Discard)
 	require.NoError(t, err)
 
-	// Exactly three SKILL.md files under .bob/skills/spek-{new,plan,implement}/.
+	// Exactly five SKILL.md files under .bob/skills/spek-{new,plan,implement}/.
 	skillAssertions := map[string]string{
-		"spek-new":       "spektacular spec new",
-		"spek-plan":      "spektacular plan new",
-		"spek-implement": "spektacular implement new",
-		"spek-knowledge": "knowledge",
+		"spek-new":          "spektacular spec new",
+		"spek-plan":         "spektacular plan new",
+		"spek-implement":    "spektacular implement new",
+		"spek-knowledge":    "knowledge",
+		"spek-manage-repos": "repo add",
 	}
 	for skill, expected := range skillAssertions {
 		skillPath := filepath.Join(tmp, ".bob", "skills", skill, "SKILL.md")
@@ -39,13 +40,14 @@ func TestBobAgent_Install(t *testing.T) {
 		require.NotContains(t, string(data), "{{command}}")
 	}
 
-	// Exactly three command wrappers under .bob/commands/, basenames keep the
+	// Exactly five command wrappers under .bob/commands/, basenames keep the
 	// `spek-` prefix.
 	commandAssertions := map[string]string{
-		"spek-new.md":       "`spek-new` skill",
-		"spek-plan.md":      "`spek-plan` skill",
-		"spek-implement.md": "`spek-implement` skill",
-		"spek-knowledge.md": "`spek-knowledge` skill",
+		"spek-new.md":          "`spek-new` skill",
+		"spek-plan.md":         "`spek-plan` skill",
+		"spek-implement.md":    "`spek-implement` skill",
+		"spek-knowledge.md":    "`spek-knowledge` skill",
+		"spek-manage-repos.md": "`spek-manage-repos` skill",
 	}
 	for base, expected := range commandAssertions {
 		cmdPath := filepath.Join(tmp, ".bob", "commands", base)

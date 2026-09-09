@@ -2,16 +2,10 @@
 
 Decide the shape of the solution and lock in the chosen direction. This step produces the **Architecture & Design Decisions** section of `plan.md` — the load-bearing section of the whole plan. A reviewer should be able to spot missing patterns or design gaps from this section alone.
 
-**The repos this project spans.** The architecture must place every part of the work in the repo it belongs to:
+**The repos this project spans.** The architecture must place every part of the work in the repo it belongs to. `{{config.command}} repo list` reports each registered repo with its metadata and the `root` its code lives at.
 
-{{#repos}}
-- **{{name}}**{{#description}} — {{description}}{{/description}}{{#role}} (role: {{role}}){{/role}}{{#tags}} [tags: {{tags}}]{{/tags}}{{#deployment}} (deployment: {{deployment}}){{/deployment}}
-{{/repos}}
-{{^repos}}
-- No repos are registered in this project's configuration; all work targets the colocated repo.
-{{/repos}}
 
-For every requirement, the drafted architecture must name **which repo (and which files within it)** the requirement is carried out against, using the repos' metadata above and the discovery findings; consult `{{config.command}} repo list` for resolved local paths when you need to look inside a repo. Record the requirement-to-repo-and-files resolution in the plan's context document as part of the per-phase technical detail — no separate document.
+For every requirement, the drafted architecture must name **which repo (and which files within it)** the requirement is carried out against, using the repos' metadata from that section and the discovery findings; look inside a repo at the source listed there (or run `{{config.command}} repo list` when a source is not on disk yet). Record the requirement-to-repo-and-files resolution in the plan's context document as part of the per-phase technical detail — no separate document.
 
 ### Step 1: Weigh Options
 
@@ -48,7 +42,7 @@ Before advancing, save this section to its working file. Using your own `Write` 
 
 ### Step 4: Select the conventions that apply
 
-Now the design shape is locked and you know the surfaces this feature touches, select — from the conventions you loaded in full during discovery (the conventions-category entries returned by `{{config.command}} knowledge always-applied`) — the subset that actually bears on this work. For each one you keep, write a one-line rationale for **why it applies to this feature**, and cite it inline in the Architecture & Design Decisions content above wherever it drives a specific choice. Include only the genuinely relevant conventions — not the whole knowledge base.
+Now the design shape is locked and you know the surfaces this feature touches, select — from the conventions you loaded in full during discovery (the conventions-category entries returned by `{{config.command}} knowledge always-applied --tier repo --filter <name>` during discovery) — the subset that actually bears on this work. For each one you keep, write a one-line rationale for **why it applies to this feature**, and cite it inline in the Architecture & Design Decisions content above wherever it drives a specific choice. Include only the genuinely relevant conventions — not the whole knowledge base.
 
 Relevance is **decided and recorded, not asked**: choose the conventions to apply (and any you deliberately drop) and record the choice as an assumption-log entry instead of asking for confirmation. If no conventions are relevant, or the project has none, say so plainly rather than padding the list — an empty or generic list is a visible signal the knowledge base was not consulted.
 

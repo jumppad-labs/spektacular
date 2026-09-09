@@ -16,6 +16,6 @@ changelog:
         directory: .spektacular/changelog
 repos:
     - name: auth
-      local: .
+      location: .
     - name: docs
-      local: /opt/docs-repo
+      location: ../repos/docs/.spektacular

@@ -104,8 +104,12 @@ func (s *ignoreStore) List(path string) ([]DirEntry, error) {
 	return filtered, nil
 }
 
-func (s *ignoreStore) Search(query string) ([]Hit, error) {
-	hits, err := s.inner.Search(query)
+// Search forwards the query and its options to the wrapped store unchanged —
+// dropping an option here would make it appear to work everywhere except the
+// stores that actually carry an ignore file — and then removes hits on ignored
+// paths.
+func (s *ignoreStore) Search(terms []string, opts SearchOptions) ([]Hit, error) {
+	hits, err := s.inner.Search(terms, opts)
 	if err != nil {
 		return nil, err
 	}

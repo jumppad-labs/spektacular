@@ -77,8 +77,7 @@ compatibility, returning only the conventions.
 
 ## Search behaviour
 
-Search is keyword-based and runs in-process. A document matches when every query
-word occurs somewhere in it, in any order; results come back ranked — one result
+Search is keyword-based and runs in-process. Results come back ranked — one result
 per matching document, strongest match first. Each result carries:
 
 - its **tier** and store **name** (which configured store it came from — together
@@ -86,11 +85,164 @@ per matching document, strongest match first. Each result carries:
 - its **category** label (so a consumer can tell a `gotchas` warning from an
   `architecture` fact from a `learnings` finding),
 - a **checksum** (a content hash, used for de-duplication — see below),
+- its **tags** (what the entry declares itself to be about; an empty list when it
+  declares nothing),
 - a **title**, a **score**, and up to three **excerpts** of the strongest matching
   lines.
 
+**A document does not have to contain every word of the query.** It is returned if
+it carries evidence for any of them, and ranked on how good a match it is. Two
+consequences follow, and both matter to anything consuming search: a returned hit
+is not proof that every query word appeared in it, and an empty result is not
+proof that nothing on the subject exists.
+
 Always-applied categories never appear in search results — they are already loaded
 in full — so search surfaces only the looked-up reference knowledge.
+
+### How a result is ranked
+
+The query is lower-cased and split on whitespace into terms. There is no stemming,
+no synonyms and no plural handling, so `router` and `routers` are different terms.
+
+For each term, an entry offers at most two kinds of evidence:
+
+- a **tag match**, full strength when the term equals one of the entry's tags and
+  reduced when the two are prefix-related (see below);
+- **body occurrences**, the number of case-insensitive substring matches in the
+  entry's text. The frontmatter block is not part of the text, so a tag is never
+  also counted as a mention of itself.
+
+```text
+damp(n)        = 0                         if n = 0
+               = 1 + log2(n)               otherwise
+
+tagAffinity(t) = 1                         if t equals one of the tags
+               = len(shorter)/len(longer)  if t and a tag are prefix-related
+                                           and the shorter is >= minPrefixLen
+               = 0                         otherwise
+
+termScore(t)   = tagWeight * tagAffinity(t) + damp(bodyCount(t))
+
+coverage       = (terms with any evidence) / (total terms)
+
+score          = sum(termScore(t) for t in terms) * coverage ^ coverageExponent
+```
+
+with `tagWeight = 8`, `coverageExponent = 2` and `minPrefixLen = 4`. Where a term
+is prefix-related to more than one tag, the strongest match wins; affinities do
+not add up.
+
+**The named constants in `internal/knowledge/ranking.go` are the single source of
+truth for these values.** They are quoted here, on the published knowledge base
+page, and in the `architecture/knowledge-search-ranking.md` entry, so changing one
+is a four-file change: the code and all three documents, or they disagree.
+
+A worked example, searching `http routing` against two entries:
+
+| | Entry A, tagged `http, routing` | Entry B, untagged, mentions "http" 8 times |
+|---|---|---|
+| `http` | tag match, 0 in body: 8 + 0 = 8 | no tag, 8 in body: 0 + (1 + log2 8) = 4 |
+| `routing` | tag match, 2 in body: 8 + 2 = 10 | no evidence: 0 |
+| coverage | 2 of 2 = 1.0 | 1 of 2 = 0.5 |
+| **score** | (8 + 10) * 1.0² = **18** | 4 * 0.5² = **1** |
+
+Entry B mentions the word far more often and still ranks well below Entry A,
+because Entry A is *about* both terms and Entry B is about neither.
+
+**Prefix partial credit.** A tag does not have to be typed exactly. When a search
+term and a tag are prefix-related, the tag still counts, at the shorter string's
+length over the longer's: `http` finds a `https` tag at 80%, `apple` and `apples`
+find each other at 83%, `https` finds `https-security` at 36%. Two guards are
+deliberate. The match must be anchored at the start, so `test` does not find
+`latest`; and the shorter of the two must be at least `minPrefixLen` characters,
+so `go` matches only exactly rather than reaching `golang`, `google` and
+`gorilla`.
+
+This is **positional, not morphological** — it is not stemming. `route` does not
+find `routing`, because `route` is not the opening of `routing`. Where a form
+differs by more than its ending and both are likely search words, carry both tags.
+Edit distance was considered and rejected for exactly this surface: on short
+technical tokens it scores `test`/`rest` and `cors`/`core` at 0.75 and
+`tls`/`tld`, `dns`/`dos` and `api`/`apt` at 0.67, all unrelated subjects and all
+plausible tags here, while producing scores identical to prefix matching on every
+pair that should match.
+
+**The cutoff.** Once every store has been searched and the results merged, any hit
+scoring below `cutoffFraction` of the best hit is dropped, with
+`cutoffFraction = 0.25`. The threshold is relative rather than fixed, so a loosely
+related entry surfaces when nothing better exists and falls away once something
+genuinely relevant is present, and it keeps its meaning as a knowledge base grows.
+In the example above, Entry B is dropped: 1 is below 0.25 × 18. Ties break by
+configured store order and then by path, so repeated searches return the same
+order.
+
+### Where each part is computed
+
+A store finds candidate documents and describes them: per-term body occurrence
+counts, the entry's tags, the locator, title, excerpts and checksum. It does
+**not** compute a score. Tokenizing the query, scoring every reported hit,
+merging, sorting and applying the cutoff all happen once in the knowledge layer,
+above the store interface.
+
+The reason is the merge. Hits from every covered store are ranked against each
+other, so every score must be on the same scale; a formula reproduced inside each
+provider would have to be reproduced exactly, and any drift would leave the merged
+ordering quietly wrong rather than visibly broken. The precedent is already in the
+result type — `tier`, `name` and `category` are left empty by the store because it
+has no notion of its caller's addressing scheme, and `score` joins them because it
+has no notion of the stores it will be ranked against. One consequence is worth
+stating for anyone writing a backend: a store must be able to report per-term
+occurrence counts to take part in this ranking at all. The public reference for
+writing a storage backend covers the contract in full.
+
+### Tags on an entry
+
+An entry may open with a YAML frontmatter block declaring what it is about,
+independently of the words its prose happens to use:
+
+```markdown
+---
+tags: [go, http, routing]
+---
+
+# HTTP routing standard
+
+All Go services route HTTP endpoints through chi.
+```
+
+The block list form works too:
+
+```markdown
+---
+tags:
+  - go
+  - http
+  - routing
+---
+```
+
+The rules, each of which is a real behaviour rather than a convention:
+
+- **Tags are optional.** An entry without a block is perfectly valid and fully
+  searchable. There is nothing to migrate, no backfill, and no command to run.
+- **The block must lead the file**, opened and closed by a line containing only
+  `---`.
+- **`tags` is the only key read.** Any other key is ignored, so the block is safe
+  to use for other metadata.
+- **Tags are lower-cased, trimmed and de-duplicated** when read, so `HTTP` and
+  `http` can never both exist as separate tags.
+- **A malformed or unclosed block is treated as no frontmatter**, not as an error.
+  An entry that happens to open with a horizontal rule keeps working, and one bad
+  entry can never fail a search across a whole store.
+- **The block is not part of the entry's prose**, so a tag is not also counted as
+  a body mention of itself. The checksum is the deliberate exception: it covers the
+  file's exact raw bytes including the block, because it identifies the file rather
+  than its prose, so two entries differing only in their tags stay distinct during
+  de-duplication.
+
+You rarely write this block by hand. The `spek-knowledge` skill proposes tags when
+it captures an entry, drawn from the vocabulary already in use, and shows them
+alongside the destination for confirmation before anything is written.
 
 ## De-duplication and consolidation
 
@@ -120,6 +272,14 @@ produced in two strictly separated stages:
    inline; only the context isolation differs.)
 
 ### Why the mechanical layer is exact, not fuzzy
+
+De-duplication and ranking answer different questions, and the tools differ
+accordingly. De-duplication asks whether two entries are *the same*, which is a
+yes-or-no fact and is therefore decided on exact bytes. Ranking asks which entry
+is a better *answer* to a query, which is a matter of degree and is therefore
+scored, with prefix partial credit and damping. The argument below is about the
+first question only; it is not an argument against inexact ranking.
+
 
 The deterministic de-dup step matches on **exact byte-identity** rather than a
 normalized or similarity-based fingerprint. This is deliberate, because **lexical
@@ -178,9 +338,45 @@ Contributions are routed to the right category at the moment they are filed. The
 entry and whose boundary does not exclude it, and steers over-long or
 multi-paragraph content out of the always-applied `glossary` toward a more fitting
 category — keeping the always-applied retrieval tier compact. The entry is filed at
-`<category>/<slug>.md`. As always, the assistant proposes the destination — the
-tier, the store name, and the path — along with the body, and waits for explicit
-confirmation before writing.
+`<category>/<slug>.md`.
+
+The skill also loads the tag vocabulary already in use
+(`spektacular knowledge tags`) and proposes tags for the entry, preferring an
+established tag over a near-duplicate so the vocabulary converges instead of
+fragmenting as the knowledge base grows. As always, the assistant proposes the
+destination — the tier, the store name, and the path — along with the tags and the
+body, and waits for explicit confirmation before writing. That is one gate, not
+several: tags are confirmed with everything else.
+
+### Auditing the tags on existing entries
+
+Entries written before tags existed, or tagged carelessly, can be reviewed the
+same way. There is no separate command: invoke the `spek-knowledge` skill and ask
+it to audit the knowledge base tags. The skill discriminates the audit intent from
+the wording of the request, the same way it tells a lookup from a contribution.
+
+The flow is read-only until you approve something. It enumerates the entries in
+scope with `knowledge list`, loads the vocabulary in use with `knowledge tags`,
+reads each entry, and for each one reports two things:
+
+- **Unsupported tags** — a tag the entry's content does not bear out, reported for
+  removal.
+- **Missing tags** — a subject the entry is clearly about but carries no tag for,
+  proposed from the existing vocabulary where something fits and as a new tag only
+  where nothing does.
+
+Changes are proposed and confirmed **one entry at a time**. Accepting one entry's
+changes never applies another's, and declining one does not carry to the next, so
+a suggestion you disagree with costs a "no" rather than a cleanup. Narrow the
+scope with `--tier` and `--filter` when you only want part of the knowledge base
+reviewed.
+
+Two judgements the audit is deliberately careful about, because they pull in
+opposite directions. It will not tell an entry tagged `https` to use `http`
+instead: those are different subjects, and prefix matching already relates them at
+reduced strength. But it will report `apples` sitting beside `apple` as removable,
+because prefix matching already reaches it and a redundant tag is how a vocabulary
+silently doubles.
 
 ## Command reference
 
@@ -190,11 +386,12 @@ Each command has a `--schema` mode that prints its input/output schema.
 
 | Command | Purpose |
 |---------|---------|
-| `spektacular knowledge search <query> [--tier T] [--filter N]` | Keyword-search the stores the request covers (always-applied categories excluded); ranked, one tier-, store- and category-tagged result per matching document, each with title, score, excerpts, and a content checksum |
+| `spektacular knowledge search <query> [--tier T] [--filter N] [--tag G]` | Keyword-search the stores the request covers (always-applied categories excluded); ranked, one tier-, store- and category-tagged result per matching document, each with title, score, excerpts, tags, and a content checksum. A document need not contain every query word. Repeatable `--tag` restricts results to entries carrying every tag listed |
 | `spektacular knowledge read --data '{"tier":"repo","name":"docs","path":"architecture/x.md"}'` | Read one entry's full body from one addressed store |
 | `spektacular knowledge list [--tier T] [--filter N]` | List every entry across the stores the request covers |
 | `spektacular knowledge write --data '{"tier":"repo","name":"docs","path":"gotchas/x.md"}' --file <path>` | Write an entry into one addressed store (content from `--file`, or stdin) |
 | `spektacular knowledge sources` | List the configured stores by tier and name, with their locations |
 | `spektacular knowledge categories` | List the category definitions — purpose, boundary, tier, and entry shape |
+| `spektacular knowledge tags [--tier T] [--filter N]` | List the tag vocabulary already in use across the stores the request covers, each with the number of entries carrying it, most-used first |
 | `spektacular knowledge always-applied [--tier T] [--filter N]` | Read every always-applied entry (conventions and glossary) across the stores the request covers, each tagged with its category |
 | `spektacular knowledge conventions [--tier T] [--filter N]` | Read every convention across the stores the request covers (the conventions-only view) |

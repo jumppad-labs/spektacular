@@ -29,31 +29,36 @@ const scanBufferBytes = 1024 * 1024
 // byte to classify it as binary — the same convention git uses.
 const binarySniffBytes = 8000
 
-// Search returns hits for a free-form keyword query, scanning only this store.
-// It walks the store root in process — no external tool is consulted. The
-// query is split into whitespace-separated terms, each matched as a literal,
-// case-insensitive substring; a file matches when every term occurs somewhere
-// in it, and each matching file produces exactly one Hit whose Score is the sum
-// of all terms' occurrence counts across the file. The Hit's attribution fields
-// are left empty for the caller to stamp.
+// Search returns hits for a pre-tokenized keyword query, scanning only this
+// store. It walks the store root in process — no external tool is consulted.
+// Terms arrive already lower-cased, in the order the caller indexes evidence
+// by; each is matched as a literal, case-insensitive substring, and every
+// document offering evidence for at least one of them produces exactly one Hit
+// reporting how often each term occurs in it.
+//
+// The Hit is left unranked as well as unattributed: this store reports what it
+// found and never computes a Score. Whether a document is relevant enough to
+// show, and how it orders against documents from other stores, are decisions
+// about the whole result set, which the knowledge layer makes.
+//
 // The store is category-agnostic: it scans every directory and never excludes
 // one by name — tier-based exclusion of always-applied categories lives in the
 // knowledge layer, and .spektacular_ignore exclusion lives in the ignore-aware
 // wrapper (NewIgnoreStore), never here. Binary files are skipped, and
 // a file containing an over-long line is scanned only up to that line. A
-// query with no terms — empty or all whitespace — or one with no matches
-// returns an empty result, not an error.
-func (f *FileStore) Search(query string) ([]Hit, error) {
-	terms := strings.Fields(strings.ToLower(query))
+// query with no terms, or one with no matches, returns an empty result, not an
+// error.
+func (f *FileStore) Search(terms []string, opts SearchOptions) ([]Hit, error) {
 	if len(terms) == 0 {
 		return nil, nil
 	}
-	return f.search(terms)
+	return f.search(terms, opts)
 }
 
 // search walks the store root, scans every file once, and emits one Hit per
-// file that contains every term. Terms must already be lower-cased.
-func (f *FileStore) search(terms []string) ([]Hit, error) {
+// file offering evidence for at least one term. Terms must already be
+// lower-cased.
+func (f *FileStore) search(terms []string, opts SearchOptions) ([]Hit, error) {
 	var hits []Hit
 
 	err := filepath.WalkDir(f.root, func(path string, d fs.DirEntry, err error) error {
@@ -67,13 +72,33 @@ func (f *FileStore) search(terms []string) ([]Hit, error) {
 		if err != nil {
 			return err
 		}
-		score := 0
+		// Fast path only: a document lacking a requested tag is discarded by the
+		// knowledge layer anyway, so skipping it here just saves reporting it.
+		if !CarriesEveryTag(agg.tags, opts.Tags) {
+			return nil
+		}
+		// The only rejection left here is "this document offers no evidence of
+		// any kind", which would otherwise make every file in the store a hit.
+		// Deciding how much evidence is enough moved out of this walk and into
+		// the knowledge layer, which is the only place hits from every store are
+		// visible at once — so this is deliberately not the per-term early
+		// return it replaced, and restoring that would reinstate boolean AND.
+		//
+		// Declared tags count as evidence in their own right, and must, because
+		// an entry tagged "go" whose prose never says "go" has to reach the
+		// ranking layer to be scored on those tags at all. The store reports it
+		// without judging how relevant the tags are: weighing a tag against a
+		// query is ranking, and ranking is not this layer's job. An irrelevant
+		// tagged entry simply scores zero upstream and is dropped there.
+		evidence := len(agg.tags) > 0
 		for _, count := range agg.counts {
-			if count == 0 {
-				// A document matches only when every term occurs in it.
-				return nil
+			if count > 0 {
+				evidence = true
+				break
 			}
-			score += count
+		}
+		if !evidence {
+			return nil
 		}
 		rel, relErr := filepath.Rel(f.root, path)
 		if relErr != nil {
@@ -87,12 +112,19 @@ func (f *FileStore) search(terms []string) ([]Hit, error) {
 		for _, c := range agg.best {
 			excerpts = append(excerpts, trimExcerpt(c.text))
 		}
+		// Always a list, never nil, so the JSON carries "tags": [] for an
+		// untagged entry rather than omitting the key.
+		tags := agg.tags
+		if tags == nil {
+			tags = []string{}
+		}
 		hits = append(hits, Hit{
-			Path:     rel,
-			Title:    title,
-			Excerpts: excerpts,
-			Score:    float64(score),
-			Checksum: agg.checksum,
+			Path:       rel,
+			Title:      title,
+			Excerpts:   excerpts,
+			Checksum:   agg.checksum,
+			Tags:       tags,
+			BodyCounts: agg.counts,
 		})
 		return nil
 	})
@@ -116,6 +148,7 @@ type candidateLine struct {
 // strongest matching lines, bounded at maxExcerptsPerHit.
 type fileAggregate struct {
 	counts   []int           // total occurrences per term, indexed like the terms slice
+	tags     []string        // the entry's declared tags, nil when it has no frontmatter block
 	title    string          // first ATX-heading text, "" when the file has none
 	titleSet bool            // whether a heading line was seen, so later ones never win
 	best     []candidateLine // strongest lines: distinct terms desc, total desc, file order asc
@@ -146,12 +179,19 @@ func (a *fileAggregate) addCandidate(c candidateLine) {
 }
 
 // scanFile reads the file at path once and aggregates, per term, the number
-// of non-overlapping case-insensitive occurrences across the whole file,
-// along with the file's first ATX-heading text and its strongest matching
-// lines. Terms must already be lower-cased. Binary files — a NUL byte within
-// the leading binarySniffBytes — quietly yield an empty aggregate, and once a
-// line exceeds scanBufferBytes the remainder of the file is skipped, keeping
-// the aggregate collected so far.
+// of non-overlapping case-insensitive occurrences across the entry's body,
+// along with the entry's declared tags, its first ATX-heading text and its
+// strongest matching lines. Terms must already be lower-cased. Binary files — a
+// NUL byte within the leading binarySniffBytes — quietly yield an empty
+// aggregate, and once a line exceeds scanBufferBytes the remainder of the file
+// is skipped, keeping the aggregate collected so far.
+//
+// Everything after the frontmatter block is the body: term counting, title
+// detection and excerpt collection all start there, so a tag is never also
+// counted as a prose mention of itself. The checksum is the exception and stays
+// over the file's exact raw bytes, block included, because it identifies the
+// file rather than its prose — two entries differing only in their tags must not
+// collapse into one candidate during exact-byte de-duplication.
 func scanFile(path string, terms []string) (fileAggregate, error) {
 	agg := fileAggregate{counts: make([]int, len(terms))}
 
@@ -179,7 +219,23 @@ func scanFile(path string, terms []string) (fileAggregate, error) {
 	hasher.Write(sniff)
 	tee := io.TeeReader(file, hasher)
 
-	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(sniff), tee))
+	// The frontmatter block, if there is one, is by definition at the very start
+	// of the file, so it is already sitting in the bytes read for the binary
+	// sniff — no second read, and no buffering of scanned lines. The hasher has
+	// been fed the whole sniff above, so trimming the block off here changes
+	// what is scanned without changing what is checksummed.
+	//
+	// A malformed block is not allowed to fail the scan: ParseEntry hands back
+	// the raw bytes alongside its error, so the entry stays searchable and
+	// simply has no tags. A block extending beyond binarySniffBytes reads as no
+	// frontmatter for the same reason — degrade, never fail.
+	tags, body, ferr := ParseEntry(sniff)
+	if ferr != nil {
+		tags, body = nil, sniff
+	}
+	agg.tags = tags
+
+	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(body), tee))
 	scanner.Buffer(make([]byte, 0, 64*1024), scanBufferBytes)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -249,4 +305,30 @@ func trimExcerpt(s string) string {
 		cut = cut[:len(cut)-1]
 	}
 	return cut
+}
+
+// CarriesEveryTag reports whether an entry's declared tags include every tag in
+// want. An empty want matches everything. Matching is exact rather than the
+// prefix relation used for ranking: this is a filter, and a caller narrowing to
+// "http" is asking for entries about HTTP, not entries about HTTPS as well.
+//
+// Exported because the knowledge layer enforces the same rule after the merge,
+// and the filter must mean exactly one thing on both sides of the interface.
+func CarriesEveryTag(have, want []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	if len(have) == 0 {
+		return false
+	}
+	declared := make(map[string]bool, len(have))
+	for _, tag := range have {
+		declared[tag] = true
+	}
+	for _, tag := range want {
+		if !declared[tag] {
+			return false
+		}
+	}
+	return true
 }

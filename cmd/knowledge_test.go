@@ -16,6 +16,12 @@ import (
 // knowledgeHit mirrors the store.Hit JSON envelope emitted inside a search
 // result. Tier and Name are the address of the store the hit came from, and
 // together with Path they are everything a read needs.
+//
+// Tags is emitted for every hit, as an empty list rather than an absent key
+// when the entry declares none. Expected literals below therefore state
+// Tags: []string{} explicitly: leaving the field out would compare a nil slice
+// against the decoded [], which fails on a distinction none of those tests are
+// about.
 type knowledgeHit struct {
 	Tier     string   `json:"tier"`
 	Name     string   `json:"name"`
@@ -23,6 +29,7 @@ type knowledgeHit struct {
 	Title    string   `json:"title"`
 	Excerpts []string `json:"excerpts"`
 	Score    float64  `json:"score"`
+	Tags     []string `json:"tags"`
 }
 
 // knowledgeEntry mirrors the knowledge.Entry JSON envelope emitted by list.
@@ -73,7 +80,7 @@ type knowledgeCategory struct {
 	EntryShape string `json:"entryShape"`
 }
 
-// knowledgeNarrowingCmds are the four subcommands that carry the --tier and
+// knowledgeNarrowingCmds are the subcommands that carry the --tier and
 // --filter narrowing options. They are listed once here so a command gaining
 // or losing the options is a single edit in the tests, and so resetting can
 // never miss one.
@@ -82,6 +89,7 @@ var knowledgeNarrowingCmds = []*cobra.Command{
 	knowledgeListCmd,
 	knowledgeConventionsCmd,
 	knowledgeAlwaysAppliedCmd,
+	knowledgeTagsCmd,
 }
 
 // resetKnowledgeFlags clears the persistent and per-command flags between runs
@@ -105,8 +113,14 @@ func resetKnowledgeFlags(t *testing.T) {
 			c.Flags().Lookup("tier").Changed = false
 			c.Flags().Lookup("filter").Changed = false
 		}
+		// --tag is registered on search alone, so it is reset on search alone.
+		// Its backing slice is shared with the flag's value, which appends on
+		// every Set after the first, so clearing the variable is what stops one
+		// subtest's tags accumulating into the next.
+		knowledgeSearchCmd.Flags().Lookup("tag").Changed = false
 		knowledgeTier = "all"
 		knowledgeFilter = nil
+		knowledgeTags = nil
 	}
 	reset()
 	t.Cleanup(reset)
@@ -243,6 +257,7 @@ func TestKnowledgeSearch_ReturnsStoreTaggedHits(t *testing.T) {
 			Title:    "readme.md",
 			Excerpts: []string{"project readme: the compass points north"},
 			Score:    1,
+			Tags:     []string{},
 		},
 		{
 			Tier:     "project",
@@ -251,8 +266,66 @@ func TestKnowledgeSearch_ReturnsStoreTaggedHits(t *testing.T) {
 			Title:    "guidelines.md",
 			Excerpts: []string{"team guidelines reference the compass too"},
 			Score:    1,
+			Tags:     []string{},
 		},
 	}, result.Hits)
+}
+
+// Phase 2.2 criterion 10 at the command surface: an entry's tags travel all the
+// way out to the JSON an agent reads, and an entry with none emits "tags": []
+// rather than omitting the key — so a consumer never has to tell "no tags" from
+// "this build does not report tags".
+//
+// The absent-versus-empty distinction is the whole point of the second half, and
+// a []string field cannot state it: encoding/json decodes both a missing key and
+// a [] into the same empty slice. The raw view below decodes into *[]string
+// instead, where a nil pointer means the key was absent and a pointer to an
+// empty slice means it was emitted as [].
+//
+// Both entries mention "sextant" once in their bodies, so both score damp(1) = 1
+// and neither can be cut by the relative floor; the tags are the only thing that
+// differs between them.
+func TestKnowledgeSearch_HitsCarryTagsAndEmitAnEmptyListWhenUntagged(t *testing.T) {
+	_, projectLoc, _ := twoScopeProject(t)
+	seedKnowledgeFile(t, projectLoc, "learnings/tagged.md",
+		"---\n"+
+			"tags: [networking, retries]\n"+
+			"---\n"+
+			"# Sextant Notes\n"+
+			"\n"+
+			"the sextant is calibrated here\n")
+	seedKnowledgeFile(t, projectLoc, "learnings/plain.md",
+		"the sextant is mentioned here too\n")
+
+	stdout, _, err := runKnowledge(t, "search", "sextant")
+	require.NoError(t, err)
+
+	var typed struct {
+		Hits []knowledgeHit `json:"hits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &typed))
+	require.Len(t, typed.Hits, 2)
+
+	tags := map[string][]string{}
+	for _, h := range typed.Hits {
+		tags[h.Path] = h.Tags
+	}
+	require.Equal(t, []string{"networking", "retries"}, tags["learnings/tagged.md"],
+		"a hit must report the tags its entry declares, in declared order")
+	require.Empty(t, tags["learnings/plain.md"])
+
+	// The same output decoded so an absent key is distinguishable from [].
+	var raw struct {
+		Hits []struct {
+			Path string    `json:"path"`
+			Tags *[]string `json:"tags"`
+		} `json:"hits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &raw))
+	require.Len(t, raw.Hits, 2)
+	for _, h := range raw.Hits {
+		require.NotNil(t, h.Tags, "hit %q must carry a tags key even when the entry has none", h.Path)
+	}
 }
 
 // Criterion 3: an empty query and a query matching no document both succeed
@@ -414,7 +487,8 @@ func TestKnowledgeRead_SchemaDocumentsInputAndOutput(t *testing.T) {
 
 // Criterion 2: `search --schema` declares the per-document hit shape that the
 // command emits — hits is an array whose items carry the store address (tier
-// and name), path, title, score, and excerpts with their documented types.
+// and name), path, title, score, excerpts, and the entry's tags, with their
+// documented types.
 func TestKnowledgeSearch_SchemaDeclaresPerDocumentHitFields(t *testing.T) {
 	twoScopeProject(t)
 
@@ -441,6 +515,9 @@ func TestKnowledgeSearch_SchemaDeclaresPerDocumentHitFields(t *testing.T) {
 	require.NotNil(t, hits.Items.Properties["excerpts"].Items)
 	require.Equal(t, "string", hits.Items.Properties["excerpts"].Items.Type)
 	require.Equal(t, "string", hits.Items.Properties["category"].Type)
+	require.Equal(t, "array", hits.Items.Properties["tags"].Type)
+	require.NotNil(t, hits.Items.Properties["tags"].Items)
+	require.Equal(t, "string", hits.Items.Properties["tags"].Items.Type)
 }
 
 // Criterion 2: a failing subcommand emits the standard ErrorResponse envelope
@@ -770,6 +847,7 @@ func TestKnowledgeSearch_AggregatesColocatedMemberAndProjectOwnedSources(t *test
 			Title:    "learnings/colocated-note.md",
 			Excerpts: []string{"the beacon shines in the colocated repo"},
 			Score:    1,
+			Tags:     []string{},
 		},
 		{
 			Tier:     "repo",
@@ -778,6 +856,7 @@ func TestKnowledgeSearch_AggregatesColocatedMemberAndProjectOwnedSources(t *test
 			Title:    "learnings/member-note.md",
 			Excerpts: []string{"the beacon shines in the member repo"},
 			Score:    1,
+			Tags:     []string{},
 		},
 		{
 			Tier:     "project",
@@ -786,6 +865,7 @@ func TestKnowledgeSearch_AggregatesColocatedMemberAndProjectOwnedSources(t *test
 			Title:    "guidelines.md",
 			Excerpts: []string{"the beacon shines in the team source"},
 			Score:    1,
+			Tags:     []string{},
 		},
 	}, result.Hits)
 }
@@ -1158,6 +1238,7 @@ func TestKnowledge_MemberWithFileSourceAggregatesFromLocationNotSource(t *testin
 			Title:    "learnings/api-note.md",
 			Excerpts: []string{"the lighthouse note lives at the location"},
 			Score:    1,
+			Tags:     []string{},
 		},
 	}, search.Hits, "the decoy entry under the code dir must never surface")
 
@@ -1540,7 +1621,7 @@ func knowledgeSchema(t *testing.T, sub string) (commandSchema, map[string]json.R
 	return schema, raw
 }
 
-// Criterion 1: the four fan-out commands publish the narrowing options they
+// Criterion 1: the fan-out commands publish the narrowing options they
 // accept on the command line, so a caller reading only the published interface
 // learns that it may name a tier — and exactly which three values that tier
 // takes — and may repeat a store name to narrow within it. The expected enum
@@ -1549,7 +1630,7 @@ func knowledgeSchema(t *testing.T, sub string) (commandSchema, map[string]json.R
 func TestKnowledgeSchemas_FanOutCommandsPublishNarrowingFlags(t *testing.T) {
 	twoScopeProject(t)
 
-	for _, sub := range []string{"search", "list", "conventions", "always-applied"} {
+	for _, sub := range []string{"search", "list", "conventions", "always-applied", "tags"} {
 		t.Run(sub, func(t *testing.T) {
 			schema, _ := knowledgeSchema(t, sub)
 			require.NotNil(t, schema.Flags, "%s must publish the options it narrows on", sub)
@@ -1937,6 +2018,7 @@ var knowledgeConfigLoadingCmds = map[string][]string{
 	"sources":        {"sources"},
 	"conventions":    {"conventions"},
 	"always-applied": {"always-applied"},
+	"tags":           {"tags"},
 }
 
 // knowledgeProjectWithConfigs lays out a temp project rooted at a t.TempDir()
@@ -2067,4 +2149,371 @@ func TestKnowledge_CorrectedRepoKnowledgeBlockSucceeds(t *testing.T) {
 	require.Equal(t, []knowledgeSource{
 		{Tier: "repo", Name: "testproj", Provider: "file", Location: loc},
 	}, result.Sources)
+}
+
+// Phase 2.1 criterion 3: tags ship with no migration, so every knowledge
+// subcommand must still run unchanged against a knowledge base whose entries
+// carry no frontmatter block at all — which is every entry that exists today.
+// twoScopeProject seeds exactly such a base, and the arguments come from
+// knowledgeConfigLoadingCmds, the same map the config-failure tests drive, so
+// the coverage here stays in step with the command surface. `categories` is
+// added back because it answers from the built-in registry and so is absent
+// there, and `write` is given the --file its own success path needs.
+//
+// The subcommand assertions alone would pass against a store that quietly
+// dropped every entry, so the list and search assertions below carry the
+// "no entry is rejected as invalid" half of the criterion: all three seeded
+// entries are still enumerated, and the ones mentioning the keyword are still
+// found with their bodies intact.
+func TestKnowledge_EveryCommandRunsAgainstAnUntaggedKnowledgeBase(t *testing.T) {
+	subcommands := map[string][]string{"categories": {"categories"}}
+	for name, args := range knowledgeConfigLoadingCmds {
+		subcommands[name] = args
+	}
+
+	for name, args := range subcommands {
+		t.Run(name, func(t *testing.T) {
+			twoScopeProject(t)
+
+			if name == "write" {
+				contentPath := filepath.Join(t.TempDir(), "payload.md")
+				require.NoError(t, os.WriteFile(contentPath, []byte("untagged content\n"), 0o644))
+				args = append(append([]string{}, args...), "--file", contentPath)
+			}
+
+			stdout, stderr, err := runKnowledge(t, args...)
+			require.NoError(t, err,
+				"%s must succeed against a knowledge base whose entries carry no tags", name)
+			require.Empty(t, stderr)
+
+			var envelope map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+			require.JSONEq(t, "false", string(envelope["error"]),
+				"%s must not report an error envelope for untagged entries", name)
+		})
+	}
+
+	t.Run("no entry is rejected", func(t *testing.T) {
+		twoScopeProject(t)
+
+		stdout, _, err := runKnowledge(t, "list")
+		require.NoError(t, err)
+		var listed struct {
+			Entries []knowledgeEntry `json:"entries"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(stdout), &listed))
+		require.ElementsMatch(t, []knowledgeEntry{
+			{Tier: "repo", Name: "testproj", Path: "readme.md"},
+			{Tier: "repo", Name: "testproj", Path: "architecture/initial-idea.md"},
+			{Tier: "project", Name: "team", Path: "guidelines.md"},
+		}, listed.Entries, "an untagged entry must never be dropped from the listing")
+
+		stdout, _, err = runKnowledge(t, "search", "compass")
+		require.NoError(t, err)
+		var found struct {
+			Hits []knowledgeHit `json:"hits"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(stdout), &found))
+		require.Equal(t, []knowledgeHit{
+			{
+				Tier:     "repo",
+				Name:     "testproj",
+				Path:     "readme.md",
+				Title:    "readme.md",
+				Excerpts: []string{"project readme: the compass points north"},
+				Score:    1,
+				Tags:     []string{},
+			},
+			{
+				Tier:     "project",
+				Name:     "team",
+				Path:     "guidelines.md",
+				Title:    "guidelines.md",
+				Excerpts: []string{"team guidelines reference the compass too"},
+				Score:    1,
+				Tags:     []string{},
+			},
+		}, found.Hits, "untagged entries must still match, title and excerpt unchanged")
+	})
+}
+
+// taggedSearchProject lays the standard two-store project out and seeds the
+// repo-tier store with three entries under learnings/ that all mention the
+// marker term "beacon": one carrying both tags, one carrying only "http", and
+// one carrying none. The marker is chosen so none of twoScopeProject's own
+// fixture files can appear in these results.
+//
+// Every entry mentions "beacon" twice or once, so all three clear the relative
+// cutoff and an empty narrowed result can only come from the tag filter.
+//
+// It returns the two store locations so a test needing more than the tagged
+// search entries can seed either store without restating the layout.
+func taggedSearchProject(t *testing.T) (projectLoc, teamLoc string) {
+	t.Helper()
+	_, projectLoc, teamLoc = twoScopeProject(t)
+	seedKnowledgeFile(t, projectLoc, "learnings/both.md",
+		"---\n"+
+			"tags: [http, routing]\n"+
+			"---\n"+
+			"# Beacon\n"+
+			"\n"+
+			"the beacon signal is strong\n")
+	seedKnowledgeFile(t, projectLoc, "learnings/http-only.md",
+		"---\n"+
+			"tags: [http]\n"+
+			"---\n"+
+			"# Beacon Two\n"+
+			"\n"+
+			"another beacon note\n")
+	seedKnowledgeFile(t, projectLoc, "learnings/untagged.md",
+		"the beacon signal is here as well\n")
+	return projectLoc, teamLoc
+}
+
+// searchPaths runs `knowledge search` with the given arguments and returns the
+// paths of the hits it reported, so a tag test states its expectation as a
+// hand-written list.
+func searchPaths(t *testing.T, args ...string) []string {
+	t.Helper()
+	stdout, _, err := runKnowledge(t, append([]string{"search"}, args...)...)
+	require.NoError(t, err)
+
+	var result struct {
+		Hits []knowledgeHit `json:"hits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	paths := make([]string, 0, len(result.Hits))
+	for _, h := range result.Hits {
+		paths = append(paths, h.Path)
+	}
+	return paths
+}
+
+// Phase 2.3 criterion 4: the narrowing option is discoverable from the
+// command's own published description of itself, alongside the two narrowing
+// options search already advertised. A caller reading only the schema must
+// learn that --tag exists and that it is repeatable.
+func TestKnowledgeSearchSchema_PublishesTheTagNarrowingOption(t *testing.T) {
+	twoScopeProject(t)
+
+	schema, _ := knowledgeSchema(t, "search")
+	require.NotNil(t, schema.Flags)
+	require.Contains(t, schema.Flags, "tier", "the existing narrowing options must survive alongside --tag")
+	require.Contains(t, schema.Flags, "filter")
+
+	tag := schema.Flags["tag"]
+	require.NotNil(t, tag, "search must publish its --tag option")
+	require.Equal(t, "array", tag.Type, "--tag is repeatable, so it publishes as an array")
+	require.NotNil(t, tag.Items)
+	require.Equal(t, "string", tag.Items.Type)
+}
+
+// Phase 2.3 criterion 4, the other half: --tag is registered on search alone,
+// so the other three fan-out commands must not advertise it. This is the reason
+// knowledgeSearchFlags exists separately from knowledgeNarrowingFlags —
+// folding --tag into the shared map would have the three commands publish an
+// option they silently ignore.
+func TestKnowledgeSchemas_OnlySearchPublishesTheTagOption(t *testing.T) {
+	twoScopeProject(t)
+
+	for _, sub := range []string{"list", "conventions", "always-applied", "tags"} {
+		t.Run(sub, func(t *testing.T) {
+			schema, _ := knowledgeSchema(t, sub)
+			require.NotNil(t, schema.Flags, "%s still publishes its own narrowing options", sub)
+			require.Contains(t, schema.Flags, "tier")
+			require.NotContains(t, schema.Flags, "tag",
+				"%s does not accept --tag and must not advertise it", sub)
+		})
+	}
+}
+
+// Phase 2.3 criteria 1 and 2 at the command line: --tag reaches the knowledge
+// layer and narrows the result to entries carrying the tag. The unnarrowed run
+// asserts what the fixture would otherwise return, so the narrowed one is a
+// statement about the flag rather than about the fixture.
+func TestKnowledgeSearch_TagNarrowsToEntriesCarryingIt(t *testing.T) {
+	taggedSearchProject(t)
+
+	require.ElementsMatch(t,
+		[]string{"learnings/both.md", "learnings/http-only.md", "learnings/untagged.md"},
+		searchPaths(t, "beacon"),
+		"unnarrowed, every seeded entry is returned")
+
+	require.Equal(t,
+		[]string{"learnings/both.md"},
+		searchPaths(t, "beacon", "--tag", "routing"),
+		"only the entry carrying the tag may be returned")
+}
+
+// Phase 2.3 criterion 3 at the command line: repeating --tag is AND, not OR.
+// The http-only entry carries one of the two tags and must not be returned,
+// which is exactly what an OR reading would get wrong.
+func TestKnowledgeSearch_RepeatedTagIsAnd(t *testing.T) {
+	taggedSearchProject(t)
+
+	require.Equal(t,
+		[]string{"learnings/both.md"},
+		searchPaths(t, "beacon", "--tag", "http", "--tag", "routing"))
+}
+
+// Phase 2.3: --tag values are lower-cased before they become a selector, so a
+// tag typed in any case finds an entry whose declared tags were lower-cased on
+// read. Without that normalisation "HTTP" would match nothing at all.
+func TestKnowledgeSearch_TagValueIsLowerCased(t *testing.T) {
+	taggedSearchProject(t)
+
+	require.ElementsMatch(t,
+		[]string{"learnings/both.md", "learnings/http-only.md"},
+		searchPaths(t, "beacon", "--tag", "HTTP"))
+}
+
+// Phase 3.1: a --tag naming a tag no entry carries is refused rather than
+// answered with an empty result a caller would read as "there is no knowledge on
+// this subject". This is the inversion of the Phase 2.3 test that pinned the
+// interim behaviour: refusing needed a way to say which tags do exist, which is
+// exactly what `knowledge tags` now delivers. The next action names that runnable
+// command, per the repo's convention that every refusal carries its remediation.
+func TestKnowledgeSearch_UnknownTagIsRefusedWithTheVocabulary(t *testing.T) {
+	taggedSearchProject(t)
+
+	stdout, stderr, err := runKnowledge(t, "search", "beacon", "--tag", "no-such-tag")
+	require.Error(t, err)
+	require.Empty(t, stderr)
+
+	var envelope output.ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+	require.True(t, envelope.IsError)
+	require.Equal(t, "knowledge_tag_unknown", envelope.Code)
+	require.Contains(t, envelope.Message, "no-such-tag")
+	require.Contains(t, envelope.NextAction, "knowledge tags",
+		"the correction names the runnable command that lists the vocabulary")
+	require.Contains(t, envelope.NextAction, "http",
+		"and the tags that are in use, so the caller can reissue without reading every entry")
+}
+
+// tagVocabularyProject lays the tagged search fixture out and adds one entry to
+// the project-tier "team" store, so the vocabulary spans both stores and a tag
+// used in each has to be summed. Counting by hand across the two stores:
+// "http" is carried by learnings/both.md and learnings/http-only.md in the
+// repo-tier store, "routing" by learnings/both.md there and learnings/edge.md in
+// the team store, and "cache" by learnings/edge.md alone — so http and routing
+// tie at two and cache trails at one.
+func tagVocabularyProject(t *testing.T) {
+	t.Helper()
+	_, teamLoc := taggedSearchProject(t)
+	seedKnowledgeFile(t, teamLoc, "learnings/edge.md",
+		"---\n"+
+			"tags: [routing, cache]\n"+
+			"---\n"+
+			"# Edge\n"+
+			"\n"+
+			"the team's note on edge routing\n")
+}
+
+// knowledgeTagUse mirrors the knowledge.TagUse JSON envelope emitted by tags:
+// one distinct tag and the number of entries carrying it.
+type knowledgeTagUse struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+// knowledgeTagVocabulary runs `knowledge tags` with the given narrowing options
+// and returns the vocabulary it reported, in the order it reported it.
+func knowledgeTagVocabulary(t *testing.T, args ...string) []knowledgeTagUse {
+	t.Helper()
+	stdout, _, err := runKnowledge(t, append([]string{"tags"}, args...)...)
+	require.NoError(t, err)
+
+	var result struct {
+		Tags []knowledgeTagUse `json:"tags"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	return result.Tags
+}
+
+// Phase 3.1 criteria 1 and 2 at the command line: `knowledge tags` emits each
+// distinct tag with its entry count, most-used first and ties broken
+// alphabetically. The expected slice is hand-counted from the fixture and
+// compared whole, so the order is part of the assertion.
+func TestKnowledgeTags_ReportsTheVocabularyMostUsedFirst(t *testing.T) {
+	tagVocabularyProject(t)
+
+	require.Equal(t, []knowledgeTagUse{
+		{Tag: "http", Count: 2},    // both.md and http-only.md
+		{Tag: "routing", Count: 2}, // both.md and the team store's edge.md — tied, so alphabetical
+		{Tag: "cache", Count: 1},   // edge.md alone
+	}, knowledgeTagVocabulary(t))
+}
+
+// Phase 3.1 criterion 3 at the command line: the listing honours --tier and
+// --filter exactly as the other fan-out commands do. Each expected vocabulary is
+// hand-counted for the stores that narrowing leaves in scope.
+func TestKnowledgeTags_HonoursTierAndFilter(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args []string
+		want []knowledgeTagUse
+	}{
+		"tier repo": {
+			[]string{"--tier", "repo"},
+			[]knowledgeTagUse{{Tag: "http", Count: 2}, {Tag: "routing", Count: 1}},
+		},
+		"tier project": {
+			[]string{"--tier", "project"},
+			[]knowledgeTagUse{{Tag: "cache", Count: 1}, {Tag: "routing", Count: 1}},
+		},
+		"filter one store": {
+			[]string{"--filter", "team"},
+			[]knowledgeTagUse{{Tag: "cache", Count: 1}, {Tag: "routing", Count: 1}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tagVocabularyProject(t)
+			require.Equal(t, tc.want, knowledgeTagVocabulary(t, tc.args...))
+		})
+	}
+}
+
+// Phase 3.1 criterion 4 at the command line: a knowledge base whose entries
+// carry no tags reports an empty vocabulary. The assertion is on the raw JSON so
+// the distinction that matters is stated: "tags" must be present and an empty
+// array, not null and not an omitted key, since a caller decoding it should get
+// a list it can iterate over rather than a missing value to guard against.
+func TestKnowledgeTags_UntaggedKnowledgeBaseEmitsAnEmptyArray(t *testing.T) {
+	twoScopeProject(t)
+
+	stdout, stderr, err := runKnowledge(t, "tags")
+	require.NoError(t, err)
+	require.Empty(t, stderr)
+
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+	require.Contains(t, envelope, "tags")
+	require.JSONEq(t, "[]", string(envelope["tags"]))
+}
+
+// Phase 3.1 criterion 1, via the published interface: `tags --schema` declares
+// the shape of what it emits — an array of {tag, count} objects — alongside the
+// narrowing options it accepts, so a caller can consume the vocabulary without
+// running the command first. The enum and item types of --tier and --filter are
+// asserted for every fan-out command in
+// TestKnowledgeSchemas_FanOutCommandsPublishNarrowingFlags.
+func TestKnowledgeTags_SchemaDeclaresTheVocabularyShape(t *testing.T) {
+	twoScopeProject(t)
+
+	schema, _ := knowledgeSchema(t, "tags")
+	require.NotNil(t, schema.Output)
+	require.Equal(t, []string{"tags"}, mapKeys(schema.Output.Properties))
+
+	tags := schema.Output.Properties["tags"]
+	require.Equal(t, "array", tags.Type)
+	require.NotNil(t, tags.Items)
+	require.Equal(t, "object", tags.Items.Type)
+	require.Equal(t, "string", tags.Items.Properties["tag"].Type)
+	require.Equal(t, "number", tags.Items.Properties["count"].Type)
+	require.ElementsMatch(t, []string{"tag", "count"}, mapKeys(tags.Items.Properties),
+		"a vocabulary item carries the tag and its count, and no store address")
+
+	require.NotNil(t, schema.Flags)
+	require.Contains(t, schema.Flags, "tier")
+	require.Contains(t, schema.Flags, "filter")
 }

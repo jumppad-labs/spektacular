@@ -3,10 +3,12 @@ package knowledge
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/output"
+	"github.com/jumppad-labs/spektacular/internal/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,6 +54,21 @@ func twoScopeSet(t *testing.T) (set *Set, projectDir, teamDir string) {
 	set, err := NewSet(cfg, t.TempDir())
 	require.NoError(t, err)
 	return set, projectDir, teamDir
+}
+
+// singleSourceSet stands up one file-backed source over an already-seeded dir,
+// addressed as the project-tier store "project". It is the minimum Set needed
+// to exercise Search end to end, for tests whose subject is ranking rather than
+// fan-out across stores.
+func singleSourceSet(t *testing.T, dir string) *Set {
+	t.Helper()
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Name: "project", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: dir}},
+	}
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+	return set
 }
 
 // Criterion 1: List, Read, and Search fan across every configured scope and
@@ -120,7 +137,9 @@ func TestSet_OverlappingEntriesTaggedPerScope(t *testing.T) {
 // Phase 2.1 criterion 1: Search ranks hits globally by score, so a strong
 // match in the later-configured "team" source outranks a weak match in the
 // earlier "project" source. Scores are hand-computed from the fixtures: the
-// team file holds three occurrences of "beacon", the project file one.
+// team file holds three occurrences of "beacon" and the project file one, which
+// damp to damp(3) = 2.5849625007211562 and damp(1) = 1 — a single-term query,
+// so coverage is 1 for both and the ordering rests on the damped counts alone.
 func TestSet_SearchRanksAcrossSourcesByScore(t *testing.T) {
 	projectDir := t.TempDir()
 	teamDir := t.TempDir()
@@ -144,8 +163,8 @@ func TestSet_SearchRanksAcrossSourcesByScore(t *testing.T) {
 		order[i] = [3]string{h.Tier, h.Name, h.Path}
 	}
 	require.Equal(t, [][3]string{
-		{"project", "team", "signals.md"},  // score 3 ranks first despite team being configured second
-		{"project", "project", "notes.md"}, // score 1
+		{"project", "team", "signals.md"},  // damp(3) = 2.5849625 ranks first despite team being configured second
+		{"project", "project", "notes.md"}, // damp(1) = 1
 	}, order)
 }
 
@@ -154,6 +173,12 @@ func TestSet_SearchRanksAcrossSourcesByScore(t *testing.T) {
 // per file, and each scope pairs notes.md with notes/zz.md — names whose
 // walk-discovery order (the notes/ dir is descended before the notes.md file)
 // differs from path-ascending order ("notes.md" sorts before "notes/zz.md").
+//
+// This is also Phase 1.3 criterion 4 — results stay in a stable, repeatable
+// order across identical searches — and it pins that the relative cutoff does
+// not disturb the tie-break. All four hits score exactly 1, so all four equal
+// the best score and none falls under the floor of 0.25; the cutoff pass must
+// hand back every one of them, still in this order.
 func TestSet_SearchTieBreaksBySourceOrderThenPath(t *testing.T) {
 	projectDir := t.TempDir()
 	teamDir := t.TempDir()
@@ -824,6 +849,7 @@ func TestSet_SelectorNamingAStoreOutsideTheTierIsRefused(t *testing.T) {
 		"list":           func(sel Selector) error { _, err := set.List(sel); return err },
 		"conventions":    func(sel Selector) error { _, err := set.Conventions(sel); return err },
 		"always-applied": func(sel Selector) error { _, err := set.AlwaysAppliedEntries(sel); return err },
+		"tags":           func(sel Selector) error { _, err := set.Tags(sel); return err },
 	} {
 		t.Run(name, func(t *testing.T) {
 			envelope := requireRefusal(t, call(outsideTier), ErrCodeStoreUnknown)
@@ -849,6 +875,7 @@ func TestSet_RetrievalPathsRefuseAnEmptyOrUnknownTier(t *testing.T) {
 		"list":           func(sel Selector) error { _, err := set.List(sel); return err },
 		"conventions":    func(sel Selector) error { _, err := set.Conventions(sel); return err },
 		"always-applied": func(sel Selector) error { _, err := set.AlwaysAppliedEntries(sel); return err },
+		"tags":           func(sel Selector) error { _, err := set.Tags(sel); return err },
 	} {
 		t.Run(name, func(t *testing.T) {
 			requireRefusal(t, call(Selector{}), ErrCodeTierRequired)
@@ -1035,4 +1062,1050 @@ func TestSet_ReadMissingEntryOffersTheListingForThatStore(t *testing.T) {
 	require.Contains(t, envelope.NextAction, "knowledge list --tier repo --filter repo-a",
 		"the correction must be runnable as printed, naming the store that was addressed")
 	require.Contains(t, envelope.NextAction, "knowledge search")
+}
+
+// Phase 1.1 criterion 1/3: scoring is the knowledge layer's job, so the hits
+// Set.Search returns carry a non-zero Score even though the store that produced
+// them left it at zero. Both expected scores are hand-computed from the fixture
+// and damp(n) = 1 + log2(n):
+//
+//   - notes/tools.md holds "widget" 3 times and "gear" 2 times, so
+//     damp(3) + damp(2) = 2.5849625007211562 + 2 = 4.5849625007211562, with
+//     coverage 2/2 = 1 leaving it unscaled. Irrational, hence InDelta.
+//   - notes/partial.md holds "gear" once and "widget" never, so
+//     damp(0) + damp(1) = 1, scaled by coverage (1/2)^2 = 0.25, giving 0.25
+//     exactly.
+//
+// Only notes/tools.md comes back. Phase 1.3's relative cutoff puts the floor at
+// 4.5849625007211562 * 0.25 = 1.146240625180289, and notes/partial.md's 0.25
+// falls under it. That is a relevance judgement made against the strongest hit
+// present, not the missing-term exclusion Phase 1.2 removed: partial.md still
+// scores a real, non-zero 0.25, and would still be returned if nothing better
+// than it existed (TestSet_SearchReturnsAnEntryMatchingOnlyOneOfThreeTerms
+// pins exactly that). What this test asserts remains the stamping itself — the
+// store leaves Score at zero and the knowledge layer must fill it in.
+func TestSet_SearchStampsScoreOnHits(t *testing.T) {
+	projectDir := t.TempDir()
+
+	writeFile(t, projectDir, "notes/tools.md",
+		"widget widget on the first line\n"+
+			"a gear sits on the second line\n"+
+			"another widget beside another gear\n")
+	writeFile(t, projectDir, "notes/partial.md", "just a gear in here\n")
+
+	set := singleSourceSet(t, projectDir)
+
+	hits, err := set.Search("widget gear", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1,
+		"notes/partial.md scores 0.25, below the 1.146240625180289 cutoff floor set by the strongest hit")
+
+	require.Equal(t, "notes/tools.md", hits[0].Path)
+	require.InDelta(t, 4.5849625007211562, hits[0].Score, 1e-9,
+		"the knowledge layer must stamp the score the store left at zero")
+}
+
+// A hit's Score counts non-overlapping, case-insensitive occurrences of the
+// query across the whole document, whether they sit on one line or are spread
+// over several, and then damps that count. Uses its own fixture: scoring needs
+// files with a known occurrence count, which twoScopeSet does not provide.
+//
+// Phase 1.2 changed the score from the raw occurrence count to damp(count) =
+// 1 + log2(count), so spread.txt's four occurrences are worth damp(4) =
+// 1 + log2(4) = 3 rather than 4. The query is a single term, so coverage is
+// 1/1 = 1 for every hit and cannot move any of these numbers; each expected
+// value is a power of two under the log and so is exact in float64, which is
+// why require.Equal is still the right assertion here.
+func TestSet_SearchScoreSumsOccurrencesAcrossDocument(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "twice.txt", "a needle next to another needle on one line\n")
+	writeFile(t, dir, "once.txt", "just one needle here\n")
+	writeFile(t, dir, "upper.txt", "a single NEEDLE in caps\n")
+	// Occurrences spread over three lines: 1 + 2 + 1 = 4.
+	writeFile(t, dir, "spread.txt",
+		"first needle on its own line\n"+
+			"a needle beside a NEEDLE midway\n"+
+			"closing needle at the end\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("needle", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	// Independent oracle: hand-maintained expected score per path, each the
+	// damped occurrence count — damp(2) = 2, damp(1) = 1, damp(4) = 3. The
+	// length check pins exactly one hit per matching document — the map alone
+	// would hide a duplicate.
+	want := map[string]float64{
+		"twice.txt":  2,
+		"once.txt":   1,
+		"upper.txt":  1,
+		"spread.txt": 3,
+	}
+	require.Len(t, hits, len(want))
+
+	got := make(map[string]float64, len(hits))
+	for _, h := range hits {
+		got[h.Path] = h.Score
+	}
+	require.Equal(t, want, got)
+}
+
+// Phase 1.2 criteria 1 and 2: matching is a ranked OR, not boolean AND. A
+// document missing one of the query's three terms is returned with a low score
+// rather than discarded, and the document carrying evidence for all three ranks
+// above it.
+//
+// This replaces the every-term requirement the same fixture used to prove. The
+// store's behaviour is unchanged — it returns partial.txt with BodyCounts
+// {1, 1, 0}, pinned by TestSearch_ReportsEvidenceWithoutScoring — but score()
+// no longer zeroes evidence with a missing term, so Set.Search no longer drops
+// it. Both files sit at the store root, so categoryOf returns "" for each and
+// the always-applied exclusion plays no part here either.
+//
+// Hand-computed from damp(n) = 1 + log2(n) and the coverage factor
+// (covered/total)^2:
+//
+//   - scattered.txt has all three terms once each: damp(1) * 3 = 3, coverage
+//     3/3 = 1, so 3 exactly.
+//   - partial.txt has two of three once each: 1 + 1 + 0 = 2, coverage 2/3, so
+//     2 * (2/3)^2 = 8/9 = 0.888..., which is irrational in binary and hence
+//     asserted with InDelta.
+//
+// Phase 1.3 added a relevance cutoff, and this fixture now doubles as the guard
+// that it is not set too aggressively: the floor is 3 * cutoffFraction = 0.75,
+// partial.txt's 8/9 = 0.889 clears it, and both hits must keep coming back. A
+// future tuner raising cutoffFraction above 0.296 would break this test, and
+// that is the point — a two-of-three match is a genuinely useful result and the
+// cutoff exists to drop noise, not near misses.
+func TestSet_SearchRanksPartialMatchesBelowFullOnes(t *testing.T) {
+	dir := t.TempDir()
+	// All three query words present, each on its own line, in reverse order.
+	writeFile(t, dir, "scattered.txt",
+		"charlie opens the file\n"+
+			"some filler in between\n"+
+			"bravo turns up later\n"+
+			"and alpha closes it out\n")
+	// Contains alpha and bravo but never charlie, so it is a genuine partial
+	// match rather than a trivial non-match.
+	writeFile(t, dir, "partial.txt",
+		"alpha is here\n"+
+			"and bravo is here too\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("alpha bravo charlie", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	var paths []string
+	for _, h := range hits {
+		paths = append(paths, h.Path)
+	}
+	require.Equal(t, []string{"scattered.txt", "partial.txt"}, paths,
+		"the partial match must be returned, ranked below the full one")
+
+	require.Equal(t, float64(3), hits[0].Score)
+	require.InDelta(t, 8.0/9.0, hits[1].Score, 1e-9)
+}
+
+// Phase 1.2 criterion 1 in its narrowest form: an entry carrying evidence for
+// one query term out of three is returned rather than omitted. The store holds
+// exactly one entry and it matches only "charlie", so if the weakest possible
+// partial match were still discarded the search would come back empty — which
+// is the failure the phase exists to fix.
+//
+// Hand-computed: damp(1) = 1 for "charlie", 0 for the two missing terms, and
+// coverage (1/3)^2 = 1/9, so 1 * 1/9 = 0.111..., asserted with InDelta since
+// a ninth is not exact in binary.
+//
+// This is also Phase 1.3 criterion 1 — an entry matching one of three query
+// terms is returned when it is the only match. The relative cutoff cannot touch
+// it: a lone hit is its own best score, so the floor is 1/9 * 0.25 = 1/36 and
+// the hit sits comfortably above the bar it sets itself.
+func TestSet_SearchReturnsAnEntryMatchingOnlyOneOfThreeTerms(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "lonely.txt", "charlie stands here on his own\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("alpha bravo charlie", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1, "an entry matching one term of three must still be returned")
+	require.Equal(t, "lonely.txt", hits[0].Path)
+	require.InDelta(t, 1.0/9.0, hits[0].Score, 1e-9)
+}
+
+// Phase 1.3 criterion 2: the same weak entry is kept or dropped depending on
+// what else the search found, which is what makes the cutoff relative rather
+// than a fixed relevance threshold. Both halves run against the same query and
+// the same weak fixture, and the only difference between them is the presence
+// of a strong entry — stating the contrast inside one test is the point, since
+// either half alone would prove nothing about the other.
+//
+// Hand-computed from damp(n) = 1 + log2(n) and coverage (covered/total)^2 over
+// the three-term query "alpha bravo charlie":
+//
+//   - lonely.txt matches only "charlie", once: 1 * (1/3)^2 = 1/9 =
+//     0.111..., asserted with InDelta since a ninth is not exact in binary.
+//   - complete.txt matches all three once each: 3 * (3/3)^2 = 3 exactly.
+//
+// Alone, lonely.txt is its own best score and survives. Once complete.txt is
+// present the floor becomes 3 * 0.25 = 0.75, and 0.111 falls well under it.
+func TestSet_SearchDropsWeakMatchOnceAStrongOneIsPresent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "lonely.txt", "charlie stands here on his own\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("alpha bravo charlie", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1, "with nothing better present the weak match is the best there is")
+	require.Equal(t, "lonely.txt", hits[0].Path)
+	require.InDelta(t, 1.0/9.0, hits[0].Score, 1e-9)
+
+	// Same store, same query; only a stronger entry is added.
+	writeFile(t, dir, "complete.txt",
+		"alpha opens the file\n"+
+			"bravo turns up next\n"+
+			"and charlie closes it out\n")
+
+	hits, err = set.Search("alpha bravo charlie", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1,
+		"lonely.txt scores 1/9 = 0.111, below the floor of 3 * 0.25 = 0.75 the strong hit sets")
+	require.Equal(t, "complete.txt", hits[0].Path)
+	require.Equal(t, float64(3), hits[0].Score)
+}
+
+// Phase 1.3 criterion 3: the cutoff is applied once, after every store has been
+// searched and merged, so the bar a hit is judged against can be set by a hit
+// from a different store entirely.
+//
+// This is the assertion that catches a cutoff computed per store. The weak entry
+// is the only thing its own store holds, so a per-store floor would be
+// 1/9 * 0.25 = 1/36 and it would survive; only a floor taken from the merged
+// results — 3 * 0.25 = 0.75, set by the strong entry over in the second store —
+// drops it. That sentence is why this test exists.
+//
+// Hand-computed over the three-term query "alpha bravo charlie":
+//
+//   - project/faint.txt matches only "charlie", once: 1 * (1/3)^2 = 1/9 = 0.111.
+//   - team/complete.txt matches all three once each: 3 * (3/3)^2 = 3 exactly.
+func TestSet_SearchCutoffAppliesAcrossStores(t *testing.T) {
+	projectDir := t.TempDir()
+	teamDir := t.TempDir()
+
+	writeFile(t, projectDir, "faint.txt", "charlie stands here on his own\n")
+	writeFile(t, teamDir, "complete.txt",
+		"alpha opens the file\n"+
+			"bravo turns up next\n"+
+			"and charlie closes it out\n")
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Name: "project", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: projectDir}},
+		{Name: "team", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: teamDir}},
+	}
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+
+	hits, err := set.Search("alpha bravo charlie", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1,
+		"the weak hit in the project store must be cut by the floor the team store's hit sets")
+	require.Equal(t, "complete.txt", hits[0].Path)
+	require.Equal(t, "team", hits[0].Name)
+	require.Equal(t, float64(3), hits[0].Score)
+}
+
+// The cutoff bar is taken from the hits that survive the always-applied category
+// exclusion, not from the raw merged slice. An always-applied entry is dropped
+// from search results whatever it scores — its whole content is loaded on every
+// task instead — so letting it set the bar would raise the threshold for
+// everything else on behalf of a result nobody ever sees.
+//
+// "conventions" is an always-applied category per the registry in category.go
+// (Categories, CategoryTierAlwaysApplied, projected by AlwaysApplied()), which
+// is what Set.Search consults through alwaysAppliedSet().
+//
+// Hand-computed over the three-term query "alpha bravo charlie", using
+// damp(n) = 1 + log2(n) and coverage (covered/total)^2:
+//
+//   - conventions/style.md matches all three terms once each: 3 * (3/3)^2 = 3.
+//     It is the highest-scoring hit the store returns, and it is excluded.
+//   - gotchas/trap.md matches only "charlie", once: 1 * (1/3)^2 = 1/9 = 0.111.
+//
+// The two candidate bars differ by a factor of 27, so the outcome is
+// unambiguous. If the conventions entry set the bar the floor would be
+// 3 * 0.25 = 0.75, 0.111 would fall under it, and the search would return
+// nothing at all. Taking the bar from the survivors leaves gotchas/trap.md as
+// the best remaining hit, floor 1/9 * 0.25 = 1/36 = 0.0277..., and it is
+// returned.
+func TestSet_SearchCutoffIgnoresAlwaysAppliedWhenSettingTheBar(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "conventions/style.md",
+		"alpha opens the rule\n"+
+			"bravo restates it\n"+
+			"and charlie closes it out\n")
+	writeFile(t, dir, "gotchas/trap.md", "charlie stands here on his own\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("alpha bravo charlie", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1,
+		"the excluded conventions entry must not raise the floor for the hits that remain")
+	require.Equal(t, "gotchas/trap.md", hits[0].Path)
+	require.InDelta(t, 1.0/9.0, hits[0].Score, 1e-9)
+}
+
+// A document with query words on many lines collapses into exactly one hit,
+// scored as the hand-computed sum of every term's damped occurrence count
+// across the whole document.
+//
+// Moved up from internal/store in Phase 1.1 and re-scored in Phase 1.2: the
+// fixture is unchanged, but each term's count is now damped before summing.
+// Hand-computed: widget 3, gear 5, so damp(3) + damp(5) = 2.5849625007211562 +
+// 3.321928094887362 = 5.906890595608518; both terms are present, so coverage is
+// 2/2 = 1 and leaves the sum alone. That value is irrational, hence InDelta
+// rather than an exact comparison. The one-hit-per-document collapsing this
+// also covers is still asserted at store level by
+// TestSearch_ReportsEvidenceWithoutScoring.
+func TestSet_SearchOneHitPerDocument(t *testing.T) {
+	dir := t.TempDir()
+	// Hand-computed: widget 2+1 = 3, gear 1+1+3 = 5.
+	writeFile(t, dir, "machine.txt",
+		"widget widget on the first line\n"+
+			"a gear sits on the second line\n"+
+			"another widget and a gear together\n"+
+			"gear gear gear to finish\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("widget gear", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1, "four matching lines must still collapse into one hit")
+	require.Equal(t, "machine.txt", hits[0].Path)
+	require.InDelta(t, 5.906890595608518, hits[0].Score, 1e-9)
+}
+
+// Phase 2.2 criterion 1: an entry is found for what it is about, not only for
+// the words it happens to use. channels.md declares the tags "go" and "http"
+// and its body contains neither word — deliberately, since a body mention would
+// make the hit unremarkable — so the tags are the entire reason it is returned.
+//
+// Hand-computed from score = sum(tagWeight * affinity + damp(count)) *
+// coverage^2 over the three terms of "go http router", with tagWeight = 8:
+//
+//   - "go" matches a tag exactly: 8 * 1 + damp(0) = 8.
+//   - "http" matches a tag exactly: 8 * 1 + damp(0) = 8.
+//   - "router" matches nothing at all: 0.
+//
+// Two of three terms carry evidence, so coverage is (2/3)^2 = 4/9 and the total
+// is 16 * 4/9 = 7.111..., irrational in binary and hence asserted with InDelta.
+func TestSet_SearchFindsAnEntryByItsTagsAlone(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "channels.md",
+		"---\n"+
+			"tags: [go, http]\n"+
+			"---\n"+
+			"# Channel Notes\n"+
+			"\n"+
+			"Messages pass between workers without shared memory.\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("go http router", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	require.Len(t, hits, 1, "the tagged entry must be found even though its prose matches no term")
+	require.Equal(t, "channels.md", hits[0].Path)
+	require.InDelta(t, 7.111111111111111, hits[0].Score, 1e-9,
+		"two exact tag matches out of three terms: 16 * (2/3)^2")
+}
+
+// Phase 2.2 criterion 2: an entry tagged with a term outranks one that merely
+// mentions it. Both entries are of comparable length and neither has any other
+// advantage, so the tag is the only thing separating them.
+//
+// Hand-computed with tagWeight = 8 and damp(n) = 1 + log2(n) over the one-term
+// query "http", where coverage is 1 for both and cannot move either number:
+//
+//   - tagged.md matches the tag exactly and never says "http" in its body:
+//     8 * 1 + damp(0) = 8 exactly.
+//   - prose.md says "http" three times and declares no tags:
+//     damp(3) = 2.584962500721156.
+//
+// prose.md is given three mentions rather than one on purpose. A single mention
+// scores damp(1) = 1, which falls under the relative cutoff floor of
+// 8 * 0.25 = 2 and is dropped entirely — correct behaviour, but it would leave
+// the test asserting a one-element slice and proving the ordering only by
+// implication. Three mentions clear the floor (damp(3) = 2.585 > 2), so both
+// hits come back and the ordering is stated directly, in the returned slice.
+func TestSet_SearchRanksATaggedEntryAboveOneThatOnlyMentionsTheTerm(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "tagged.md",
+		"---\n"+
+			"tags: [http]\n"+
+			"---\n"+
+			"# Timeouts\n"+
+			"\n"+
+			"Set the request timeout before retrying.\n")
+	writeFile(t, dir, "prose.md",
+		"an http note in passing\n"+
+			"another http line here\n"+
+			"a third http line to finish\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("http", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	paths := make([]string, len(hits))
+	for i, h := range hits {
+		paths[i] = h.Path
+	}
+	require.Equal(t, []string{"tagged.md", "prose.md"}, paths,
+		"the tagged entry must rank above the one that only mentions the term")
+	require.Equal(t, float64(8), hits[0].Score)
+	require.InDelta(t, 2.584962500721156, hits[1].Score, 1e-9)
+}
+
+// Phase 2.2 criterion 3: volume cannot buy what a tag states. long.md mentions
+// "cache" twenty times and declares no tags; tagged.md declares the tag and
+// never says the word.
+//
+// Hand-computed over the one-term query "cache", coverage 1 for both:
+//
+//   - tagged.md: 8 * 1 + damp(0) = 8 exactly.
+//   - long.md: damp(20) = 1 + log2(20) = 5.321928094887363.
+//
+// Twenty is not a cherry-picked number: no realistic occurrence count reaches
+// the tag weight, because damp(n) = 8 needs n = 2^7 = 128 occurrences of one
+// term in one entry. The floor here is 8 * 0.25 = 2, which long.md's 5.32
+// clears comfortably, so both hits come back and the ordering is asserted
+// rather than inferred from an absence.
+func TestSet_SearchTagOutranksManyBodyMentions(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "tagged.md",
+		"---\n"+
+			"tags: [cache]\n"+
+			"---\n"+
+			"# Expiry\n"+
+			"\n"+
+			"Entries expire after an hour.\n")
+	// Twenty lines, one occurrence each: twenty occurrences in total.
+	writeFile(t, dir, "long.md", strings.Repeat("a cache line\n", 20))
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("cache", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	paths := make([]string, len(hits))
+	for i, h := range hits {
+		paths[i] = h.Path
+	}
+	require.Equal(t, []string{"tagged.md", "long.md"}, paths,
+		"a short tagged entry must outrank a long one that merely repeats the word")
+	require.Equal(t, float64(8), hits[0].Score)
+	require.InDelta(t, 5.321928094887363, hits[1].Score, 1e-9)
+}
+
+// Phase 2.2 criterion 4: a term that opens a tag earns proportional credit, and
+// strictly less than the exact match would. The same fixture is searched twice
+// so the two numbers are directly comparable — a second fixture would leave the
+// difference resting on the two entries being otherwise identical.
+//
+// Hand-computed with tagWeight = 8, single-term queries so coverage is 1:
+//
+//   - "http" against the tag "https": 4 runes over 5 = 0.8, so 8 * 0.8 = 6.4.
+//   - "https" against the tag "https": exact, so 8 * 1 = 8 exactly.
+func TestSet_SearchTagPrefixScoresBelowTheExactTerm(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "transport.md",
+		"---\n"+
+			"tags: [https]\n"+
+			"---\n"+
+			"# Transport\n"+
+			"\n"+
+			"Certificates are rotated by the platform team.\n")
+
+	set := singleSourceSet(t, dir)
+
+	partial, err := set.Search("http", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Len(t, partial, 1, "a prefix of the tag must still find the entry")
+	require.Equal(t, "transport.md", partial[0].Path)
+	require.InDelta(t, 6.4, partial[0].Score, 1e-9, "8 * (4/5)")
+
+	full, err := set.Search("https", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Len(t, full, 1)
+	require.Equal(t, float64(8), full[0].Score, "an exact tag match is the full tag weight")
+
+	require.Less(t, partial[0].Score, full[0].Score,
+		"the same entry must score lower for a prefix of its tag than for the tag itself")
+}
+
+// Phase 2.2 criterion 5: singular and plural find each other, so neither form
+// has to be written down twice on the entry. Each direction gets its own store,
+// because putting both tags in one would let a single entry answer both queries
+// and prove nothing about either.
+//
+// Hand-computed: 5 runes over 6 in both directions, so 8 * 5/6 =
+// 6.666666666666667 either way — the relation is symmetric by construction, not
+// by two separate rules. Coverage is 1 for these single-term queries.
+func TestSet_SearchMatchesSingularAndPluralTagsBothWays(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		tag   string
+		query string
+	}{
+		{name: "a plural tag is found by the singular term", tag: "apples", query: "apple"},
+		{name: "a singular tag is found by the plural term", tag: "apple", query: "apples"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "fruit.md",
+				"---\n"+
+					"tags: ["+tc.tag+"]\n"+
+					"---\n"+
+					"# Storage\n"+
+					"\n"+
+					"Stored in the cellar over winter.\n")
+
+			set := singleSourceSet(t, dir)
+
+			hits, err := set.Search(tc.query, Selector{Tier: TierAll})
+			require.NoError(t, err)
+			require.Len(t, hits, 1)
+			require.Equal(t, "fruit.md", hits[0].Path)
+			require.InDelta(t, 6.666666666666667, hits[0].Score, 1e-9, "8 * (5/6)")
+		})
+	}
+}
+
+// Phase 2.2 criterion 6: a compound tag is a real but weak match for the term it
+// opens with, and ranks below an entry tagged with that term exactly.
+//
+// Hand-computed over the one-term query "https", coverage 1 for both:
+//
+//   - exact.md, tagged "https": 8 * 1 = 8 exactly.
+//   - compound.md, tagged "https-security": 5 runes over 14 =
+//     0.35714285714285715, so 8 * that = 2.857142857142857.
+//
+// Both are returned. The floor is 8 * 0.25 = 2 and the compound entry's 2.857
+// clears it, which is the intended outcome rather than a coincidence: a
+// narrower entry on the same subject is a useful result, just not the first
+// one.
+func TestSet_SearchCompoundTagRanksBelowTheExactTag(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "exact.md",
+		"---\n"+
+			"tags: [https]\n"+
+			"---\n"+
+			"# Transport\n"+
+			"\n"+
+			"Certificates are rotated quarterly.\n")
+	writeFile(t, dir, "compound.md",
+		"---\n"+
+			"tags: [https-security]\n"+
+			"---\n"+
+			"# Ciphers\n"+
+			"\n"+
+			"Ciphers are pinned by the platform team.\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("https", Selector{Tier: TierAll})
+	require.NoError(t, err)
+
+	paths := make([]string, len(hits))
+	for i, h := range hits {
+		paths[i] = h.Path
+	}
+	require.Equal(t, []string{"exact.md", "compound.md"}, paths,
+		"the compound-tagged entry must be returned, ranked below the exactly tagged one")
+	require.Equal(t, float64(8), hits[0].Score)
+	require.InDelta(t, 2.857142857142857, hits[1].Score, 1e-9, "8 * (5/14)")
+}
+
+// Phase 2.2 criterion 9: where a term is prefix-related to more than one of an
+// entry's tags, the strongest match decides and the matches do not add. This
+// entry declares both "https" and "https-security", so an accumulating rule
+// would score 8 * 1 + 8 * 5/14 = 10.857142857142858 and let an entry buy rank by
+// declaring several spellings of one subject. The contract is 8 exactly — the
+// same score TestSet_SearchCompoundTagRanksBelowTheExactTag pins for the
+// exactly tagged entry that carries only one of these two tags.
+func TestSet_SearchStrongestTagMatchWinsRatherThanAccumulating(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "transport.md",
+		"---\n"+
+			"tags: [https, https-security]\n"+
+			"---\n"+
+			"# Transport\n"+
+			"\n"+
+			"Certificates are rotated quarterly.\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("https", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	require.Equal(t, float64(8), hits[0].Score,
+		"two matching tags must not earn more than the strongest one of them")
+}
+
+// Phase 2.2 criteria 7 and 8 at the search level, where the consequence of the
+// two guards is visible: an entry whose tags do not genuinely match earns
+// nothing from them and is not returned at all.
+//
+// This also pins the whole path the Phase 2.2 candidacy rule opened. Both
+// entries declare tags, so the store reports both as candidates on their tags
+// alone — it does not judge relevance. The ranking layer scores them at 0 and
+// Set.Search drops them, which is where the judgement belongs. A search that
+// returned either file would mean the store's looser candidacy had leaked out
+// as a result.
+//
+//   - "go" earns nothing from the tag "golang": the shorter side is 2 runes,
+//     below minPrefixLen = 4, so short terms match exactly or not at all.
+//   - "test" earns nothing from the tag "rest": the strings share no opening,
+//     and a similarity measure that scored them alike would return a document
+//     about REST for a query about testing.
+func TestSet_SearchTagCreditNeedsAnOpeningAndEnoughLength(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "golang.md",
+		"---\n"+
+			"tags: [golang]\n"+
+			"---\n"+
+			"# Runtime\n"+
+			"\n"+
+			"The scheduler multiplexes work onto threads.\n")
+	writeFile(t, dir, "rest.md",
+		"---\n"+
+			"tags: [rest]\n"+
+			"---\n"+
+			"# Resources\n"+
+			"\n"+
+			"Resources are addressed by URL.\n")
+
+	set := singleSourceSet(t, dir)
+
+	for _, tc := range []struct {
+		name  string
+		query string
+	}{
+		{name: "a two-letter term earns nothing from a longer tag", query: "go"},
+		{name: "a term sharing no opening with a tag earns nothing", query: "test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hits, err := set.Search(tc.query, Selector{Tier: TierAll})
+			require.NoError(t, err)
+			require.Empty(t, hits,
+				"a tag that does not genuinely match must earn no credit, so the entry is not a hit")
+		})
+	}
+}
+
+// Phase 2.2 criterion 10: every hit reports the tags of the entry it came from,
+// and an untagged entry reports an empty list rather than nothing at all — so a
+// consumer never has to tell "this entry has no tags" from "this provider does
+// not do tags". Both fixtures mention the query word once in their bodies, so
+// both score damp(1) = 1 and neither can be cut, and the tags are the only
+// thing that differs between them.
+//
+// require.Empty alone would pass on a nil slice, which is exactly the value
+// this asserts against, so the untagged entry is checked with require.NotNil
+// first.
+func TestSet_SearchHitsCarryTagsAndAnEmptyListWhenUntagged(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "tagged.md",
+		"---\n"+
+			"tags: [navigation, safety]\n"+
+			"---\n"+
+			"# Beacons\n"+
+			"\n"+
+			"the lighthouse stands on the point\n")
+	writeFile(t, dir, "plain.md", "the lighthouse is visible from here\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("lighthouse", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Len(t, hits, 2)
+
+	tags := map[string][]string{}
+	for _, h := range hits {
+		tags[h.Path] = h.Tags
+	}
+	require.Equal(t, []string{"navigation", "safety"}, tags["tagged.md"],
+		"a hit must report its entry's declared tags, in the order they were declared")
+	require.NotNil(t, tags["plain.md"],
+		"an untagged entry's hit must carry an allocated empty slice, not nil")
+	require.Empty(t, tags["plain.md"])
+}
+
+// tagPaths returns the paths of hits in the order Search returned them, so a
+// tag-narrowing test states its expectation as a hand-written list.
+func tagPaths(hits []store.Hit) []string {
+	paths := make([]string, 0, len(hits))
+	for _, h := range hits {
+		paths = append(paths, h.Path)
+	}
+	return paths
+}
+
+// Phase 2.3 criteria 1 and 2 together: narrowing to a tag returns only entries
+// carrying it, and an entry lacking it is never returned however well it scores.
+//
+// The excluded entry is deliberately the higher-scoring one. loud.md says
+// "http" 200 times, which is what it takes to beat a tag: damp(200) =
+// 1 + log2(200) = 8.644, against tagged.md's exact tag match of
+// tagWeight * 1 + damp(0) = 8. The unnarrowed search asserts that ordering
+// directly, so the narrowed search dropping loud.md can only be the filter
+// acting — a ranking tweak that merely demoted untagged entries would still
+// have returned it, and would still pass a test where the tagged entry happened
+// to score higher anyway.
+func TestSet_SearchTagFilterExcludesAHigherScoringUntaggedEntry(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "tagged.md",
+		"---\n"+
+			"tags: [http]\n"+
+			"---\n"+
+			"# Timeouts\n"+
+			"\n"+
+			"Set the request timeout before retrying.\n")
+	writeFile(t, dir, "loud.md",
+		"# Protocol Notes\n"+
+			"\n"+
+			strings.Repeat("http ", 200)+"\n")
+
+	set := singleSourceSet(t, dir)
+
+	all, err := set.Search("http", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Equal(t, []string{"loud.md", "tagged.md"}, tagPaths(all),
+		"unnarrowed, the untagged entry outranks the tagged one")
+
+	narrowed, err := set.Search("http", Selector{Tier: TierAll, Tags: []string{"http"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"tagged.md"}, tagPaths(narrowed),
+		"the filter is absolute: the higher-scoring untagged entry is excluded outright")
+	require.Equal(t, 8.0, narrowed[0].Score,
+		"one exact tag match on a one-term query: tagWeight * 1 + damp(0)")
+}
+
+// Phase 2.3 criterion 3: repeated tags are AND, not OR — an entry must carry
+// every tag listed. Only the entry declaring both tags survives, and the
+// unnarrowed search shows all three would otherwise be returned.
+func TestSet_SearchWithTwoTagsReturnsOnlyEntriesCarryingBoth(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "http-only.md",
+		"---\n"+
+			"tags: [http]\n"+
+			"---\n"+
+			"# Inbound\n"+
+			"\n"+
+			"the gateway accepts inbound calls\n")
+	writeFile(t, dir, "routing-only.md",
+		"---\n"+
+			"tags: [routing]\n"+
+			"---\n"+
+			"# Paths\n"+
+			"\n"+
+			"the gateway resolves paths to handlers\n")
+	writeFile(t, dir, "both.md",
+		"---\n"+
+			"tags: [http, routing]\n"+
+			"---\n"+
+			"# Edge\n"+
+			"\n"+
+			"the gateway sits at the edge\n")
+
+	set := singleSourceSet(t, dir)
+
+	all, err := set.Search("gateway", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"http-only.md", "routing-only.md", "both.md"}, tagPaths(all),
+		"all three entries mention the query term once and score identically")
+
+	narrowed, err := set.Search("gateway", Selector{Tier: TierAll, Tags: []string{"http", "routing"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"both.md"}, tagPaths(narrowed),
+		"an entry carrying only one of the two listed tags must not be returned")
+}
+
+// tagBlindStore is a store that reports a fixed set of hits whatever options it
+// is handed, and records the options it saw. It stands in for a provider that
+// ignores SearchOptions.Tags — through negligence, a backend that cannot express
+// the filter, or a bug — which is the case the knowledge layer's own enforcement
+// exists to cover.
+type tagBlindStore struct {
+	hits    []store.Hit
+	sawTags []string
+}
+
+func (s *tagBlindStore) Root() string                          { return "" }
+func (s *tagBlindStore) Read(string) ([]byte, error)           { return nil, store.ErrNotFound }
+func (s *tagBlindStore) Write(string, []byte) error            { return nil }
+func (s *tagBlindStore) Delete(string) error                   { return nil }
+func (s *tagBlindStore) List(string) ([]store.DirEntry, error) { return nil, nil }
+func (s *tagBlindStore) Exists(string) bool                    { return false }
+
+func (s *tagBlindStore) Search(_ []string, opts store.SearchOptions) ([]store.Hit, error) {
+	s.sawTags = opts.Tags
+	return s.hits, nil
+}
+
+// Phase 2.3, the authority test: the knowledge layer is what guarantees the tag
+// filter, and the store's copy of it is only an optimisation. A store that
+// ignores SearchOptions.Tags entirely must not be able to leak an entry lacking
+// the requested tag into the results.
+//
+// The Set is built in-package rather than through NewSet because NewSet resolves
+// a config into file-backed stores and has no injection point for a provider —
+// that is by design, since providers are declared in configuration. Building the
+// scopedStore directly exercises the real Set.Search over the real source list,
+// with only the provider swapped, which is the seam the guarantee actually sits
+// on.
+//
+// The hand-computed scores over the one-term query "http" show neither hit is
+// dropped by ranking: tagged scores tagWeight * 1 + damp(2) = 8 + 2 = 10, and
+// untagged scores damp(5) = 1 + log2(5) = 3.322, comfortably above the relative
+// cutoff floor of 10 * 0.25 = 2.5. The unnarrowed search asserts both come back,
+// so the narrowed one returning a single hit is the post-merge filter and
+// nothing else.
+func TestSet_SearchEnforcesTagsEvenWhenTheStoreIgnoresThem(t *testing.T) {
+	fake := &tagBlindStore{hits: []store.Hit{
+		{Path: "learnings/tagged.md", Title: "Tagged", Tags: []string{"http"}, BodyCounts: []int{2}},
+		{Path: "learnings/untagged.md", Title: "Untagged", Tags: []string{"database"}, BodyCounts: []int{5}},
+	}}
+	set := &Set{sources: []scopedStore{{
+		tier:     TierProject,
+		name:     "blind",
+		provider: "test",
+		location: "in-memory",
+		store:    fake,
+	}}}
+
+	all, err := set.Search("http", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Equal(t, []string{"learnings/tagged.md", "learnings/untagged.md"}, tagPaths(all),
+		"the fake reports both hits and both clear the cutoff")
+
+	narrowed, err := set.Search("http", Selector{Tier: TierAll, Tags: []string{"http"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"learnings/tagged.md"}, tagPaths(narrowed),
+		"the knowledge layer must exclude the untagged hit the store handed back regardless")
+	require.Equal(t, []string{"http"}, fake.sawTags,
+		"the store is still offered the filter as a fast path, it is simply not trusted on it")
+}
+
+// Phase 2.3 criterion 1, across stores: Selector.covers stays tag-blind, so a
+// store whose entries mostly lack the tag is still searched. The tag here exists
+// in the second store only; if covers consulted Tags, that store would be
+// skipped and the search would find nothing at all.
+func TestSet_SearchTagPresentInOneStoreStillReachesEveryStore(t *testing.T) {
+	firstDir := t.TempDir()
+	secondDir := t.TempDir()
+	writeFile(t, firstDir, "notes.md", "the compass points north\n")
+	writeFile(t, secondDir, "bearings.md",
+		"---\n"+
+			"tags: [navigation]\n"+
+			"---\n"+
+			"# Bearings\n"+
+			"\n"+
+			"the compass is read against the chart\n")
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Name: "first", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: firstDir}},
+		{Name: "second", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: secondDir}},
+	}
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+
+	all, err := set.Search("compass", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"notes.md", "bearings.md"}, tagPaths(all),
+		"both stores hold an entry mentioning the query term")
+
+	narrowed, err := set.Search("compass", Selector{Tier: TierAll, Tags: []string{"navigation"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"bearings.md"}, tagPaths(narrowed),
+		"the second store must still be searched; tags narrow entries, never whole stores")
+}
+
+// Phase 3.1 criteria 1 and 2: the vocabulary reports every distinct tag with the
+// number of entries carrying it, most-used first, and equally-used tags in
+// alphabetical order so the listing is stable across runs.
+//
+// The fixture is built so both halves of the ordering rule are load-bearing:
+// "http" is carried by three entries, and "cache" and "routing" are carried by
+// two each — a tie that can only be resolved by the alphabetical rule. Counting
+// by hand: http appears in a.md, b.md and c.md; routing in a.md and d.md; cache
+// in b.md and e.md.
+func TestSet_TagsReportsEachTagWithItsEntryCountMostUsedFirst(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "learnings/a.md", "---\ntags: [http, routing]\n---\n# A\n\nfirst note\n")
+	writeFile(t, dir, "learnings/b.md", "---\ntags: [http, cache]\n---\n# B\n\nsecond note\n")
+	writeFile(t, dir, "learnings/c.md", "---\ntags: [http]\n---\n# C\n\nthird note\n")
+	writeFile(t, dir, "gotchas/d.md", "---\ntags: [routing]\n---\n# D\n\nfourth note\n")
+	writeFile(t, dir, "decisions/e.md", "---\ntags: [cache]\n---\n# E\n\nfifth note\n")
+
+	set := singleSourceSet(t, dir)
+
+	uses, err := set.Tags(Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Equal(t, []TagUse{
+		{Tag: "http", Count: 3},
+		{Tag: "cache", Count: 2},
+		{Tag: "routing", Count: 2},
+	}, uses, "the whole slice is compared, so the order is part of the assertion")
+}
+
+// Phase 3.1 criterion 4: a knowledge base whose entries carry no frontmatter at
+// all — which is every knowledge base that existed before tags — reports an
+// empty vocabulary rather than failing.
+func TestSet_TagsOnAnUntaggedKnowledgeBaseIsEmptyNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "learnings/plain.md", "# Plain\n\nno frontmatter block at all\n")
+	writeFile(t, dir, "gotchas/also-plain.md", "# Also Plain\n\nstill no block\n")
+
+	set := singleSourceSet(t, dir)
+
+	uses, err := set.Tags(Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Empty(t, uses)
+}
+
+// Phase 3.1: the always-applied categories are excluded from the vocabulary,
+// consistent with search — their entries are loaded in full on every task and
+// never surfaced as hits, so their tags are not part of the vocabulary a new
+// entry chooses from. Both categories in the registry's always-applied tier
+// carry a tag here, and neither may appear; the looked-up sibling does.
+func TestSet_TagsExcludesAlwaysAppliedCategories(t *testing.T) {
+	require.Equal(t, []string{"conventions", "glossary"}, AlwaysApplied(),
+		"the fixture below covers whichever categories the registry declares always-applied")
+
+	dir := t.TempDir()
+	writeFile(t, dir, "conventions/naming.md", "---\ntags: [naming]\n---\n# Naming\n\nname things well\n")
+	writeFile(t, dir, "glossary/beacon.md", "---\ntags: [vocabulary]\n---\n# Beacon\n\na beacon is a marker\n")
+	writeFile(t, dir, "learnings/timeouts.md", "---\ntags: [http]\n---\n# Timeouts\n\nset the timeout\n")
+
+	set := singleSourceSet(t, dir)
+
+	uses, err := set.Tags(Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Equal(t, []TagUse{{Tag: "http", Count: 1}}, uses,
+		"an always-applied entry's tags contribute nothing, however they are written")
+}
+
+// Phase 3.1 criterion 3: the vocabulary honours narrowing exactly as the other
+// listing paths do. Counts are summed across the stores in scope: "http" is
+// carried by one entry in each store, so the unnarrowed listing must report it
+// twice — a per-store count would report 1 here and pass every other assertion.
+func TestSet_TagsCountsAcrossStoresAndHonoursNarrowing(t *testing.T) {
+	repoDir := t.TempDir()
+	teamDir := t.TempDir()
+	writeFile(t, repoDir, "learnings/one.md", "---\ntags: [http, deploy]\n---\n# One\n\nrepo note\n")
+	writeFile(t, teamDir, "learnings/two.md", "---\ntags: [http]\n---\n# Two\n\nteam note\n")
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Tier: string(TierRepo), Name: "repo-a", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: repoDir}},
+		{Tier: string(TierProject), Name: "team", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: teamDir}},
+	}
+	set, err := NewSet(cfg, t.TempDir())
+	require.NoError(t, err)
+
+	all, err := set.Tags(Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Equal(t, []TagUse{
+		{Tag: "http", Count: 2}, // one entry in each store
+		{Tag: "deploy", Count: 1},
+	}, all)
+
+	repoTier, err := set.Tags(Selector{Tier: TierRepo})
+	require.NoError(t, err)
+	require.Equal(t, []TagUse{
+		{Tag: "deploy", Count: 1}, // tied at one entry each, so alphabetical
+		{Tag: "http", Count: 1},
+	}, repoTier)
+
+	narrowed, err := set.Tags(Selector{Tier: TierProject, Filter: []string{"team"}})
+	require.NoError(t, err)
+	require.Equal(t, []TagUse{{Tag: "http", Count: 1}}, narrowed,
+		"only the narrowed store's tags are reported")
+}
+
+// Phase 3.1: one entry with a properly delimited but unparseable YAML block must
+// not make the vocabulary unreadable. It contributes no tags — the same outcome
+// a scan gives it — while its well-formed neighbour is still counted.
+func TestSet_TagsSurvivesAMalformedFrontmatterBlock(t *testing.T) {
+	dir := t.TempDir()
+	// The flow sequence is never closed, which is a YAML scanner error.
+	writeFile(t, dir, "learnings/broken.md", "---\ntags: [http\n---\nprose here\n")
+	writeFile(t, dir, "learnings/good.md", "---\ntags: [routing]\n---\n# Good\n\nprose here\n")
+
+	set := singleSourceSet(t, dir)
+
+	uses, err := set.Tags(Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Equal(t, []TagUse{{Tag: "routing", Count: 1}}, uses,
+		"the malformed entry yields no tags, and the listing still reports the good one")
+}
+
+// Phase 3.1 criterion 1 of the refusal: a search narrowed to a tag no entry in
+// scope carries is refused rather than returning an empty result, and the
+// refusal names both the offending tag and the vocabulary that is in use, so the
+// caller can reissue without going and reading every entry.
+func TestSet_SearchUnknownTagIsRefusedNamingTheVocabulary(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "learnings/tagged.md", "---\ntags: [http]\n---\n# Beacon\n\nthe beacon signal is strong\n")
+
+	set := singleSourceSet(t, dir)
+
+	_, err := set.Search("beacon", Selector{Tier: TierAll, Tags: []string{"no-such-tag"}})
+	envelope := requireRefusal(t, err, ErrCodeTagUnknown)
+	require.Contains(t, envelope.Message, "no-such-tag")
+	require.Contains(t, envelope.NextAction, "knowledge tags")
+	require.Contains(t, envelope.NextAction, "http", "the refusal names the tags that are in use")
+}
+
+// Phase 3.1, the distinction the refusal turns on: a tag that IS in the
+// vocabulary, whose entries simply did not match the query, returns an empty
+// result and no error. That is the honest answer, and without this test the
+// refusal could over-fire and turn every fruitless tag-narrowed search into an
+// error. The entry carries "http" and the query terms appear nowhere in it.
+func TestSet_SearchKnownTagWithNoMatchingEntryReturnsEmptyNotARefusal(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "learnings/tagged.md", "---\ntags: [http]\n---\n# Gateway\n\nthe gateway accepts inbound calls\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("sextant", Selector{Tier: TierAll, Tags: []string{"http"}})
+	require.NoError(t, err)
+	require.Empty(t, hits)
+}
+
+// Phase 3.1: the refusal path must not fire when no tag was requested at all. A
+// search that simply matches nothing still returns an empty result and no error.
+func TestSet_SearchWithNoTagNarrowingStillReturnsEmptyOnNoMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "learnings/tagged.md", "---\ntags: [http]\n---\n# Gateway\n\nthe gateway accepts inbound calls\n")
+
+	set := singleSourceSet(t, dir)
+
+	hits, err := set.Search("sextant", Selector{Tier: TierAll})
+	require.NoError(t, err)
+	require.Empty(t, hits)
 }

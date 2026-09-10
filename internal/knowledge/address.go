@@ -38,9 +38,16 @@ type Address struct {
 // names narrowing it. Search, List, Conventions and AlwaysAppliedEntries travel
 // on it. An empty Filter covers every store the tier reaches; a Filter naming a
 // store the tier does not reach is an error, not a silent empty result.
+//
+// The value carries two narrowing axes that are applied at different points.
+// Tier and Filter decide which stores are queried at all; Tags narrows the
+// entries within them, restricting results to those carrying every listed tag.
+// Keeping both on one value is what stops narrowing a request becoming two
+// separate ideas threaded through every layer.
 type Selector struct {
 	Tier   Tier     `json:"tier"`
 	Filter []string `json:"filter"`
+	Tags   []string `json:"tags"`
 }
 
 // knowledge error codes. Each refusal built with one of these carries a next
@@ -61,6 +68,10 @@ const (
 	// ErrCodeEntryNotFound is returned when a correctly addressed store holds
 	// no entry at the requested path.
 	ErrCodeEntryNotFound = "knowledge_entry_not_found"
+	// ErrCodeTagUnknown is returned when a search is narrowed to a tag no
+	// entry in scope carries, so a caller is never left reading an empty
+	// result as "no knowledge on this subject".
+	ErrCodeTagUnknown = "knowledge_tag_unknown"
 )
 
 // validTier reports whether t is one of the three declared tiers.
@@ -112,6 +123,10 @@ func (sel Selector) Validate() error {
 // under the selector's tier, and when a filter is present the store's name must
 // appear in it. No store is included because it was hard to attribute, and none
 // is excluded for any other reason.
+// covers deliberately knows nothing about Selector.Tags: it answers "is this
+// store in scope", and tags narrow entries within a store rather than the set of
+// stores. Teaching it about tags would exclude a whole store because one entry
+// lacked a tag.
 func (sel Selector) covers(src scopedStore) bool {
 	if sel.Tier != TierAll && src.tier != sel.Tier {
 		return false

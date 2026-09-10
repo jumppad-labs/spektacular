@@ -134,7 +134,8 @@ For the full model — every category definition, the retrieval tiers, the addre
 
 Agents (and you) reach knowledge through the `spektacular knowledge` commands rather than reading the files directly, so access stays consistent across stores. The main subcommands:
 
-- `knowledge search <query>` — keyword-search the stores the request covers (excluding the always-applied categories), returning tier- and category-tagged hits; narrow with `--tier` and `--filter`
+- `knowledge search <query>` — keyword-search the stores the request covers (excluding the always-applied categories), returning ranked, tier- and category-tagged hits, each carrying the entry's tags. A document need not contain every query word: it is returned if it carries evidence for any of them. Narrow with `--tier`, `--filter`, and a repeatable `--tag`
+- `knowledge tags` — list the tag vocabulary already in use, with an entry count for each, most-used first; takes `--tier` and `--filter`
 - `knowledge conventions` / `knowledge always-applied` — read the always-applied entries in full; both take `--tier` and `--filter`
 - `knowledge categories` — list the categories and their retrieval tiers
 - `knowledge read` / `knowledge write` — read and write one addressed entry, via `--data '{"tier":"…","name":"…","path":"…"}'`

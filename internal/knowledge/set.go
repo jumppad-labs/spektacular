@@ -137,9 +137,36 @@ func addressOf(src config.SourceConfig) (Tier, string) {
 // is deterministic across runs. A store the selector does not cover is never
 // queried at all. If any store errors, Search returns an error naming it and no
 // results.
+//
+// Matching is a ranked OR, not a boolean AND: a document does not have to
+// contain every word of the query. It is returned if it carries evidence for
+// any of them, ranked on how much of the query it covers and how strongly. A
+// caller must therefore not read an empty result as proof that nothing on the
+// subject exists, nor a returned hit as proof that every term appeared in it.
+//
+// Selector.Tags narrows which entries can be returned at all: an entry lacking
+// any listed tag is never returned, however well it would otherwise score.
+// That is why it is a filter and not another scoring factor.
+//
+// Weak hits are then dropped relative to the strongest hit in the merged set,
+// so a loosely related entry is returned when it is the only thing there and
+// disappears once something genuinely relevant is present. The cutoff is
+// applied after the merge, deliberately: the strongest hit may live in a
+// different store from the weak one being judged.
+//
+// The query is tokenized here rather than by each store, and each store's hits
+// are scored here rather than by the store that produced them. Both belong to
+// this layer because both are decisions about the whole result set: the stores
+// and this function must index per-term evidence in the same order, and hits
+// from different stores are ranked against each other, so they must be scored
+// on one scale by one formula. See ranking.go.
 func (s *Set) Search(query string, sel Selector) ([]store.Hit, error) {
 	if err := s.validateSelector(sel); err != nil {
 		return nil, err
+	}
+	terms := Terms(query)
+	if len(terms) == 0 {
+		return nil, nil
 	}
 	type rankedHit struct {
 		hit    store.Hit
@@ -150,11 +177,27 @@ func (s *Set) Search(query string, sel Selector) ([]store.Hit, error) {
 		if !sel.covers(src) {
 			continue
 		}
-		h, err := src.store.Search(query)
+		h, err := src.store.Search(terms, store.SearchOptions{Tags: sel.Tags})
 		if err != nil {
 			return nil, fmt.Errorf("searching knowledge store %q: %w", src.name, err)
 		}
 		for _, hit := range h {
+			// Stamp the score before the sort, so every hit in the merge is on
+			// the one scale regardless of which provider reported it. Only a
+			// hit with evidence for no term at all scores zero, and that is not
+			// a match under any rule, so it never reaches the ranking. Partial
+			// matches do reach it, ranked low.
+			// Affinity is computed here, not in the store, so a provider only
+			// ever has to report the tags it read and never has to know they
+			// affect rank.
+			affinity := make([]float64, len(terms))
+			for ti, term := range terms {
+				affinity[ti] = tagAffinity(term, hit.Tags)
+			}
+			hit.Score = score(Evidence{BodyCounts: hit.BodyCounts, TagAffinity: affinity})
+			if hit.Score == 0 {
+				continue
+			}
 			merged = append(merged, rankedHit{hit: hit, source: i})
 		}
 	}
@@ -169,7 +212,7 @@ func (s *Set) Search(query string, sel Selector) ([]store.Hit, error) {
 		return ra.hit.Path < rb.hit.Path
 	})
 	alwaysApplied := alwaysAppliedSet()
-	var hits []store.Hit
+	var eligible []store.Hit
 	for _, r := range merged {
 		hit := r.hit
 		hit.Tier = string(s.sources[r.source].tier)
@@ -182,9 +225,87 @@ func (s *Set) Search(query string, sel Selector) ([]store.Hit, error) {
 			// place the exclusion lives — the store no longer special-cases it.
 			continue
 		}
+		// The tag filter is enforced here, not taken on trust from the store.
+		// A store may pre-apply it while walking to avoid reporting documents
+		// that would be discarded, but this is the authority: a provider that
+		// ignores or mis-implements SearchOptions.Tags cannot leak an untagged
+		// entry into the results. Cheap, because the hit already carries its
+		// tags.
+		if !store.CarriesEveryTag(hit.Tags, sel.Tags) {
+			continue
+		}
+		eligible = append(eligible, hit)
+	}
+	if len(eligible) == 0 {
+		if len(sel.Tags) > 0 {
+			if err := s.refuseUnknownTags(sel); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
+	// The cutoff is measured against the best hit that survives the exclusion
+	// above, not against merged[0]. An always-applied entry scoring highest
+	// would otherwise set the bar and then be dropped itself, quietly raising
+	// the threshold for everything else in the result. eligible is still in the
+	// sorted order, so its first element is that best score.
+	//
+	// This runs after every store has been searched and merged, which is the
+	// point: the strongest hit may live in a different store from the weak one
+	// being judged, and a per-store cutoff would keep a weak hit alive purely
+	// because its own store held nothing better.
+	floor := eligible[0].Score * cutoffFraction
+	hits := eligible[:0]
+	for _, hit := range eligible {
+		if hit.Score < floor {
+			continue
+		}
 		hits = append(hits, hit)
 	}
 	return hits, nil
+}
+
+// refuseUnknownTags turns an empty tag-narrowed result into a refusal when the
+// reason for it is that a requested tag exists nowhere in scope, rather than
+// that the query simply did not match. A caller is then never left reading an
+// empty result as "there is no knowledge on this subject" when the truth is
+// "you asked for a tag nobody uses".
+//
+// It runs only when a tag-narrowed search comes back empty. Establishing the
+// vocabulary costs a read of every entry in scope, as much again as the search
+// itself, and there is no reason to pay that on the path where the search
+// worked. A tag that is in the vocabulary but whose entries did not match the
+// query still yields an empty result, which is the honest answer.
+func (s *Set) refuseUnknownTags(sel Selector) error {
+	vocabulary, err := s.Tags(sel)
+	if err != nil {
+		// The vocabulary is only needed to explain an empty result. Failing to
+		// build it must not turn a successful empty search into an error.
+		return nil
+	}
+	inUse := make(map[string]bool, len(vocabulary))
+	names := make([]string, 0, len(vocabulary))
+	for _, use := range vocabulary {
+		inUse[use.Tag] = true
+		names = append(names, use.Tag)
+	}
+	for _, tag := range sel.Tags {
+		if inUse[tag] {
+			continue
+		}
+		available := "no entry in scope carries any tag yet"
+		if len(names) > 0 {
+			available = "tags in use: " + strings.Join(names, ", ")
+		}
+		return output.NewError(
+			ErrCodeTagUnknown,
+			fmt.Sprintf("no knowledge entry in scope carries the tag %q", tag),
+		).WithResource(tag).WithNextAction(fmt.Sprintf(
+			`list the vocabulary with "knowledge tags" and reissue with a tag that is in use (%s)`,
+			available,
+		))
+	}
+	return nil
 }
 
 // categoryOf returns an entry's category — the first segment of its
@@ -260,6 +381,72 @@ func (s *Set) List(sel Selector) ([]Entry, error) {
 		}
 	}
 	return entries, nil
+}
+
+// TagUse is one distinct tag and how widely it is already in use.
+type TagUse struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"` // entries carrying it, across the covered stores
+}
+
+// Tags reports the tag vocabulary already in use across the stores the selector
+// covers: every distinct tag, with the number of entries carrying it, most-used
+// first and ties broken alphabetically so the order is stable across runs.
+//
+// It is purely mechanical. It reports what exists and never judges what a new
+// entry ought to carry — that judgement belongs to the capture flow, which reads
+// this to prefer an established tag over minting a near-duplicate. Putting the
+// vocabulary in front of the agent is what makes convergence possible without
+// anyone maintaining a taxonomy by hand.
+//
+// Always-applied categories are excluded, consistent with search: their entries
+// are loaded in full on every task and never surfaced as hits, so their tags are
+// not part of the vocabulary a new entry should be choosing from.
+//
+// A store whose entries carry no tags contributes nothing rather than erroring,
+// so an untagged knowledge base reports an empty vocabulary.
+func (s *Set) Tags(sel Selector) ([]TagUse, error) {
+	if err := s.validateSelector(sel); err != nil {
+		return nil, err
+	}
+	alwaysApplied := alwaysAppliedSet()
+	counts := make(map[string]int)
+	for _, src := range s.sources {
+		if !sel.covers(src) {
+			continue
+		}
+		files, err := listFiles(src.store, "")
+		if err != nil {
+			return nil, fmt.Errorf("listing knowledge store %q: %w", src.name, err)
+		}
+		for _, path := range files {
+			if alwaysApplied[categoryOf(path)] {
+				continue
+			}
+			raw, err := src.store.Read(path)
+			if err != nil {
+				return nil, fmt.Errorf("reading knowledge entry %q in store %q: %w", path, src.name, err)
+			}
+			// A malformed block yields no tags rather than failing the listing,
+			// exactly as it does during a scan: one bad entry must not make the
+			// vocabulary unreadable.
+			tags, _, _ := store.ParseEntry(raw)
+			for _, tag := range tags {
+				counts[tag]++
+			}
+		}
+	}
+	uses := make([]TagUse, 0, len(counts))
+	for tag, count := range counts {
+		uses = append(uses, TagUse{Tag: tag, Count: count})
+	}
+	sort.Slice(uses, func(a, b int) bool {
+		if uses[a].Count != uses[b].Count {
+			return uses[a].Count > uses[b].Count
+		}
+		return uses[a].Tag < uses[b].Tag
+	})
+	return uses, nil
 }
 
 // AlwaysAppliedEntries reads the full body of every entry in every

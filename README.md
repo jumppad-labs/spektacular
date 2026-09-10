@@ -190,10 +190,12 @@ knowledge:
     - name: team                    # each repo declares its own store in its repo.yaml
       provider: file
       config:
-        location: /shared/team-kb
+        location: ../team-kb        # relative to the folder holding config.yaml, as repos are
 ```
 
 Each repo entry needs a slug-safe unique `name` and a `location`: the folder holding that repo's `repo.yaml` (`local` is still accepted and means the same thing). A relative location is resolved from the folder holding `config.yaml`, and nothing is appended to it, so the project's own footprint is `.` and a repo folder in the project is `../repos/<name>`. A repo is normally added through a guided flow: you are asked which repo to add, and its name, description, role and tags are each proposed for you from what the repo says about itself, one question at a time, with a plain-language confirmation before anything is written. Spektacular's files go inside the repo being added unless it cannot take them or you say otherwise, in which case they live in a folder under the project and the repo is left with only its code. An add can be started and finished while a spec or plan is already in progress. A caller that already knows every detail can still register a repo in a single command with `repo add`. Where the code lives is declared in the repo's own `repo.yaml` as `source`; the old `address` key is no longer read, and a config that still carries it fails to load with an error saying where the value now goes. `description`, `role`, and `tags` are optional metadata, also in `repo.yaml`, that cross-repo planning uses to attribute requirements to the right repo. Add to the registry with `spektacular repo new`, or `spektacular repo add` when every detail is already known, and inspect it with `spektacular repo list`; removal is a manual config edit. Cloned repos are never fetched or pulled automatically; a stale clone produces a warning only.
+
+**Relative locations everywhere in `config.yaml` share one base: the folder holding `config.yaml`.** That covers both a repos entry's `location` and a `knowledge.sources` entry's `config.location`, so `..` is the project's own root and `../team-kb` a folder beside it. An absolute location is used as written. A knowledge source that does not resolve to a directory fails fast, naming the store, the path it resolved to, and the base it resolved from; when the store is found where the pre-1.0 rule would have put it, the error also names the exact corrected value to write.
 
 ### Repo configuration (`repo.yaml`)
 

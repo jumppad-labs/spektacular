@@ -147,13 +147,23 @@ inside spec, plan, or implement workflow steps. It binds ad-hoc
 questions, unrelated skills, and general exploration alike. Users
 should not have to restate it in each session.
 
-More broadly, the rest of `.spektacular/` — knowledge entries,
-`context.md`, changelog records — is generated output *about* the
-codebase, not the codebase itself. A broad grep or file scan run to
-understand current-state behavior should treat all of `.spektacular/`
-as out of scope, the same way it treats `.spektacular/specs/` and
-`.spektacular/plans/` above, unless the task explicitly concerns specs,
-plans, or knowledge.
+The knowledge base is the exception to all of the above, and the
+distinction matters. Entries under a repo's or the project's knowledge
+sources are **not** a record of past intent. They are current, curated
+statements of how this project works and how work in it must be done,
+and they are **binding**. Where a knowledge entry and the current code
+disagree, the entry states the target and the code is what has yet to
+meet it. Never conclude that an entry is stale, obsolete, or superseded
+merely because the code does something else — that difference is work to
+do, not evidence against the entry. If you genuinely believe an entry is
+wrong, say so to the user and ask; do not silently overrule it.
+
+More broadly, the remainder of `.spektacular/` — `context.md` and
+changelog records — is generated output *about* the codebase, not the
+codebase itself. A broad grep or file scan run to understand
+current-state behavior should treat `.spektacular/specs/`,
+`.spektacular/plans/`, `context.md` and the changelog as out of scope,
+unless the task explicitly concerns them.
 
 ## Presenting Drafts and Confirmations
 
@@ -184,8 +194,9 @@ be asked.
 When you recognize the moment, offer — never write to the knowledge base
 unprompted. Something like: "this looks like an undocumented convention —
 want me to save it via `spek-knowledge`?" Say briefly what you'd capture and
-why it's worth keeping. Wait for the user's decision before doing anything
-else.
+why it's worth keeping, and name the tags you would propose for it, since
+those decide whether the entry is ever found again. Wait for the user's
+decision before doing anything else.
 
 The user's response falls into one of three outcomes:
 

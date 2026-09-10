@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
 	"github.com/jumppad-labs/spektacular/internal/knowledge"
@@ -68,6 +69,12 @@ var knowledgeCategoriesCmd = &cobra.Command{
 	RunE:  runKnowledgeCategories,
 }
 
+var knowledgeTagsCmd = &cobra.Command{
+	Use:   "tags",
+	Short: "List the tag vocabulary already in use, most-used first, across the stores a request covers",
+	RunE:  runKnowledgeTags,
+}
+
 // knowledgeTier and knowledgeFilter back the --tier and --filter options
 // shared by search, list, conventions and always-applied. They replace the
 // narrower --repo option, which could only name repo-tier stores and silently
@@ -76,6 +83,12 @@ var (
 	knowledgeTier   string
 	knowledgeFilter []string
 )
+
+// knowledgeTags backs the --tag option, which narrows a search to entries
+// carrying every tag listed. It is registered on search alone: the other
+// fan-out commands enumerate stores rather than entries, so an entry-level
+// filter has nothing to bind to there.
+var knowledgeTags []string
 
 var knowledgeAlwaysAppliedCmd = &cobra.Command{
 	Use:   "always-applied",
@@ -111,6 +124,18 @@ var knowledgeNarrowingFlags = map[string]*schemaProp{
 	"filter": {Type: "array", Items: &schemaProp{Type: "string"}},
 }
 
+// knowledgeSearchFlags is the schema search advertises. Search takes one option
+// the other fan-out commands do not, so it cannot share knowledgeNarrowingFlags:
+// adding --tag there would advertise a flag the other three silently ignore.
+var knowledgeSearchFlags = func() map[string]*schemaProp {
+	flags := make(map[string]*schemaProp, len(knowledgeNarrowingFlags)+1)
+	for name, prop := range knowledgeNarrowingFlags {
+		flags[name] = prop
+	}
+	flags["tag"] = &schemaProp{Type: "array", Items: &schemaProp{Type: "string"}}
+	return flags
+}()
+
 var knowledgeSearchOutputSchema = &schemaObj{
 	Type: "object",
 	Properties: map[string]*schemaProp{
@@ -127,6 +152,23 @@ var knowledgeSearchOutputSchema = &schemaObj{
 					"category": {Type: "string"},
 					"checksum": {Type: "string"},
 					"excerpts": {Type: "array", Items: &schemaProp{Type: "string"}},
+					"tags":     {Type: "array", Items: &schemaProp{Type: "string"}},
+				},
+			},
+		},
+	},
+}
+
+var knowledgeTagsOutputSchema = &schemaObj{
+	Type: "object",
+	Properties: map[string]*schemaProp{
+		"tags": {
+			Type: "array",
+			Items: &schemaProp{
+				Type: "object",
+				Properties: map[string]*schemaProp{
+					"tag":   {Type: "string"},
+					"count": {Type: "number"},
 				},
 			},
 		},
@@ -318,7 +360,7 @@ func requireUniqueStoreNames(sources []config.SourceConfig) error {
 
 func runKnowledgeSearch(cmd *cobra.Command, args []string) error {
 	if schema, _ := cmd.Flags().GetBool("schema"); schema {
-		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeSearchOutputSchema, Flags: knowledgeNarrowingFlags}, "")
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeSearchOutputSchema, Flags: knowledgeSearchFlags}, "")
 	}
 	if len(args) == 0 {
 		return output.NewError("knowledge_query_required", "search requires a query").
@@ -381,6 +423,25 @@ func runKnowledgeList(cmd *cobra.Command, _ []string) error {
 	}
 	out := output.New(cmd.OutOrStdout(), globalFields)
 	return out.WriteResult(map[string]any{"entries": entries})
+}
+
+func runKnowledgeTags(cmd *cobra.Command, _ []string) error {
+	if schema, _ := cmd.Flags().GetBool("schema"); schema {
+		return output.Write(cmd.OutOrStdout(), commandSchema{Input: nil, Output: knowledgeTagsOutputSchema, Flags: knowledgeNarrowingFlags}, "")
+	}
+	set, err := newKnowledgeSet()
+	if err != nil {
+		return err
+	}
+	tags, err := set.Tags(knowledgeSelector())
+	if err != nil {
+		return err
+	}
+	if tags == nil {
+		tags = []knowledge.TagUse{}
+	}
+	out := output.New(cmd.OutOrStdout(), globalFields)
+	return out.WriteResult(map[string]any{"tags": tags})
 }
 
 func runKnowledgeWrite(cmd *cobra.Command, _ []string) error {
@@ -469,7 +530,15 @@ func runKnowledgeAlwaysApplied(cmd *cobra.Command, _ []string) error {
 // or a filter naming a store the tier does not reach is refused there, with the
 // names available, which is information only the set holds.
 func knowledgeSelector() knowledge.Selector {
-	return knowledge.Selector{Tier: knowledge.Tier(knowledgeTier), Filter: knowledgeFilter}
+	// Tags are lower-cased to match how they are normalised when read off an
+	// entry, so --tag HTTP finds an entry tagged http.
+	var tags []string
+	for _, tag := range knowledgeTags {
+		if tag = strings.ToLower(strings.TrimSpace(tag)); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return knowledge.Selector{Tier: knowledge.Tier(knowledgeTier), Filter: knowledgeFilter, Tags: tags}
 }
 
 // knowledgeAddressInput is the --data payload for the read and write commands:
@@ -533,10 +602,12 @@ func init() {
 	knowledgeReadCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"tier":"repo","name":"docs","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().StringP("data", "d", "", `JSON input (e.g. '{"tier":"repo","name":"docs","path":"learnings/x.md"}')`)
 	knowledgeWriteCmd.Flags().String("file", "", "Read entry content from the file at <path> (relative to cwd); stdin is used when omitted")
-	for _, c := range []*cobra.Command{knowledgeSearchCmd, knowledgeListCmd, knowledgeConventionsCmd, knowledgeAlwaysAppliedCmd} {
+	for _, c := range []*cobra.Command{knowledgeSearchCmd, knowledgeListCmd, knowledgeConventionsCmd, knowledgeAlwaysAppliedCmd, knowledgeTagsCmd} {
 		c.Flags().StringVar(&knowledgeTier, "tier", string(knowledge.TierAll), `Which knowledge to cover: "project", "repo", or "all"`)
 		c.Flags().StringArrayVar(&knowledgeFilter, "filter", nil, "Narrow to the named store(s) within the tier (repeatable); omit to cover every store the tier reaches")
 	}
 
-	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd, knowledgeCategoriesCmd, knowledgeAlwaysAppliedCmd)
+	knowledgeSearchCmd.Flags().StringArrayVar(&knowledgeTags, "tag", nil, "Narrow to entries carrying the tag (repeatable); an entry must carry every tag listed, and one lacking any of them is never returned")
+
+	knowledgeCmd.AddCommand(knowledgeSearchCmd, knowledgeReadCmd, knowledgeListCmd, knowledgeWriteCmd, knowledgeSourcesCmd, knowledgeConventionsCmd, knowledgeCategoriesCmd, knowledgeAlwaysAppliedCmd, knowledgeTagsCmd)
 }

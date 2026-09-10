@@ -22,15 +22,43 @@ type DirEntry struct {
 // Hit is a generic search result produced by a store's Search. It describes
 // one matching document, carrying a locator and compact excerpts, never the
 // full file body.
+//
+// The fields fall into two groups, and the split is load-bearing rather than
+// cosmetic. A store fills in what it observed while reading the document. It
+// leaves the second group alone, because every field in it is a statement about
+// the whole result set — which addressing scheme the caller uses, and how this
+// document ranks against documents from other stores — and a single store can
+// see neither.
 type Hit struct {
-	Tier     string   `json:"tier"`     // addressing tier of the originating store; left empty by the store and populated by the knowledge layer
-	Name     string   `json:"name"`     // name of the originating store; left empty by the store and populated by the knowledge layer
-	Path     string   `json:"path"`     // locator, relative to the store root — pass to Read
-	Title    string   `json:"title"`    // the document's first heading, or the locator when it has none
-	Excerpts []string `json:"excerpts"` // compact excerpts, each capped at the excerpt budget
-	Score    float64  `json:"score"`    // sum of all query terms' case-insensitive occurrences across the document
-	Category string   `json:"category"` // the entry's category; left empty by the store and populated by the knowledge layer from the path
-	Checksum string   `json:"checksum"` // hex SHA-256 over the entry's exact raw bytes; the identity key for byte-identical de-dup
+	// Populated by the store.
+	Path       string   `json:"path"`     // locator, relative to the store root — pass to Read
+	Title      string   `json:"title"`    // the document's first heading, or the locator when it has none
+	Excerpts   []string `json:"excerpts"` // compact excerpts, each capped at the excerpt budget
+	Checksum   string   `json:"checksum"` // hex SHA-256 over the entry's exact raw bytes; the identity key for byte-identical de-dup
+	Tags       []string `json:"tags"`     // the entry's declared tags; always a list, empty rather than absent, so a consumer never has to tell "no tags" from "no tag support"
+	BodyCounts []int    `json:"-"`        // occurrences of each query term in the document's text, indexed like the terms; the evidence the knowledge layer ranks on
+
+	// Left zero by the store, stamped by the knowledge layer.
+	Tier     string  `json:"tier"`     // addressing tier of the originating store
+	Name     string  `json:"name"`     // name of the originating store
+	Category string  `json:"category"` // the entry's category, derived from the path
+	Score    float64 `json:"score"`    // ranking score, computed once from the evidence above so every store's hits share one scale
+}
+
+// SearchOptions carries the narrowing a caller wants applied while a store is
+// walked. It exists so Search takes one options parameter rather than growing a
+// second method each time a narrowing axis is added; its zero value means "no
+// narrowing", so every call site keeps its present meaning.
+type SearchOptions struct {
+	// Tags restricts results to entries carrying every listed tag, matched
+	// exactly against the entry's declared tags. Empty means no restriction.
+	//
+	// Applying this is an optimisation, not a guarantee: skipping a document
+	// during the walk is cheaper than reporting one that will be discarded, but
+	// the knowledge layer enforces the filter regardless. A store that ignores
+	// this field is slower, never wrong — which is what keeps a provider from
+	// having to be trusted on it.
+	Tags []string
 }
 
 // Store provides read/write access to a project's data directory.
@@ -50,10 +78,22 @@ type Store interface {
 	List(path string) ([]DirEntry, error)
 	// Exists reports whether a file or directory exists at path.
 	Exists(path string) bool
-	// Search returns hits for a free-form keyword query, scanning only this
-	// store. Hits are left unattributed: the store has no notion of what its
-	// caller's addressing scheme is, so filling that in is the caller's job.
-	Search(query string) ([]Hit, error)
+	// Search returns hits for a pre-tokenized keyword query, scanning only
+	// this store. Terms arrive already lower-cased and in the order the
+	// caller indexes evidence by, so an implementation must report per-term
+	// results in that same order.
+	//
+	// An implementation finds candidate documents and describes them; it does
+	// not rank them. Hits are left unattributed and unscored: a store has no
+	// notion of its caller's addressing scheme, and no notion of the other
+	// stores its results will be merged and ranked against, so filling in
+	// Tier, Name, Category and Score is the knowledge layer's job.
+	//
+	// The contract that follows from this: to take part in ranking at all, a
+	// store must be able to report BodyCounts — how often each term occurs in
+	// a document's text. A backend that can only return its own opaque
+	// relevance score cannot rank coherently alongside the others.
+	Search(terms []string, opts SearchOptions) ([]Hit, error)
 }
 
 // FileStore implements Store over the local filesystem.

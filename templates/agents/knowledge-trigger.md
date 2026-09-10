@@ -15,8 +15,9 @@ be asked.
 When you recognize the moment, offer — never write to the knowledge base
 unprompted. Something like: "this looks like an undocumented convention —
 want me to save it via `spek-knowledge`?" Say briefly what you'd capture and
-why it's worth keeping. Wait for the user's decision before doing anything
-else.
+why it's worth keeping, and name the tags you would propose for it, since
+those decide whether the entry is ever found again. Wait for the user's
+decision before doing anything else.
 
 The user's response falls into one of three outcomes:
 

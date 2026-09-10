@@ -206,7 +206,7 @@ func TestIgnoreStore_ListOmitsExcludedEntries(t *testing.T) {
 func TestIgnoreStore_SearchOmitsExcludedHits(t *testing.T) {
 	st := ignoredFixture(t)
 
-	hits, err := st.Search("zebra")
+	hits, err := st.Search([]string{"zebra"}, SearchOptions{})
 	require.NoError(t, err)
 
 	var paths []string
@@ -270,9 +270,55 @@ func TestNewSourceStore_NoIgnoreFileMatchesBareFileStore(t *testing.T) {
 		require.Equal(t, bareEntries, wrappedEntries, "List(%q)", dir)
 	}
 
-	wrappedHits, err := wrapped.Search("zebra")
+	wrappedHits, err := wrapped.Search([]string{"zebra"}, SearchOptions{})
 	require.NoError(t, err)
-	bareHits, err := bare.Search("zebra")
+	bareHits, err := bare.Search([]string{"zebra"}, SearchOptions{})
 	require.NoError(t, err)
 	require.Equal(t, bareHits, wrappedHits)
+}
+
+// Phase 2.3: the ignore wrapper must hand SearchOptions to the store it wraps
+// untouched. A dropped option is invisible in any fixture without an ignore
+// file — NewSourceStore returns the same wrapper either way, and a
+// pass-everything matcher hides nothing — so this fixture carries a real
+// .spektacular_ignore, which is the only configuration in which the bug can
+// show up at all.
+//
+// The narrowed result is exactly one entry: the untagged, non-ignored entry is
+// removed by the forwarded option, and the tagged entry under noise/ is removed
+// by the exclusion. Dropping the option would leave the untagged entry in the
+// result, and dropping the exclusion would add the ignored one, so the two
+// filters are pinned separately by the same assertion.
+func TestIgnoreStore_SearchForwardsTagNarrowingToTheWrappedStore(t *testing.T) {
+	root := t.TempDir()
+	writeIgnoreFile(t, root, "noise/\n")
+
+	seed := func(name, content string) {
+		full := filepath.Join(root, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+	}
+	seed("kept-tagged.md", "---\ntags: [http]\n---\nzebra grazes here\n")
+	seed("kept-plain.md", "zebra grazes here without tags\n")
+	seed("noise/hidden-tagged.md", "---\ntags: [http]\n---\nzebra hides in the noise\n")
+
+	st := NewSourceStore(root, "project")
+
+	all, err := st.Search([]string{"zebra"}, SearchOptions{})
+	require.NoError(t, err)
+	var allPaths []string
+	for _, h := range all {
+		allPaths = append(allPaths, h.Path)
+	}
+	require.ElementsMatch(t, []string{"kept-tagged.md", "kept-plain.md"}, allPaths,
+		"without narrowing the wrapper reports every non-ignored entry")
+
+	narrowed, err := st.Search([]string{"zebra"}, SearchOptions{Tags: []string{"http"}})
+	require.NoError(t, err)
+	var narrowedPaths []string
+	for _, h := range narrowed {
+		narrowedPaths = append(narrowedPaths, h.Path)
+	}
+	require.Equal(t, []string{"kept-tagged.md"}, narrowedPaths,
+		"the wrapper must forward Tags to the wrapped store and still apply its own exclusions")
 }

@@ -60,3 +60,23 @@ func TestSelector_ValidateAcceptsFanOutAndRefusesUnknownTier(t *testing.T) {
 	requireRefusal(t, Selector{}.Validate(), ErrCodeTierRequired)
 	requireRefusal(t, Selector{Tier: "team"}.Validate(), ErrCodeTierInvalid)
 }
+
+// Phase 2.3: covers answers "is this store in scope", and tags narrow entries
+// within a store rather than the set of stores, so a selector carrying tags
+// must still reach every store its tier and filter reach. Teaching covers about
+// tags would drop a whole store because its first entry lacked one.
+func TestSelector_CoversIgnoresTags(t *testing.T) {
+	tagged := Selector{Tier: TierAll, Tags: []string{"http"}}
+	require.True(t, tagged.covers(scopedStore{tier: TierProject, name: "team"}))
+	require.True(t, tagged.covers(scopedStore{tier: TierRepo, name: "docs"}))
+
+	// The filter still narrows stores; only the tags are inert here.
+	filtered := Selector{Tier: TierAll, Filter: []string{"team"}, Tags: []string{"http"}}
+	require.True(t, filtered.covers(scopedStore{tier: TierProject, name: "team"}))
+	require.False(t, filtered.covers(scopedStore{tier: TierRepo, name: "docs"}))
+
+	// So does the tier.
+	scoped := Selector{Tier: TierRepo, Tags: []string{"http"}}
+	require.True(t, scoped.covers(scopedStore{tier: TierRepo, name: "docs"}))
+	require.False(t, scoped.covers(scopedStore{tier: TierProject, name: "team"}))
+}

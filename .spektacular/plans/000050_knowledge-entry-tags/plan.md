@@ -919,7 +919,7 @@ when searched alone and absent once the fuller match is present; and a long docu
 repeating a term does not outrank a shorter one on volume alone. Every pre-existing
 test in the two affected packages passes with its expected values recomputed by hand.
 
-#### - [ ] Phase 1.1: Move ranking above the storage layer
+#### - [x] Phase 1.1: Move ranking above the storage layer
 
 **Repo:** spektacular
 
@@ -937,12 +937,12 @@ never has to reimplement the ranking formula to rank consistently with the other
 
 **Acceptance criteria**:
 
-- [ ] Searching behaves exactly as it did before this phase, with identical results and identical scores for every query.
-- [ ] The rule that turns a document's matches into a score lives in one place that can be exercised directly, without creating any files.
-- [ ] A storage provider reports what it found and never computes a score, so adding a provider cannot introduce a second ranking scale.
-- [ ] Every pre-existing test in the affected package passes without its expected values being changed.
+- [x] Searching behaves exactly as it did before this phase, with identical results and identical scores for every query.
+- [x] The rule that turns a document's matches into a score lives in one place that can be exercised directly, without creating any files.
+- [x] A storage provider reports what it found and never computes a score, so adding a provider cannot introduce a second ranking scale.
+- [x] Every pre-existing test in the affected package passes without its expected values being changed.
 
-#### - [ ] Phase 1.2: Rank partial matches instead of discarding them
+#### - [x] Phase 1.2: Rank partial matches instead of discarding them
 
 **Repo:** spektacular
 
@@ -958,12 +958,12 @@ makes a search which previously returned nothing return the closest thing availa
 
 **Acceptance criteria**:
 
-- [ ] An entry with evidence for one query term out of three is returned rather than omitted.
-- [ ] Between two comparable entries, the one with evidence for all three query terms ranks above the one with evidence for a single term.
-- [ ] A document that mentions a term twenty times does not score ten times higher than one that mentions it twice.
-- [ ] Existing tests that asserted the old occurrence-sum scores carry new expected values worked out by hand from the fixtures, not copied from what the new code prints.
+- [x] An entry with evidence for one query term out of three is returned rather than omitted.
+- [x] Between two comparable entries, the one with evidence for all three query terms ranks above the one with evidence for a single term.
+- [x] A document that mentions a term twenty times does not score ten times higher than one that mentions it twice.
+- [x] Existing tests that asserted the old occurrence-sum scores carry new expected values worked out by hand from the fixtures, not copied from what the new code prints.
 
-#### - [ ] Phase 1.3: Drop weak matches relative to the strongest hit
+#### - [x] Phase 1.3: Drop weak matches relative to the strongest hit
 
 **Repo:** spektacular
 
@@ -980,10 +980,10 @@ cannot survive merely because its own store held nothing better.
 
 **Acceptance criteria**:
 
-- [ ] An entry matching one of three query terms is returned when it is the only match.
-- [ ] That same entry is not returned once an entry matching all three query terms is also present.
-- [ ] The weak match still disappears when the strong match lives in a different knowledge store from it.
-- [ ] Results remain in a stable, repeatable order across identical searches.
+- [x] An entry matching one of three query terms is returned when it is the only match.
+- [x] That same entry is not returned once an entry matching all three query terms is also present.
+- [x] The weak match still disappears when the strong match lives in a different knowledge store from it.
+- [x] Results remain in a stable, repeatable order across identical searches.
 
 ### Milestone 2: Entries can say what they are about, and be found by it
 
@@ -1005,7 +1005,7 @@ base of entirely untagged entries behaves exactly as it did before, with every
 command running unchanged. The four queries agents have actually been observed to use
 for one subject all rank the on-topic entry first, against the benchmark fixture.
 
-#### - [ ] Phase 2.1: Read tags from an entry
+#### - [x] Phase 2.1: Read tags from an entry
 
 **Repo:** spektacular
 
@@ -1020,12 +1020,12 @@ tag written two ways can never end up as two tags.
 
 **Acceptance criteria**:
 
-- [ ] An entry declaring tags reports exactly those tags, normalised to lower case and with duplicates removed.
-- [ ] An entry with no tag block, or with an empty tag list, is read successfully and reports no tags.
-- [ ] Every existing knowledge command runs unchanged against a knowledge base whose entries carry no tags, and no entry is rejected as invalid.
-- [ ] The tag block itself is not treated as part of the entry's prose, so a tag is not also counted as a mention of itself.
+- [x] An entry declaring tags reports exactly those tags, normalised to lower case and with duplicates removed.
+- [x] An entry with no tag block, or with an empty tag list, is read successfully and reports no tags.
+- [x] Every existing knowledge command runs unchanged against a knowledge base whose entries carry no tags, and no entry is rejected as invalid.
+- [x] The tag block itself is not treated as part of the entry's prose, so a tag is not also counted as a mention of itself.
 
-#### - [ ] Phase 2.2: Let tags retrieve and rank an entry
+#### - [x] Phase 2.2: Let tags retrieve and rank an entry
 
 **Repo:** spektacular
 
@@ -1043,18 +1043,18 @@ the tags of the entry it came from, so a reader can see why it was returned.
 
 **Acceptance criteria**:
 
-- [ ] An entry tagged `go, http` whose body contains neither word is returned for the search `go http router`.
-- [ ] Given two entries of comparable length, one tagged `http` and one merely mentioning "http" in its body, a search for `http` returns the tagged entry first.
-- [ ] A long entry mentioning a term many times does not outrank a short entry tagged with that term.
-- [ ] An entry tagged `https` is returned for a search for `http`, and scores lower than it would for a search for `https`.
-- [ ] An entry tagged `apple` is returned for a search for `apples`, and an entry tagged `apples` is returned for a search for `apple`, without either form being written down twice.
-- [ ] An entry tagged `https-security` is returned for a search for `https`, ranked below an entry tagged `https` exactly.
-- [ ] A search term that merely resembles a tag without sharing its opening earns nothing from it: `test` gains nothing from a `rest` tag, and `cors` gains nothing from a `core` tag.
-- [ ] A two- or three-letter search term matches a tag only exactly, so `go` gains nothing from a `golang` tag.
-- [ ] Where a term is prefix-related to more than one of an entry's tags, the strongest match decides the score rather than the matches adding together.
-- [ ] Every search result reports the tags of the entry it came from, reporting an empty list rather than nothing at all for an untagged entry.
+- [x] An entry tagged `go, http` whose body contains neither word is returned for the search `go http router`.
+- [x] Given two entries of comparable length, one tagged `http` and one merely mentioning "http" in its body, a search for `http` returns the tagged entry first.
+- [x] A long entry mentioning a term many times does not outrank a short entry tagged with that term.
+- [x] An entry tagged `https` is returned for a search for `http`, and scores lower than it would for a search for `https`.
+- [x] An entry tagged `apple` is returned for a search for `apples`, and an entry tagged `apples` is returned for a search for `apple`, without either form being written down twice.
+- [x] An entry tagged `https-security` is returned for a search for `https`, ranked below an entry tagged `https` exactly.
+- [x] A search term that merely resembles a tag without sharing its opening earns nothing from it: `test` gains nothing from a `rest` tag, and `cors` gains nothing from a `core` tag.
+- [x] A two- or three-letter search term matches a tag only exactly, so `go` gains nothing from a `golang` tag.
+- [x] Where a term is prefix-related to more than one of an entry's tags, the strongest match decides the score rather than the matches adding together.
+- [x] Every search result reports the tags of the entry it came from, reporting an empty list rather than nothing at all for an untagged entry.
 
-#### - [ ] Phase 2.3: Narrow a search to tagged entries
+#### - [x] Phase 2.3: Narrow a search to tagged entries
 
 **Repo:** spektacular
 
@@ -1069,12 +1069,12 @@ point is to restrict.
 
 **Acceptance criteria**:
 
-- [ ] A search narrowed to the tag `http` returns only entries carrying that tag.
-- [ ] An entry without that tag is never returned by such a search, regardless of its score.
-- [ ] Asking for two tags returns only entries carrying both.
-- [ ] The narrowing option is discoverable from the command's own published description of itself, alongside the existing narrowing options.
+- [x] A search narrowed to the tag `http` returns only entries carrying that tag.
+- [x] An entry without that tag is never returned by such a search, regardless of its score.
+- [x] Asking for two tags returns only entries carrying both.
+- [x] The narrowing option is discoverable from the command's own published description of itself, alongside the existing narrowing options.
 
-#### - [ ] Phase 2.4: Prove the observed queries now find the right entry
+#### - [x] Phase 2.4: Prove the observed queries now find the right entry
 
 **Repo:** spektacular
 
@@ -1089,9 +1089,9 @@ cannot quietly give the improvement back.
 
 **Acceptance criteria**:
 
-- [ ] For each of the four observed queries, the entry actually about the subject is returned first.
-- [ ] A search for a plausible name that appears nowhere in the entry's prose returns that entry on the strength of its tags alone.
-- [ ] The check runs against a self-contained fixture, so adding or editing real knowledge entries cannot make it start or stop passing.
+- [x] For each of the four observed queries, the entry actually about the subject is returned first.
+- [x] A search for a plausible name that appears nowhere in the entry's prose returns that entry on the strength of its tags alone.
+- [x] The check runs against a self-contained fixture, so adding or editing real knowledge entries cannot make it start or stop passing.
 
 ### Milestone 3: Tags get applied without anyone designing a taxonomy
 
@@ -1112,7 +1112,7 @@ waits for confirmation before writing; a capture into a store already using `htt
 proposes `http` rather than a variant; the audit flags a tag an entry does not support
 and proposes one it is missing; and no entry is modified until the user confirms.
 
-#### - [ ] Phase 3.1: Report the tag vocabulary already in use
+#### - [x] Phase 3.1: Report the tag vocabulary already in use
 
 **Repo:** spektacular
 
@@ -1127,12 +1127,12 @@ phase.
 
 **Acceptance criteria**:
 
-- [ ] Asking for the tag vocabulary returns each distinct tag in use with a count of how many entries carry it.
-- [ ] The most widely used tags come first, with a stable order between equally used ones.
-- [ ] The listing honours narrowing to a tier or to named stores exactly as the other listing commands do.
-- [ ] A knowledge base whose entries carry no tags reports an empty vocabulary rather than failing.
+- [x] Asking for the tag vocabulary returns each distinct tag in use with a count of how many entries carry it.
+- [x] The most widely used tags come first, with a stable order between equally used ones.
+- [x] The listing honours narrowing to a tier or to named stores exactly as the other listing commands do.
+- [x] A knowledge base whose entries carry no tags reports an empty vocabulary rather than failing.
 
-#### - [ ] Phase 3.2: Propose tags when an entry is captured
+#### - [x] Phase 3.2: Propose tags when an entry is captured
 
 **Repo:** spektacular
 
@@ -1153,15 +1153,15 @@ design a taxonomy first.
 
 **Acceptance criteria**:
 
-- [ ] When an entry is captured, proposed tags are displayed together with the tier, store and path, before anything is written.
-- [ ] No entry reaches a knowledge store until the user confirms the proposal, tags included.
-- [ ] Capturing an entry about HTTP into a store already using the tag `http` proposes `http` rather than a variant such as `HTTP` or `http-api`.
-- [ ] An entry about a subject that merely resembles an existing tag gets its own tag: an entry about HTTPS is tagged `https` even though `http` is already in the vocabulary, because they are different subjects rather than two spellings of one.
-- [ ] Singulars and plurals are not proposed as separate tags, because prefix matching already relates them; a second tag is proposed only where a form differs by more than its ending, such as `route` beside `routing`.
-- [ ] Updating an existing entry keeps the tags it already has, unless the change is about the tags themselves.
-- [ ] Searching is described to agents in a way that reflects how results are now ranked and narrowed, rather than the old rule that every query word had to appear.
+- [x] When an entry is captured, proposed tags are displayed together with the tier, store and path, before anything is written.
+- [x] No entry reaches a knowledge store until the user confirms the proposal, tags included.
+- [x] Capturing an entry about HTTP into a store already using the tag `http` proposes `http` rather than a variant such as `HTTP` or `http-api`.
+- [x] An entry about a subject that merely resembles an existing tag gets its own tag: an entry about HTTPS is tagged `https` even though `http` is already in the vocabulary, because they are different subjects rather than two spellings of one.
+- [x] Singulars and plurals are not proposed as separate tags, because prefix matching already relates them; a second tag is proposed only where a form differs by more than its ending, such as `route` beside `routing`.
+- [x] Updating an existing entry keeps the tags it already has, unless the change is about the tags themselves.
+- [x] Searching is described to agents in a way that reflects how results are now ranked and narrowed, rather than the old rule that every query word had to appear.
 
-#### - [ ] Phase 3.3: Audit the tags on existing entries
+#### - [x] Phase 3.3: Audit the tags on existing entries
 
 **Repo:** spektacular
 
@@ -1175,12 +1175,12 @@ until confirmed, so a bad suggestion costs a "no" rather than a cleanup.
 
 **Acceptance criteria**:
 
-- [ ] An entry carrying a tag its content does not bear out has that tag reported as unsupported.
-- [ ] An entry whose content is clearly about a subject it carries no tag for has that tag proposed, preferring one already in use.
-- [ ] A tag that is a genuinely distinct term from a similar-looking existing tag is never reported as unsupported or proposed for merging: an entry tagged `https` is not told to use `http` instead.
-- [ ] A tag made redundant by prefix matching, such as `apples` sitting beside `apple`, is reported as removable rather than left to accumulate.
-- [ ] No entry is modified until the user confirms the proposed changes for it.
-- [ ] Changes are proposed per entry, so accepting one entry's changes never silently applies another's.
+- [x] An entry carrying a tag its content does not bear out has that tag reported as unsupported.
+- [x] An entry whose content is clearly about a subject it carries no tag for has that tag proposed, preferring one already in use.
+- [x] A tag that is a genuinely distinct term from a similar-looking existing tag is never reported as unsupported or proposed for merging: an entry tagged `https` is not told to use `http` instead.
+- [x] A tag made redundant by prefix matching, such as `apples` sitting beside `apple`, is reported as removable rather than left to accumulate.
+- [x] No entry is modified until the user confirms the proposed changes for it.
+- [x] Changes are proposed per entry, so accepting one entry's changes never silently applies another's.
 
 ### Milestone 4: The behaviour is written down where people will find it
 
@@ -1204,7 +1204,7 @@ typechecks clean. The project's knowledge base contains an entry describing the
 ranking behaviour, and searching for that subject returns it, which also serves as a
 real-world exercise of the feature this plan delivers.
 
-#### - [ ] Phase 4.1: Correct the project's own documentation
+#### - [x] Phase 4.1: Correct the project's own documentation
 
 **Repo:** spektacular
 
@@ -1219,11 +1219,11 @@ carries no build step.
 
 **Acceptance criteria**:
 
-- [ ] No remaining statement in the project's documentation claims a document must contain every query word.
-- [ ] The command reference lists the new way to see the tag vocabulary and the new way to narrow a search by tag.
-- [ ] The shape of an entry's tag block is shown, along with the fact that an entry without one is perfectly valid.
+- [x] No remaining statement in the project's documentation claims a document must contain every query word.
+- [x] The command reference lists the new way to see the tag vocabulary and the new way to narrow a search by tag.
+- [x] The shape of an entry's tag block is shown, along with the fact that an entry without one is perfectly valid.
 
-#### - [ ] Phase 4.2: Publish the retrieval documentation
+#### - [x] Phase 4.2: Publish the retrieval documentation
 
 **Repo:** docs
 
@@ -1418,20 +1418,20 @@ the asymmetry:
 
 **Acceptance criteria**:
 
-- [ ] The published page gives the scoring formula in full, including the damping curve, the coverage factor and the constants as shipped, not only a prose description of the factors.
-- [ ] The published constants match the values actually in the code, checked against it rather than against this plan.
-- [ ] A worked example shows two entries scored against the same query, so a reader can follow the formula through to a number.
-- [ ] The page explains how a query becomes terms, and that there is no stemming or synonym handling.
-- [ ] The page distinguishes a tag match from a body occurrence, and states that tag matching is exact.
-- [ ] The page states the cutoff rule, its constant, that it is relative to the best hit, and that it is applied after every store has been searched.
-- [ ] The page documents the frontmatter block in full: where it goes, both YAML list forms, that `tags` is the only key read, that tags are lower-cased and de-duplicated, and that a malformed or unclosed block is treated as no frontmatter rather than an error.
-- [ ] The page explains what exact matching means for choosing tag forms: that a singular does not retrieve a plural, that both forms should be carried where both are likely, and that similar-looking tags such as `http` and `https` are distinct subjects rather than variants.
-- [ ] The page says an entry without tags is valid, fully searchable, and needs no migration.
-- [ ] The page shows how to narrow a search by tag, and says that repeating the option narrows further rather than widening.
-- [ ] No statement remains on the site claiming results are scored purely by how often query terms appear.
-- [ ] The documentation site builds and typechecks without errors or warnings, and the page contains no layout markup in its body.
+- [x] The published page gives the scoring formula in full, including the damping curve, the coverage factor and the constants as shipped, not only a prose description of the factors.
+- [x] The published constants match the values actually in the code, checked against it rather than against this plan.
+- [x] A worked example shows two entries scored against the same query, so a reader can follow the formula through to a number.
+- [x] The page explains how a query becomes terms, and that there is no stemming or synonym handling.
+- [x] The page distinguishes a tag match from a body occurrence, and states how a tag is matched: exact equality at full strength, and a prefix relation at proportional partial credit. *(Criterion corrected during implementation: it previously read "states that tag matching is exact", which the walkthrough's move to prefix partial credit superseded. This phase's own Content outline already described partial credit.)*
+- [x] The page states the cutoff rule, its constant, that it is relative to the best hit, and that it is applied after every store has been searched.
+- [x] The page documents the frontmatter block in full: where it goes, both YAML list forms, that `tags` is the only key read, that tags are lower-cased and de-duplicated, and that a malformed or unclosed block is treated as no frontmatter rather than an error.
+- [x] The page explains what prefix matching means for choosing tag forms: that a singular and a plural find each other so neither needs writing twice, that a second tag is needed only where a form differs by more than its ending (`route` beside `routing`), and that similar-looking tags such as `http` and `https` are distinct subjects rather than variants. *(Criterion corrected during implementation, for the same reason as the one above: under prefix partial credit a singular does retrieve a plural, at 83%.)*
+- [x] The page says an entry without tags is valid, fully searchable, and needs no migration.
+- [x] The page shows how to narrow a search by tag, and says that repeating the option narrows further rather than widening.
+- [x] No statement remains on the site claiming results are scored purely by how often query terms appear.
+- [x] The documentation site builds and typechecks without errors or warnings, and the page contains no layout markup in its body.
 
-#### - [ ] Phase 4.3: Correct the storage-backend reference
+#### - [x] Phase 4.3: Correct the storage-backend reference
 
 **Repo:** docs
 
@@ -1490,13 +1490,13 @@ facts are fixed by this plan; wording is illustrative.
 
 **Acceptance criteria**:
 
-- [ ] The published backend reference shows the search call and result type as they actually are after this work.
-- [ ] The page states that a backend reports evidence and never computes a score, and gives the reason.
-- [ ] The page names the limit that a backend unable to report per-term occurrence counts cannot participate in ranking.
-- [ ] The result fields that were already wrong before this work are correct, with no remaining field the code does not have.
-- [ ] The documentation site builds and typechecks without errors or warnings.
+- [x] The published backend reference shows the search call and result type as they actually are after this work.
+- [x] The page states that a backend reports evidence and never computes a score, and gives the reason.
+- [x] The page names the limit that a backend unable to report per-term occurrence counts cannot participate in ranking.
+- [x] The result fields that were already wrong before this work are correct, with no remaining field the code does not have.
+- [x] The documentation site builds and typechecks without errors or warnings.
 
-#### - [ ] Phase 4.4: Record the ranking design as knowledge
+#### - [x] Phase 4.4: Record the ranking design as knowledge
 
 **Repo:** spektacular
 
@@ -1511,10 +1511,10 @@ delivers.
 
 **Acceptance criteria**:
 
-- [ ] The project's knowledge base contains an entry describing how ranking works, including the ranking factors and the relative cutoff.
-- [ ] The entry carries tags, proposed through the same capture flow this plan delivers.
-- [ ] A search for that subject returns the entry.
-- [ ] The entry was written only after the user confirmed its destination and content.
+- [x] The project's knowledge base contains an entry describing how ranking works, including the ranking factors and the relative cutoff.
+- [x] The entry carries tags, proposed through the same capture flow this plan delivers.
+- [x] A search for that subject returns the entry.
+- [x] The entry was written only after the user confirmed its destination and content.
 
 ## Open Questions
 
@@ -1687,3 +1687,776 @@ the cross-store merge).
   that drives an agent through a confirmation gate. Coverage stops at asserting the
   rendered prose carries the required instructions. Adding a CLI-level guard so it
   could be tested would change the write contract, which the spec does not ask for.
+
+## Changelog
+
+### 2026-09-10 — Phase 1.1: Move ranking above the storage layer
+
+**What was done**: Scoring and query tokenization moved out of the file store and
+into the knowledge layer. A store now reports the evidence it observed while
+reading a document (per-term body occurrence counts, alongside the locator,
+title, excerpts and checksum) and leaves `Score` at zero; `Set.Search` tokenizes
+the query, scores every reported hit through one function in the new
+`internal/knowledge/ranking.go`, and only then merges and sorts. `Store.Search`
+took a signature change from `Search(query string)` to
+`Search(terms []string, opts SearchOptions)`, with `SearchOptions` landing empty
+so Phase 2.3's tag filter is purely additive. Behaviour is unchanged: `score`
+still reproduces the historical rule exactly (every term must occur; the score is
+the sum of the counts), so results and orderings are identical.
+
+**Deviations**:
+
+- **The store still skips documents with no evidence at all.** The plan said the
+  walk callback "stops excluding on a zero count". Read literally that emits a
+  `Hit` for every file in the tree, including binaries and total non-matches,
+  which the knowledge layer would immediately score at 0 and drop. Ranked OR
+  means "missing *some* terms is still a match"; a document matching *no* term is
+  not a candidate. So the callback keeps a single guard — skip when every count
+  is zero — and drops the per-term early return that implemented boolean AND.
+  Results are identical either way; this only avoids materialising the whole
+  store as hits.
+- **Three pre-existing tests were relocated rather than left untouched.** The
+  plan's own Phase 1.1 is internally inconsistent here: criterion 4 requires
+  every pre-existing test in the affected package to pass with unchanged expected
+  values, while criteria 2 and 3 and the file-change list require scoring and
+  match-exclusion to leave the store entirely.
+  `TestSearch_ScoreSumsOccurrencesAcrossDocument`, `TestSearch_OneHitPerDocument`
+  and `TestSearch_MultiWordScatteredAcrossLines` assert exactly those two
+  behaviours from a bare `FileStore`, so no implementation can satisfy both sides.
+  They were moved to `internal/knowledge/set_test.go` and now assert through
+  `Set.Search`, carrying every fixture byte and every hand-computed expected value
+  across verbatim (`{twice:2, once:1, upper:1, spread:4}`,
+  `[]string{"scattered.txt"}`, `float64(8)`). No number was recomputed; only the
+  layer the assertion travels through changed.
+- `Evidence.TagAffinity` is declared but left nil rather than allocated
+  zero-length. Nothing reads it until Phase 2.2, and a per-hit zero-filled slice
+  would be a dead allocation on every search.
+
+**Files changed**:
+
+- `spektacular: internal/knowledge/ranking.go` (new)
+- `spektacular: internal/knowledge/ranking_test.go` (new)
+- `spektacular: internal/knowledge/set.go`
+- `spektacular: internal/knowledge/set_test.go`
+- `spektacular: internal/store/store.go`
+- `spektacular: internal/store/search.go`
+- `spektacular: internal/store/search_test.go`
+- `spektacular: internal/store/ignore.go`
+- `spektacular: internal/store/ignore_test.go`
+
+**Discoveries**:
+
+- **`damp(1) = 1` is load-bearing for Phase 1.2 and is already relied on.** Six
+  assertions in `cmd/knowledge_test.go` (`:245,253,772,780,788,1160`) pin
+  `Score: 1` for a single term occurring once. They stay green through 1.2 only
+  because the damping curve is `1 + log₂(n)`. A tuner who changes the curve's
+  shape breaks them.
+- **`Set.Search` returning early on an empty term list is now the only place
+  "an empty query searches nothing" is decided.** `FileStore.Search` keeps its own
+  `len(terms) == 0` guard for direct callers, so the behaviour is stated twice
+  deliberately, at two layers with different callers.
+- **The `partial.txt` case was verified empirically, not by reasoning.** A
+  document with evidence for 2 of 3 terms does reach the knowledge layer
+  (`BodyCounts=[1 1 0]`) and is dropped by the score-zero path, not by the
+  always-applied category exclusion — `categoryOf` returns `""` for a root-level
+  entry and `""` is not in the always-applied set. Phase 1.2 turns that same hit
+  into a returned result, so the distinction matters.
+- **`store.Hit` field order changed** (store-populated group first, stamped group
+  second). Safe because nothing constructs a `Hit` positionally, confirmed by
+  grep, and field order is not part of the JSON contract. Worth knowing before
+  adding `Tags` in Phase 2.2.
+- **Neither `make lint` nor CI runs a strict linter.** `make lint` is `go vet`,
+  and CI (`dagger/main.go:190`) runs `go test -race ./...`. The deliberately
+  unused `tagWeight` and `coverageExponent` constants therefore trip nothing,
+  though an editor LSP flags them until Phases 1.2 and 2.2 consume them.
+
+### 2026-09-10 — Phase 1.2: Rank partial matches instead of discarding them
+
+**What was done**: Boolean AND matching is gone. `score` now sums `damp(count)`
+rather than raw counts, and scales the total by the share of query terms the
+document has any evidence for, squared. A document missing some of the query is
+returned and ranked low instead of being dropped; only a document with evidence
+for nothing at all still scores zero. `damp(n) = 1 + log₂(n)` gives repeated
+occurrences diminishing returns, so twenty mentions of a term scores 5.32 against
+two mentions' 2.0, not ten times as much.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `spektacular: internal/knowledge/ranking.go`
+- `spektacular: internal/knowledge/ranking_test.go`
+- `spektacular: internal/knowledge/set.go`
+- `spektacular: internal/knowledge/set_test.go`
+
+**Discoveries**:
+
+- **`TestSet_SearchRequiresEveryTerm` was renamed, not merely re-valued.** Its
+  premise — that a document missing one term is excluded — is exactly what this
+  phase deletes, so it is now
+  `TestSet_SearchRanksPartialMatchesBelowFullOnes` and asserts both documents
+  come back in score order. A test whose *name* asserts the old contract is worth
+  hunting for whenever a phase inverts a rule; re-valuing it alone would have left
+  a lie in the suite.
+- **Several oracles are exact in float64 and should stay `require.Equal`.**
+  `damp` of a power of two is exact (`damp(2)=2`, `damp(4)=3`, `damp(8)=4`,
+  `damp(16)=5`), and a coverage of 1 contributes `math.Pow(1,2) = 1` exactly.
+  Only genuinely irrational values need `InDelta`. Blanket-converting the suite
+  to `InDelta` would have discarded real precision.
+- **`damp(1) = 1` is now a production constraint, not a coincidence.** Six
+  assertions in `cmd/knowledge_test.go` (`:245,253,772,780,788,1160`) pin
+  `Score: 1` for a single term occurring once, and they passed untouched only
+  because of it. It is commented at the function. A future tuner reshaping the
+  curve must preserve it or fix those six.
+- **For a single-term query, ranked OR returns exactly the same result set as
+  boolean AND** — a document either contains the term or scores zero. That is why
+  every single-term test in the suite survived this change without an edit, and
+  it is worth knowing when judging which tests a future ranking change can affect.
+- **Which fixture Phase 1.3's cutoff actually bites on, checked arithmetically.**
+  A two-of-three match is *not* weak enough to be cut: `partial.txt` scores
+  `2 × (2/3)² = 8/9 = 0.889` against `scattered.txt`'s 3, and `0.889` is above
+  `0.25 × 3 = 0.75`, so `TestSet_SearchRanksPartialMatchesBelowFullOnes` must keep
+  returning both hits after the cutoff lands. The fixture the cutoff does bite on
+  is a **one**-of-three match: `1 × (1/3)² = 1/9 = 0.111`, comfortably below 0.75.
+  `TestSet_SearchReturnsAnEntryMatchingOnlyOneOfThreeTerms` is therefore the
+  Phase 1.3 fixture, and its "returned when it is the only match" case still holds
+  because a lone hit is its own best score.
+
+### 2026-09-10 — Phase 1.3: Drop weak matches relative to the strongest hit
+
+**What was done**: `Set.Search` now drops any hit scoring below
+`cutoffFraction × the best surviving hit`, with `cutoffFraction = 0.25` declared
+in `ranking.go` beside the other tunables. The post-sort loop was split into two
+passes: stamp tier/name/category and exclude always-applied entries into an
+`eligible` slice, then cut against `eligible[0].Score`. A loosely related entry is
+returned when it is the only thing there and vanishes once something genuinely
+relevant is present. Milestone 1 is complete: search now ranks rather than
+excludes, and returns a useful list rather than everything with a pulse.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `spektacular: internal/knowledge/ranking.go`
+- `spektacular: internal/knowledge/set.go`
+- `spektacular: internal/knowledge/set_test.go`
+
+**Discoveries**:
+
+- **The bar must come from hits that survive the category exclusion, not from
+  the raw merged slice.** An always-applied entry scoring highest would otherwise
+  set the threshold and then be dropped itself, silently raising the bar for
+  everything else. The two candidate readings differ by 27× on a simple fixture
+  (floor `0.75` and an empty result, versus floor `1/36` and a returned hit), so
+  this is not a subtlety that would have surfaced later — it would have shipped as
+  "search sometimes returns nothing for no visible reason".
+- **`TestSet_SearchCutoffIgnoresAlwaysAppliedWhenSettingTheBar` was
+  mutation-checked, not just written.** Swapping `eligible[0].Score` for
+  `merged[0].hit.Score` in `set.go` makes exactly that test fail, and nothing
+  else. Worth repeating for any future test whose whole purpose is to pin a
+  choice between two orderings: without the mutation check there is no evidence
+  the fixture discriminates at all.
+- **`cutoffFraction` cannot be raised above ~0.296 without breaking a deliberate
+  guard.** `TestSet_SearchRanksPartialMatchesBelowFullOnes` pins that a
+  two-of-three match (`0.889`) survives against a full match (`3`), and
+  `0.889 / 3 = 0.296` is the ceiling. That test is now doing double duty as the
+  "cutoff is not too aggressive" regression guard, and says so in its comment.
+  Phase 2.4's benchmark constrains the constants from the other direction.
+- **The cutoff needs the cross-store test to mean anything.** A per-store cutoff
+  passes every single-store fixture, because a lone weak hit is always its own
+  best score. `TestSet_SearchCutoffAppliesAcrossStores` puts the weak hit alone in
+  one store and the strong hit in another, which is the only shape that catches
+  it.
+
+### 2026-09-10 — Phase 2.1: Read tags from an entry
+
+**What was done**: A knowledge entry may now open with a YAML frontmatter block
+declaring `tags`. A new `internal/store/frontmatter.go` parses it, lower-casing
+and de-duplicating the values, and `scanFile` reads it out of the bytes it
+already holds for the binary sniff, then scans the body from after the block. An
+entry with no block is not an error and simply has no tags, so there is nothing
+to migrate and no command to run. Tags do not affect retrieval yet — that is
+Phase 2.2.
+
+**Deviations**:
+
+- **Malformed input: the parser reports, the scan degrades.** The plan says both
+  that a malformed block "is reported rather than silently swallowed" (Component
+  Breakdown) and that it returns no error (research.md's recorded decision). Both
+  are now true: `parseEntry` returns an error for a properly delimited block whose
+  YAML will not unmarshal, alongside safe values (no tags, raw bytes as body), and
+  `scanFile` ignores that error so a search can never fail because of one bad
+  entry. An *unterminated* opener is not an error at all — it reads as a
+  horizontal rule, exactly as the decision requires. This keeps the `err` return
+  in the declared contract from being permanently dead, and gives Phase 3.3's
+  audit flow something to surface.
+- **The block is parsed from the sniff buffer rather than by buffering scanned
+  lines.** The plan offered two shapes: buffer the leading block during the scan,
+  or thread an `inFrontmatter` flag through the scanner loop. Both were rejected
+  for a third: `scanFile` already reads the first 8000 bytes for the binary check
+  and already feeds them to the hasher, and frontmatter is by definition at the
+  very start, so the block can be parsed straight out of those bytes and the
+  scanner built from the post-block subslice. No buffering (so a file opening with
+  `---` and never closing cannot accumulate in memory), no replay path, no flag,
+  and term counting, title detection and excerpt collection all start at the body
+  for free. Accepted limit, documented in the code: a block extending past 8000
+  bytes reads as no frontmatter, degrading to today's behaviour.
+
+**Files changed**:
+
+- `spektacular: internal/store/frontmatter.go` (new)
+- `spektacular: internal/store/frontmatter_test.go` (new)
+- `spektacular: internal/store/search.go`
+- `spektacular: internal/store/search_test.go`
+- `spektacular: cmd/knowledge_test.go`
+
+**Discoveries**:
+
+- **The checksum must keep covering the frontmatter, and now has a test saying
+  so.** It identifies the file, not its prose, so two entries with byte-identical
+  bodies and different tags must hash differently or exact-byte de-duplication
+  collapses them into one candidate. `TestSearch_ChecksumCoversFrontmatterSoTagsKeepEntriesDistinct`
+  pins it. This is the one place the "scan the body, not the block" rule must not
+  be applied.
+- **Only one blank line after the closing `---` is dropped**; a second survives
+  into the body. Pinned by an explicit test case rather than left as folklore.
+- **Close detection searches for the byte sequence `"\n---"`**, so a block whose
+  last content line itself begins with `---` terminates early. Not reachable
+  through any specified case, and it is what makes a `---foo` closing line degrade
+  to "no frontmatter" instead of erroring. Recorded because it is an implicit
+  property of the scan rather than a stated rule.
+- **A criterion-4 test needs a sibling to be non-vacuous.** "An entry tagged `go`
+  is not returned for `go`" passes trivially if the query matches nothing at all.
+  The fixture pairs it with a plain file that does mention "go" once, so the
+  contrast proves the block was skipped rather than the search being broken. Both
+  criterion-4 tests were mutation-checked by forcing `scanFile` back to the raw
+  bytes; both failed, then the change was reverted.
+
+### 2026-09-10 — Phase 2.2: Let tags retrieve and rank an entry
+
+**What was done**: Tags became a retrieval signal. `store.Hit` gained `Tags`,
+`tagAffinity` landed in `ranking.go` with `minPrefixLen = 4`, and `score` now
+earns each term `tagWeight*affinity + damp(count)` with `tagWeight = 8`. A term
+counts as covered if it has evidence of *either* kind. An entry tagged
+`go, http` whose body contains neither word now scores 7.11 for
+`go http router` and is found; a tag match at 8 outranks any realistic number of
+prose mentions, since a term would have to appear 128 times to earn as much from
+damping alone. The CLI advertises `tags` on search results, always as a list.
+
+**Deviations**:
+
+- **The store's candidacy guard now counts declared tags as evidence.** This
+  extends the Phase 1.1 deviation, and had to. That guard skipped documents with
+  no body evidence for any term — correct while only prose could match, and wrong
+  the moment tags retrieve, because an entry tagged `go` whose prose never says
+  "go" would never have reached the ranking layer to be scored on its tags at
+  all. That is this phase's first acceptance criterion. A document is now reported
+  if it has body evidence **or** declares any tags. Ranking stays out of the
+  store: "this document carries evidence I cannot evaluate" is a refusal to judge
+  relevance, not a judgement. An irrelevant tagged entry scores 0 upstream and is
+  dropped before the merge, so results are identical to reporting every file. The
+  cost is that every tagged entry is reported for every query, which is not a new
+  order of cost against a search that already walks the tree reading every byte.
+
+**Files changed**:
+
+- `spektacular: internal/knowledge/ranking.go`
+- `spektacular: internal/knowledge/ranking_test.go`
+- `spektacular: internal/knowledge/set.go`
+- `spektacular: internal/knowledge/set_test.go`
+- `spektacular: internal/store/store.go`
+- `spektacular: internal/store/search.go`
+- `spektacular: internal/store/search_test.go`
+- `spektacular: cmd/knowledge.go`
+- `spektacular: cmd/knowledge_test.go`
+
+**Discoveries**:
+
+- **The plan undercounted the `Tags: []string{}` fallout: eight literals, not
+  six.** The two extra sit inside
+  `TestKnowledge_EveryCommandRunsAgainstAnUntaggedKnowledgeBase`, which Phase 2.1
+  added — so the plan's list was accurate when written and went stale within one
+  phase. Worth remembering that a plan's enumeration of call sites ages against
+  the work the plan itself causes.
+- **A tag match usually removes the prose entry rather than merely outranking
+  it.** A tagged entry scores 8 for a single-term query, putting the cutoff floor
+  at 2, while one prose mention scores `damp(1) = 1`. So "the tagged entry ranks
+  first" often shows up as the prose entry not being returned at all. A fixture
+  meant to assert *ordering* needs the prose sibling to mention the term at least
+  three times (`damp(3) = 2.585`) to clear the floor. Correct behaviour, but it
+  will look like a broken fixture to anyone who has not done the arithmetic.
+- **Asserting "the JSON key is present but empty" needs a `*[]string`.** Decoding
+  into a plain `[]string` cannot distinguish an omitted key from `[]`, so a test
+  meant to pin `"tags": []` rather than an absent field silently asserts nothing.
+  The same trap applies to `require.Empty`, which passes on nil — hence
+  `require.NotNil` beside it.
+- **`8 * 0.8` and the literal `6.4` are the same float64**, so an exact
+  comparison would also have passed there. Kept `InDelta` anyway, because relying
+  on a coincidence of binary representation is not a property worth depending on.
+
+### 2026-09-10 — Phase 2.3: Narrow a search to tagged entries
+
+**What was done**: `--tag` narrows a search to entries carrying every tag listed.
+`SearchOptions.Tags` travels down to the store as a walk fast path,
+`Selector.Tags` carries it through the knowledge layer, and `Set.Search`
+independently enforces the filter after the merge so a provider is never trusted
+on it. Repeated `--tag` is AND; the filter is absolute, excluding an entry
+however well it would otherwise score; and matching is exact, so `--tag http`
+does not reach an entry tagged `https`. `--tag` is registered on `search` alone.
+
+**Deviations**:
+
+- **Search got its own flag schema rather than extending the shared one.**
+  `knowledgeNarrowingFlags` is what all four fan-out commands advertise under
+  `--schema`. The plan noted the conflict and preferred a search-specific map;
+  that is what landed, as `knowledgeSearchFlags`, so `list`, `conventions` and
+  `always-applied` do not advertise a flag they ignore.
+- **Refusing an unknown `--tag` is deferred to Phase 3.1, as the plan permits.**
+  The refusal's next action has to be `knowledge tags`, which 3.1 delivers. Until
+  then an unmatched tag returns an empty result, and a test pins that so the
+  behaviour is deliberate rather than unnoticed.
+
+**Files changed**:
+
+- `spektacular: internal/store/store.go`
+- `spektacular: internal/store/search.go`
+- `spektacular: internal/store/search_test.go`
+- `spektacular: internal/store/ignore_test.go`
+- `spektacular: internal/knowledge/address.go`
+- `spektacular: internal/knowledge/address_test.go`
+- `spektacular: internal/knowledge/set.go`
+- `spektacular: internal/knowledge/set_test.go`
+- `spektacular: cmd/knowledge.go`
+- `spektacular: cmd/knowledge_test.go`
+
+**Discoveries**:
+
+- **A real test-harness bug, not a test-writing inconvenience: `--tag` leaks
+  between CLI subtests.** `StringArrayVar` binds a package-level slice that
+  cobra *appends* to, so without clearing `knowledgeTags` in
+  `resetKnowledgeFlags` one subtest's tags silently narrow the next one's search,
+  producing order-dependent failures. `knowledgeTier` and `knowledgeFilter` have
+  the same shape, so any future repeatable flag needs the same treatment.
+- **`CarriesEveryTag` is exported so the rule has exactly one definition.** The
+  store applies it while walking and the knowledge layer applies it after the
+  merge; two copies would be two chances for the fast path and the authority to
+  disagree, which is the drift the whole Phase 1.1 architecture exists to prevent.
+- **The authority test needs a fake store, and `NewSet` deliberately offers no
+  injection point** — providers come from configuration. The test therefore
+  constructs a real `Set` with a real `scopedStore` from inside the package,
+  swapping only the provider, which exercises the genuine `Set.Search` over the
+  genuine source list. It also asserts the fake still *received* `opts.Tags`,
+  pinning that the store is offered the fast path but not relied on for it.
+- **The exclusion test is only meaningful if the excluded entry outranks the
+  kept one.** The fixture gives the untagged entry 200 body occurrences
+  (`damp(200) = 8.644`) so it genuinely beats the exact-tag entry's 8.0, and the
+  unnarrowed search asserts that order first. Without that, "the filter excluded
+  it" is indistinguishable from "it ranked below the cutoff anyway".
+- **An `ignoreStore` forwarding test is vacuous without an ignore file.** A
+  fixture with no `.spektacular_ignore` exercises a pass-through that cannot
+  drop anything, so the option being dropped would be invisible. The fixture
+  carries a real ignore file, and one assertion then catches both a dropped
+  option and a dropped exclusion.
+
+### 2026-09-10 — Phase 2.4: Prove the observed queries now find the right entry
+
+**What was done**: A self-contained benchmark in
+`internal/knowledge/benchmark_test.go` reconstructs the measured scenario — the
+short on-topic routing entry, tagged, against the long early-concept document
+that used to beat it — and pins the on-topic entry at rank 1 for all four queries
+agents were actually observed using. **The spec's central success metric goes
+from 0 to 4, with every constant exactly as the research prototype proposed.**
+Nothing needed tuning, so Open Question 1 closes without escalation.
+
+| Query | 1st | 2nd |
+| --- | --- | --- |
+| `http endpoints go` | `http-routing.md` 26.0 | `initial-idea.md` 9.49 |
+| `http handler` | `http-routing.md` 20.585 | (competitor cut by the floor) |
+| `http endpoints handler routing` | `http-routing.md` 38.585 | (competitor cut by the floor) |
+| `api` | `http-routing.md` 8.0 | `initial-idea.md` 3.32 |
+
+The `api` row is the success metric "the `api` case reverses" in one line: the
+routing entry wins on its tag alone, its body containing no occurrence of "api"
+at all, against a document with five real mentions. That query previously
+returned nothing for the routing entry.
+
+**Deviations**: None. This phase is test-only; no production file was touched and
+no constant moved.
+
+**Files changed**:
+
+- `spektacular: internal/knowledge/benchmark_test.go` (new)
+
+**Discoveries**:
+
+- **Both the plan's Open Questions are now answered, and neither needed the
+  user.** Question 1 (do the weights still clear the benchmark after tuning?) is
+  moot — no tuning was required at any point across Milestones 1 and 2. Question 2
+  ("does 'about that term' mean 'tagged with that term'?") was answered in
+  practice at Phase 2.2 without ambiguity: every fixture pairing a tagged short
+  entry against an untagged long one behaves as the plan predicted, and no
+  criterion ever required the comparison to hold between two *untagged* entries,
+  which is the case that would have needed length normalisation and a spec change.
+- **The tuning envelope is now bounded on both sides and is comfortably open.**
+  `cutoffFraction` cannot exceed ~0.296 without breaking
+  `TestSet_SearchRanksPartialMatchesBelowFullOnes` (Phase 1.3), and this benchmark
+  constrains from below. At the shipped 0.25 there is real headroom, and the
+  benchmark's margins are wide (26 vs 9.49 on the closest query), so a modest
+  retune will not silently give the metric back.
+- **The benchmark's assertion is rank, never score.** Fixture prose differs
+  between any two reconstructions of this scenario, so absolute scores are not
+  reproducible while ranks are: two independent fixtures produced 26/20.585/38.585/8
+  and 25/17/34/8 with identical ordering. Asserting scores would make the test
+  brittle to a wording change in its own fixture, which is not what it guards.
+- **The criterion-2 test reads its own fixture back and asserts the absence of
+  the term.** Without that, someone rewording the fixture body could reintroduce
+  "api" into the prose and the test would keep passing while no longer testing
+  tag-only retrieval at all.
+
+### 2026-09-10 — Phase 3.1: Report the tag vocabulary already in use
+
+**What was done**: `knowledge tags` reports every distinct tag in use across the
+stores a request covers, with an entry count each, most-used first and ties
+broken alphabetically. `Set.Tags` walks the covered stores with `listFiles`,
+reads each entry and extracts its tags via the now-exported `store.ParseEntry`.
+Always-applied categories are excluded, consistent with search. The listing is
+purely mechanical: it reports what exists and never judges what a new entry
+should carry, which is the split that lets Phase 3.2's capture flow exercise
+judgement over a vocabulary the CLI states exactly.
+
+**Deviations**:
+
+- **An unknown `--tag` is now refused, resolving the deferral from Phase 2.3.**
+  The plan left this conditional. It should refuse, because the sibling narrowing
+  flag already does: `validateSelector` rejects a `--filter` naming a store the
+  tier does not reach, precisely so "a caller is never left reading an empty
+  result as 'no such knowledge'". A typo'd `--tag` is the same failure. The new
+  `ErrCodeTagUnknown` refusal names the offending tag and points at
+  `knowledge tags`, per the repo's error-message convention.
+- **The check runs only on the empty-result path.** Establishing the vocabulary
+  costs a read of every entry in scope — as much again as the search itself — so
+  paying it on every successful search to guard against a typo would be a poor
+  trade. A tag-narrowed search that returns hits never builds the vocabulary at
+  all.
+
+**Files changed**:
+
+- `spektacular: internal/store/frontmatter.go`
+- `spektacular: internal/store/frontmatter_test.go`
+- `spektacular: internal/store/search.go`
+- `spektacular: internal/knowledge/address.go`
+- `spektacular: internal/knowledge/set.go`
+- `spektacular: internal/knowledge/set_test.go`
+- `spektacular: cmd/knowledge.go`
+- `spektacular: cmd/knowledge_test.go`
+
+**Discoveries**:
+
+- **A refusal must not over-fire, and that needs its own test.** The distinction
+  the implementation turns on is between "this tag exists nowhere" (refuse) and
+  "this tag exists but its entries did not match your query" (empty result, no
+  error). Only the first is a caller mistake. Without
+  `TestSet_SearchKnownTagWithNoMatchingEntryReturnsEmptyNotARefusal`, a
+  refactor could quietly turn every fruitless tag-narrowed search into an error.
+- **Adding a subcommand means auditing the test-file enumerations, and some of
+  them deliberately should not grow.** `tags` was added to
+  `knowledgeNarrowingCmds` (required — it shares the `--tier`/`--filter` backing
+  vars, so its flag state would otherwise leak between runs),
+  `knowledgeConfigLoadingCmds`, and two schema tests. It was deliberately left
+  out of four others whose premises do not hold for it: a tag use carries no
+  store address, and `tags` does publish flags. A blanket "add the new command
+  everywhere" would have produced tests asserting things that are not true of it.
+- **`refuseUnknownTags` swallows a vocabulary-read failure on purpose.** If the
+  vocabulary cannot be built, the search returns its honest empty result rather
+  than an error, because the vocabulary is only needed to *explain* an empty
+  result and must never be able to fail a search that otherwise succeeded.
+- **The next action hardcodes `"knowledge tags"` rather than the configured
+  command prefix.** That matches the neighbouring refusals in the same file
+  (`internal/knowledge/set.go:345` writes `"knowledge list --tier %s"` the same
+  way), so it is consistent rather than an oversight — but the whole package
+  would need changing together if these are ever made prefix-aware.
+
+### 2026-09-10 — Phase 3.2: Propose tags when an entry is captured
+
+**What was done**: The `spek-knowledge` capture flow now loads the tag
+vocabulary with `knowledge tags`, chooses tags by judgement against it, stages a
+body opening with a `tags:` frontmatter block, and shows the proposed tags inside
+the confirmation it already required — one gate, not two. The three tag-form
+rules are written down once, where Phase 3.3's audit intent can reference them.
+The update intent carries an entry's existing block through unchanged unless the
+revision is about the tags. Four other agent-facing surfaces stopped describing
+retrieval as boolean AND. Templates were regenerated into the git-tracked
+`.claude/` and `.bob/` copies.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `spektacular: templates/skills/workflows/spek-knowledge/SKILL.md`
+- `spektacular: templates/agents/knowledge-trigger.md`
+- `spektacular: templates/steps/plan/02-discovery.md`
+- `spektacular: templates/skills/skill_spawn-planning-agents.md`
+- `spektacular: internal/agent/instruction_surface_test.go`
+- `spektacular: .claude/skills/spek-knowledge/SKILL.md` (regenerated)
+- `spektacular: .bob/skills/spek-knowledge/SKILL.md` (regenerated)
+- `spektacular: AGENTS.md` (regenerated — see the pre-existing staleness below)
+
+**Discoveries**:
+
+- **`AGENTS.md` had been stale since commit `a76e04c`, and this phase's
+  regeneration fixed it as a side effect.** That commit ("Ensure knowledge base
+  takes precidence over patterns in code base") edited
+  `templates/agents/historical-artifacts.md` without re-running init, so the
+  committed `AGENTS.md` never received the paragraph declaring knowledge entries
+  binding over the code. Verified: `git show HEAD:AGENTS.md` lacks it, the
+  template has it. Every agent session since then read an AGENTS.md missing a rule
+  the project intended to be binding — a live instance of exactly the failure the
+  generated-copy discipline warns about. Kept, because a generated file is
+  supposed to match its template.
+- **Three placeholder namespaces, and only two are rendered.** Skills use
+  `{{command}}`, plan steps use `{{config.command}}`, and
+  `skill_spawn-planning-agents.md` uses **neither** — `cmd/skill.go`'s `runSkill`
+  serves it verbatim from the embedded FS, so the template *is* the surface an
+  agent sees and there is no generated copy that can go stale. Worth knowing
+  before adding a placeholder to that file, which would render literally.
+- **The obvious stale-claim guard would have been wrong.** A `NotContains` on
+  "every query word" fails against the *new* prose, which deliberately says "a
+  result is not proof that every query word appeared in it". The guard has to key
+  on verbatim fragments of the superseded sentence
+  ("matches when every query word", "every query word occurs") instead. A negative
+  assertion needs checking against the replacement text, not just the removed text.
+- **Prose edits made by string replacement need reading back.** One edit in this
+  phase initially left a bullet ending mid-sentence ("...before concluding it
+  is"). The replacement applied successfully and the suite stayed green; only
+  re-reading the rendered line caught it.
+- **The rendered-copy guards were mutation-checked.** Reintroducing the boolean
+  claim in the plan step, removing the `route`/`routing` example, and weakening
+  "one gate, not two" each made the corresponding guard fail. Regeneration was
+  also confirmed idempotent: re-running `init claude` and `init bob` produces no
+  further change.
+
+### 2026-09-10 — Phase 3.3: Audit the tags on existing entries
+
+**What was done**: The `spek-knowledge` skill gained a fourth intent. The audit
+enumerates entries with `knowledge list`, loads the vocabulary with
+`knowledge tags`, reads each entry, and reports unsupported tags and missing ones
+— preferring a tag already in use — then proposes and confirms **per entry**
+before writing through the existing `knowledge write` at the entry's original
+address. No new CLI command, no bulk operation, no second write path. The
+preamble, the invoke list and `# Decline handling` were updated alongside it, and
+both agent copies regenerated. Milestone 3 is complete: tags now get applied, and
+existing entries can be brought up to standard, without anyone designing a
+taxonomy.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `spektacular: templates/skills/workflows/spek-knowledge/SKILL.md`
+- `spektacular: internal/agent/instruction_surface_test.go`
+- `spektacular: .claude/skills/spek-knowledge/SKILL.md` (regenerated)
+- `spektacular: .bob/skills/spek-knowledge/SKILL.md` (regenerated)
+
+**Discoveries**:
+
+- **Adding an intent means updating the places that count them.** The skill's own
+  preamble said "one of three branches" and the invoke list said "all three
+  intents". An intent added without changing those exists but is never reached, so
+  the guard asserts the new counts *and* `NotContains` the stale phrasings. The
+  same trap will apply to any fifth intent.
+- **The audit's two rules are opposite errors, which is why both need pinning.**
+  Over-merging (telling an entry tagged `https` to use `http`) and under-pruning
+  (leaving `apples` beside `apple`) pull in opposite directions, and the audit is
+  the one place an agent is invited to make either. Both guards were
+  mutation-checked: replacing each rule with vague wording made the test fail.
+- **A prose guard can check for invented commands, not just missing text.** The
+  audit section is extracted between its heading and the next, then every
+  `knowledge <verb>` in it is checked against the set `cmd/knowledge.go` actually
+  registers. Injecting a plausible-sounding `knowledge retag-all` was caught. That
+  is a stronger guarantee than asserting the four expected invocations are
+  present, because the risk in a "composes only existing primitives" contract is
+  an invented fifth.
+- **The subcommand set is hand-maintained in the test because `cmd` imports
+  `internal/agent`** — reading it from `cmd` would be an import cycle. Noted in a
+  comment so the next person does not try.
+- **`git checkout --` is dangerous during this work and cost a near-miss.** A
+  sub-agent used it to revert a mutation-test edit on a template whose Phase 3.x
+  changes were uncommitted, reverting real work; it was restored from a byte-exact
+  copy taken beforehand and verified by checksum. Mutation testing on an
+  uncommitted tree must restore from a copy, never from git. Independently
+  re-verified afterwards: all twelve Phase 3.2 and 3.3 edits are present in the
+  template, the other three templates are intact, and the rendered copies match a
+  fresh render.
+
+### 2026-09-10 — Phase 4.1: Correct the project's own documentation
+
+**What was done**: `docs/knowledge-base.md` now carries the full retrieval
+algorithm rather than a summary, matching its stated purpose that a maintainer can
+understand the project without reading the source. Three new subsections: "How a
+result is ranked" (tokenization, both kinds of per-term evidence, the formula as a
+fenced block with the shipped constants, a worked two-entry example, prefix
+partial credit with both guards and why edit distance was rejected, the relative
+cutoff), "Where each part is computed" (a store reports evidence, the knowledge
+layer ranks, and why that split exists), and "Tags on an entry" (both YAML list
+forms and the six behavioural rules). The command reference gained `--tag` and a
+`knowledge tags` row, "Contributing knowledge" gained tag proposal and the audit
+intent, and `README.md` gained a `knowledge tags` bullet.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `spektacular: docs/knowledge-base.md`
+- `spektacular: README.md`
+
+**Discoveries**:
+
+- **The new ranking prose would have read as contradicting an existing section.**
+  "Why the mechanical layer is exact, not fuzzy" argues against similarity
+  matching, and ranking is now emphatically inexact. They are not in conflict
+  because they answer different questions — de-duplication asks whether two
+  entries are *the same* (a yes-or-no fact, decided on exact bytes), ranking asks
+  which is a better *answer* (a matter of degree, therefore scored) — but a reader
+  meeting both would reasonably see a contradiction. A paragraph now says so
+  explicitly and scopes the older argument to the first question.
+- **The constants were checked against the code, not against this plan.** All five
+  match `internal/knowledge/ranking.go` as shipped, and the worked example's
+  arithmetic was recomputed independently (A = 18, B = 1, floor 4.5, B cut). The
+  plan's own values came from a prototype and were explicitly expected to be
+  tuned; they happened not to move, but verifying against the source rather than
+  the plan is the habit that matters.
+- **The document now names its own source of truth.** It states that the constants
+  live in `internal/knowledge/ranking.go` and that changing one is a four-file
+  change — the code plus all three documents that quote it. Phases 4.2 and 4.4
+  must carry the same sentence, or a later tuner reading only one of them will
+  believe the edit is finished when it is not.
+
+### 2026-09-10 — Phase 4.2: Publish the retrieval documentation
+
+**Repo:** docs
+
+**What was done**: Two new bands on `src/pages/knowledge-base.mdx`, "How a search
+is ranked" (`surface`) and "Tagging an entry" (plain), carrying the full scoring
+formula with the shipped constants, a worked two-entry example, prefix partial
+credit with both guards, the relative cutoff, the frontmatter block in both YAML
+list forms, and the six rules governing it. Edited in place: the stale ranking
+sentence, the "no required frontmatter" line, the `knowledge write` block, the
+narrowing prose (now covering `--tag`, the AND-vs-OR asymmetry, and the refusal
+for an unknown tag), and the de-duplication section.
+
+**Deviations**:
+
+- **Two acceptance criteria were stale and were corrected rather than ticked as
+  written.** Criteria 5 and 8 asserted that "tag matching is exact" and that "a
+  singular does not retrieve a plural". Both describe the design the walkthrough
+  superseded when it introduced prefix matching with proportional partial credit,
+  and both contradict this phase's **own Content outline** in the same document,
+  which says a tag match is "reduced when the two are prefix-related" and that
+  "plurals and word forms mostly look after themselves". research.md records the
+  supersession explicitly. The criteria text now describes the delivered
+  behaviour, with an inline note saying what changed and why; ticking them as
+  written would have recorded the page as documenting something false.
+- **The de-duplication section needed scoping, in both documents.** Its argument
+  against similarity matching now reads as contradicting a ranking model built on
+  partial credit. A paragraph distinguishes the questions: de-duplication asks
+  whether two entries are the same (yes-or-no, exact bytes), ranking asks which is
+  a better answer (a matter of degree, therefore scored).
+
+**Files changed**:
+
+- `docs: src/pages/knowledge-base.mdx`
+
+**Discoveries**:
+
+- **Adding exactly two bands in that order preserved the page's alternation with
+  no changes below it**, as the plan predicted: plain, surface, plain, then the
+  two new bands as surface and plain, then Configuration's surface and the closing
+  plain band. One band, or three, would have forced every section below to flip.
+- **The page publishes the constants, so it is now coupled to the code.** It
+  quotes them in pseudo-code form (`TAG_WEIGHT`) for readability, so it also names
+  the real Go identifiers and points at `internal/knowledge/ranking.go` as the
+  single source of truth. All four values were checked against the source rather
+  than against this plan, whose numbers came from a prototype expected to be
+  tuned.
+- **`astro check` reports three pre-existing hints** about a deprecated
+  `document.execCommand` in `Shell.astro` and a minified asset. They are unrelated
+  to this change and were left alone; the acceptance criterion is zero errors and
+  zero warnings, which is met.
+- **The no-em-dashes convention binds this repo and not `spektacular`.** Verified
+  by grep after writing: zero em dashes on the page, while the equivalent
+  `spektacular` documentation in Phase 4.1 uses them throughout, correctly.
+
+### 2026-09-10 — Phase 4.3: Correct the storage-backend reference
+
+**Repo:** docs
+
+**What was done**: `src/pages/extending.mdx` now publishes the `Store` contract as
+it actually is: `Search(terms []string, opts SearchOptions)`, the `SearchOptions`
+type, and the `Hit` struct regrouped into what a store fills in and what the
+knowledge layer stamps. Four method-contract bullets were added, covering why a
+store leaves `Score` at zero, that matching is a ranked OR rather than an AND, the
+per-term-count requirement that excludes a purely semantic backend from this
+ranking, and that the tag filter is an optimisation a store may skip.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `docs: src/pages/extending.mdx`
+
+**Discoveries**:
+
+- **The published `Hit` had been wrong since before this work, and is now
+  correct.** It showed `Excerpt string` where the code has `Excerpts []string`,
+  and omitted `Title`, `Category` and `Checksum` entirely. Fixed in the same pass
+  rather than shipping a second wrong version, as the plan directed.
+- **The correction was verified programmatically, not by eye.** The published
+  field list was parsed out of the MDX and compared against
+  `internal/store/store.go`: same fields, same order, both groups. Reading a
+  struct against a code block by eye is exactly how the original drift survived.
+- **Nothing ties this page to the Go source, which is why it drifted.** There is
+  no test, no generator and no CI check connecting the published interface to the
+  code it documents, so the same drift will recur the next time the `Store`
+  contract changes. The plan puts closing that gap out of scope; it is worth a
+  follow-up, and it is a stronger candidate than it looks, because this page is the
+  contract third-party backend authors build against.
+
+### 2026-09-10 — Phase 4.4: Record the ranking design as knowledge
+
+**What was done**: `architecture/knowledge-search-ranking.md` written to the
+`repo`/`spektacular` store, tagged `[knowledge, search, ranking, retrieval,
+tags]`, describing the three ranking factors, the relative cutoff and why it is
+relative, where each part is computed and why, and the shipped constants. It
+states that tuning a constant is a four-file change and names the tuning envelope
+from both sides. Written through the capture flow this plan delivers, after
+explicit user confirmation of destination, tags and body.
+
+**Deviations**: None.
+
+**Files changed**:
+
+- `spektacular: .spektacular/knowledge/architecture/knowledge-search-ranking.md` (new)
+
+**Discoveries**:
+
+- **The plan's sharpest success metric was demonstrated on live data, not a
+  fixture.** The word `retrieval` appears only in the entry's frontmatter block
+  and nowhere in its prose (verified by grep against the body alone), and
+  searching `retrieval` returns the entry at exactly **8.0**: pure tag weight,
+  coverage 1, zero body contribution. Under the old design that query returned
+  nothing. The same run confirmed the entry ranks first for its own subject
+  (32.977 against the decision entry's 8.322), that `--tag ranking` narrows to it,
+  and that `--tag bogus` is refused while naming the real vocabulary.
+- **This entry seeded the tag vocabulary, which was empty until now.** Every tag
+  it carries is new, so its five tags are what the next capture will see and
+  prefer. That makes the first tagged entry disproportionately influential on
+  where the vocabulary converges, which is worth knowing when starting a fresh
+  knowledge base.
+- **The "plurals look after themselves" rule has an exception below four
+  characters.** `tag` and `tags` do *not* find each other, because the shorter is
+  three runes and `minPrefixLen = 4` rejects it. The tag-form rule says one form
+  per subject on the grounds that prefix matching relates them, and that reasoning
+  silently fails for any singular shorter than four characters (`tag`, `api`,
+  `job`, `key`). The vocabulary here uses `tags`, which is the natural noun for the
+  subject, but a search for `tag` will not reach it. Worth a follow-up to the
+  tag-form guidance rather than a change to this plan.

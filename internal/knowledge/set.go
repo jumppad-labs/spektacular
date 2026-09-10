@@ -80,7 +80,14 @@ type SourceInfo struct {
 // NewSet resolves the configured knowledge sources into live, addressed
 // stores. A project declaring no shared stores is valid and simply yields an
 // empty project tier; nothing is synthesised, since a repo's own store is the
-// repo's to declare. Relative source locations resolve against projectRoot.
+// repo's to declare.
+//
+// A relative source location is resolved from the folder holding config.yaml
+// (see config.ProjectConfigDir) — from the file that declares it — which is
+// the same base a repos entry uses, so one rule covers every relative path a
+// project config can carry. Repo-tier sources arrive here already absolute,
+// resolved against their own repo's root by the caller.
+//
 // NewSet fails fast: if any source names an unknown provider or points at an
 // unreachable location it returns an error naming that store and no Set.
 func NewSet(cfg config.Config, projectRoot string) (*Set, error) {
@@ -91,11 +98,11 @@ func NewSet(cfg config.Config, projectRoot string) (*Set, error) {
 		case config.ProviderFile:
 			location := src.Config.Location
 			if !filepath.IsAbs(location) {
-				location = filepath.Join(projectRoot, location)
+				location = filepath.Join(config.ProjectConfigDir(projectRoot), location)
 			}
 			info, err := os.Stat(location)
 			if err != nil || !info.IsDir() {
-				return nil, fmt.Errorf("knowledge store %q in the %q tier is unreachable at %s", name, tier, location)
+				return nil, unreachableStore(tier, name, src.Config.Location, location, projectRoot)
 			}
 			set.sources = append(set.sources, scopedStore{
 				tier:     tier,
@@ -442,4 +449,34 @@ func listFiles(st store.Store, dir string) ([]string, error) {
 		files = append(files, childPath)
 	}
 	return files, nil
+}
+
+// unreachableStore builds the error for a knowledge source whose location does
+// not resolve to a directory. When the store is found at the location the
+// pre-1.0 rule would have produced — relative to the project root rather than
+// to the folder holding config.yaml — the error says so and names the exact
+// replacement value, so a config written against the old rule reports its own
+// migration rather than only its failure.
+func unreachableStore(tier Tier, name, declared, resolved, projectRoot string) error {
+	err := output.NewError(
+		"knowledge_location_missing",
+		fmt.Sprintf("knowledge store %q in the %q tier is unreachable at %s (a relative location is resolved from the folder holding config.yaml, %s)",
+			name, tier, resolved, config.ProjectConfigDir(projectRoot)),
+	).WithResource(resolved)
+
+	if filepath.IsAbs(declared) {
+		return err.WithNextAction(fmt.Sprintf("create %s, or correct the location of the %q store in config.yaml", resolved, name))
+	}
+
+	legacy := filepath.Join(projectRoot, declared)
+	if info, statErr := os.Stat(legacy); statErr == nil && info.IsDir() {
+		corrected, relErr := filepath.Rel(config.ProjectConfigDir(projectRoot), legacy)
+		if relErr == nil {
+			return err.WithNextAction(fmt.Sprintf(
+				"the store is at %s, which is where this location resolved before relative knowledge locations moved to the config.yaml folder; in config.yaml set the %q store's location to %q",
+				legacy, name, corrected))
+		}
+	}
+
+	return err.WithNextAction(fmt.Sprintf("create %s, or correct the location of the %q store in config.yaml", resolved, name))
 }

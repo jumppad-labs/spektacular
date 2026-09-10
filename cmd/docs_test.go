@@ -276,16 +276,20 @@ func TestKnowledgeDocsClaimNoPrecedenceBetweenStores(t *testing.T) {
 		"%s must carry the addressing section that replaced `## Layered source precedence`", knowledgeBaseDoc)
 }
 
-// Criterion 4: CHANGELOG.md's top entry records the addressing change as
-// breaking and names both edits an existing project must make.
-func TestChangelogTopEntryRecordsKnowledgeAddressingBreakingChange(t *testing.T) {
+// Criterion 4: CHANGELOG.md records the addressing change as breaking and
+// names both edits an existing project must make.
+//
+// The section is located by its heading rather than by position. The entry was
+// top of the file when this was written, but a changelog grows: asserting on
+// position would make every later release fail a test about an older one.
+func TestChangelogRecordsKnowledgeAddressingBreakingChange(t *testing.T) {
 	changelog := strings.TrimSpace(readRepoRootFile(t, "CHANGELOG.md"))
 
 	const heading = "## 000047_repo-scoped-knowledge-addressing"
-	require.True(t, strings.HasPrefix(changelog, heading),
-		"CHANGELOG.md's top entry must be %s", heading)
+	start := strings.Index(changelog, heading)
+	require.GreaterOrEqual(t, start, 0, "CHANGELOG.md must carry the %s entry", heading)
 
-	rest := changelog[len(heading):]
+	rest := changelog[start+len(heading):]
 	next := strings.Index(rest, "\n## ")
 	require.Greater(t, next, 0, "CHANGELOG.md must retain the earlier entries below the %s section", heading)
 	section := rest[:next]

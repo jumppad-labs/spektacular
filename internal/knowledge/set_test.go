@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jumppad-labs/spektacular/internal/config"
+	"github.com/jumppad-labs/spektacular/internal/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -225,6 +226,76 @@ func TestNewSet_UnreachableSourceFailsNamingStore(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, set)
 	require.Contains(t, err.Error(), `knowledge store "team" in the "project" tier is unreachable`)
+}
+
+// A relative source location resolves from the folder holding config.yaml, the
+// same base a repos entry uses — not from the project root. The two bases are
+// one directory apart, so a config written against the wrong one silently
+// addresses a sibling of the intended store rather than failing loudly; this
+// asserts the base directly rather than trusting a path that happens to exist.
+func TestNewSet_RelativeLocationResolvesFromTheConfigDir(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	// The store lives beside config.yaml, inside .spektacular/.
+	wanted := filepath.Join(projectRoot, ".spektacular", "shared-kb")
+	require.NoError(t, os.MkdirAll(filepath.Join(wanted, "architecture"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(wanted, "architecture", "note.md"), []byte("from the config dir\n"), 0o644))
+
+	// A decoy at the project root, which is where the pre-1.0 rule would have
+	// looked. Resolving against the wrong base finds this one instead.
+	decoy := filepath.Join(projectRoot, "shared-kb")
+	require.NoError(t, os.MkdirAll(filepath.Join(decoy, "architecture"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(decoy, "architecture", "note.md"), []byte("from the project root\n"), 0o644))
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Name: "team", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: "shared-kb"}},
+	}
+
+	set, err := NewSet(cfg, projectRoot)
+	require.NoError(t, err)
+
+	sources := set.Sources()
+	require.Len(t, sources, 1)
+	require.Equal(t, wanted, sources[0].Location,
+		"a relative knowledge location must resolve from the config.yaml folder, not the project root")
+
+	body, err := set.Read(Address{Tier: TierProject, Name: "team"}, "architecture/note.md")
+	require.NoError(t, err)
+	require.Equal(t, []byte("from the config dir\n"), body,
+		"the store read must come from the config-dir store, not the project-root decoy")
+}
+
+// A config written against the pre-1.0 rule points at a directory that exists,
+// just one level up from where the location now resolves. The failure must name
+// the corrected value outright, so the error migrates the config rather than
+// only reporting that something is missing.
+func TestNewSet_LegacyRelativeLocationReportsTheCorrectedValue(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	// The store sits where the old rule resolved to: <projectRoot>/team-knowledge.
+	legacy := filepath.Join(projectRoot, "team-knowledge")
+	require.NoError(t, os.MkdirAll(legacy, 0o755))
+
+	cfg := config.NewDefault()
+	cfg.Knowledge.Sources = []config.SourceConfig{
+		{Name: "team", Provider: config.ProviderFile, Config: config.FileKnowledgeConfig{Location: "team-knowledge"}},
+	}
+
+	set, err := NewSet(cfg, projectRoot)
+	require.Error(t, err)
+	require.Nil(t, set)
+
+	require.Contains(t, err.Error(), `knowledge store "team" in the "project" tier is unreachable`)
+
+	// The corrected value belongs in next_action, not the message: the message
+	// names the problem, next_action gives the exact runnable fix.
+	var resp *output.ErrorResponse
+	require.ErrorAs(t, err, &resp)
+	require.Contains(t, resp.NextAction, filepath.Join("..", "team-knowledge"),
+		"next_action must name the corrected relative location, not merely report the miss")
+	require.Contains(t, resp.NextAction, legacy,
+		"next_action must name where the store was actually found")
 }
 
 // Criterion 4: a write persists into exactly the chosen scope and leaves every
